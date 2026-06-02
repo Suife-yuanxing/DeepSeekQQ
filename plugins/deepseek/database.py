@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Any
 
 from .config import DB_PATH, AFFECTION_LEVELS
+from nonebot import logger
 
 _db: Optional[aiosqlite.Connection] = None
 
@@ -27,7 +28,7 @@ async def checkpoint_db():
         try:
             await _db.execute("PRAGMA wal_checkpoint(TRUNCATE)")
         except Exception as e:
-            print(f"[数据库] checkpoint 失败: {e}")
+            logger.error(f"[数据库] checkpoint 失败: {e}")
 
 
 async def close_db():

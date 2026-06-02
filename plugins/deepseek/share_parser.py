@@ -15,9 +15,10 @@ from collections import OrderedDict
 
 import aiohttp
 
-from .config import SHARE_TTL, VOICE_DIR
+from .config import SHARE_TTL, VOICE_DIR, URL_FETCH_COOLDOWN
 from .database import get_article_cache, save_article_cache
 from .api import get_http_session
+from nonebot import logger
 
 _recent_shares: Dict[str, List[Dict[str, Any]]] = {}
 
@@ -35,7 +36,7 @@ class LRUCooldownDict(OrderedDict):
         super().__setitem__(key, value)
 
 _url_fetch_cooldown: Dict[str, float] = LRUCooldownDict()
-URL_FETCH_COOLDOWN_SECONDS = 300  # 5分钟内不重复抓取同一URL
+URL_FETCH_COOLDOWN_SECONDS = URL_FETCH_COOLDOWN  # 5分钟内不重复抓取同一URL
 
 
 # ==================== 内容有效性校验 ====================
@@ -130,7 +131,7 @@ async def fetch_url_content(url: str) -> Optional[Dict[str, str]]:
             return result
 
     except Exception as e:
-        print(f"[分享] 抓取失败 {url[:60]}: {e}")
+        logger.warning(f"[分享] 抓取失败 {url[:60]}: {e}")
         return None
 
 
@@ -345,7 +346,7 @@ async def global_cleanup_shares():
     for u in expired_urls:
         del _url_fetch_cooldown[u]
     if expired_sessions or expired_urls:
-        print(f"[分享] 全局清理完成，释放 {len(expired_sessions)} 个 session, {len(expired_urls)} 个 URL 冷却")
+        logger.info(f"[分享] 全局清理完成，释放 {len(expired_sessions)} 个 session, {len(expired_urls)} 个 URL 冷却")
 
 
 async def extract_and_cache_shares(event, session_id: str) -> bool:
@@ -379,7 +380,7 @@ async def extract_and_cache_shares(event, session_id: str) -> bool:
                         "time": datetime.now().timestamp()
                     })
                 else:
-                    print(f"[分享] 链接内容无效或无法读取，跳过缓存: {url[:60]}")
+                    logger.warning(f"[分享] 链接内容无效或无法读取，跳过缓存: {url[:60]}")
 
         elif seg.type == "image":
             shares.append({
@@ -422,7 +423,7 @@ async def extract_and_cache_shares(event, session_id: str) -> bool:
                                 card_added = True
                                 break
                             else:
-                                print(f"[分享] 卡片URL抓取无效: {card_url[:60]}")
+                                logger.warning(f"[分享] 卡片URL抓取无效: {card_url[:60]}")
                                 shares.append({
                                     "type": "分享卡片",
                                     "source": title,
@@ -448,7 +449,7 @@ async def extract_and_cache_shares(event, session_id: str) -> bool:
                         "time": datetime.now().timestamp()
                     })
             except Exception as e:
-                print(f"[分享] JSON卡片解析失败: {e}")
+                logger.warning(f"[分享] JSON卡片解析失败: {e}")
 
         elif seg.type == "xml":
             raw = seg.data.get("data", "")
@@ -472,7 +473,7 @@ async def extract_and_cache_shares(event, session_id: str) -> bool:
             _recent_shares[session_id] = []
         _recent_shares[session_id].extend(shares)
         _cleanup_expired_shares(session_id)
-        print(f"[分享] 缓存了 {len(shares)} 条内容: {[s['type'] for s in shares]}")
+        logger.info(f"[分享] 缓存了 {len(shares)} 条内容: {[s['type'] for s in shares]}")
         return True
     return False
 

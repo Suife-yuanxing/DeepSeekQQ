@@ -9,6 +9,7 @@ from nonebot.adapters.onebot.v11 import Message as OBMessage
 
 from .config import PROACTIVE_CONFIG
 from .database import get_today_proactive_count, log_proactive, get_silent_private_users
+from nonebot import logger
 
 _scheduler: Optional[AsyncIOScheduler] = None
 _registered_bot_id: Optional[int] = None
@@ -18,13 +19,13 @@ async def _send_proactive_message(bot, target_type: str, target_id: str, message
     try:
         if target_type == "private":
             await bot.send_private_msg(user_id=int(target_id), message=OBMessage(message))
-            print(f"[主动消息] 私聊 {target_id}: {message[:30]}...")
+            logger.info(f"[主动消息] 私聊 {target_id}: {message[:30]}...")
         elif target_type == "group":
             await bot.send_group_msg(group_id=int(target_id), message=OBMessage(message))
-            print(f"[主动消息] 群聊 {target_id}: {message[:30]}...")
+            logger.info(f"[主动消息] 群聊 {target_id}: {message[:30]}...")
         await log_proactive(target_id, target_type, message)
     except Exception as e:
-        print(f"[主动消息] 发送失败 {target_id}: {e}")
+        logger.error(f"[主动消息] 发送失败 {target_id}: {e}")
 
 
 async def _morning_greeting(bot):
@@ -66,7 +67,7 @@ async def _check_silence_and_notify(bot):
             await _send_proactive_message(bot, "private", user_id, msg)
             await asyncio.sleep(random.uniform(2, 5))
     except Exception as e:
-        print(f"[主动消息] 沉默检查失败: {e}")
+        logger.info(f"[主动消息] 沉默检查失败: {e}")
 
 
 async def _holiday_greeting(bot):
@@ -122,7 +123,7 @@ async def register_proactive_jobs(bot):
         _scheduler.add_job(_holiday_greeting, 'cron', hour=0, minute=1, args=[bot], id="holiday", replace_existing=True)
 
     _scheduler.start()
-    print(f"✅ 主动消息已启动 | 早安:{mg['hour']}:{mg['minute']:02d} | 晚安:{ng['hour']}:{ng['minute']:02d} | 沉默检查:每{sc['check_interval_hours']}h(阈值{sc['silence_threshold_hours']}h) | 节日:每天0:01")
+    logger.info(f"✅ 主动消息已启动 | 早安:{mg['hour']}:{mg['minute']:02d} | 晚安:{ng['hour']}:{ng['minute']:02d} | 沉默检查:每{sc['check_interval_hours']}h(阈值{sc['silence_threshold_hours']}h) | 节日:每天0:01")
 
 
 async def shutdown_proactive():
@@ -131,4 +132,4 @@ async def shutdown_proactive():
         _scheduler.shutdown(wait=True)
         _scheduler = None
         _registered_bot_id = None
-        print("✅ 主动消息调度器已关闭")
+        logger.info("✅ 主动消息调度器已关闭")

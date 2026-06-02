@@ -9,6 +9,7 @@ from typing import List, Dict, Any, Optional
 from . import api
 from .config import MAX_MEMORY, AFFECTION_LEVELS
 from .database import (
+from nonebot import logger
     save_message, get_recent_memories, trim_memories,
     count_memories, get_oldest_memories, get_keep_ids, delete_memories_except,
     get_affection, update_affection,
@@ -104,7 +105,7 @@ async def _get_relevant_memories(user_id: str, session_id: str, current_msg: str
         
         return []
     except Exception as e:
-        print(f"[记忆] 检索失败: {e}")
+        logger.error(f"[记忆] 检索失败: {e}")
         return []
 
 
@@ -133,7 +134,7 @@ async def _summarize_and_compress(session_id: str):
 
     keep_ids = await get_keep_ids(session_id, 20)
     await delete_memories_except(session_id, keep_ids)
-    print(f"[记忆] 会话 {session_id} 已压缩，摘要：{summary[:60]}...")
+    logger.info(f"[记忆] 会话 {session_id} 已压缩，摘要：{summary[:60]}...")
 
 
 async def _extract_memory_tags(user_id: str, session_id: str, user_msg: str, reply_text: str):
@@ -165,9 +166,9 @@ async def _extract_memory_tags(user_id: str, session_id: str, user_msg: str, rep
         if not isinstance(tags, list):
             return
         await save_memory_tags(user_id, tags)
-        print(f"[记忆] 提取并保存了 {len(tags)} 条标签")
+        logger.info(f"[记忆] 提取并保存了 {len(tags)} 条标签")
     except Exception as e:
-        print(f"[记忆] 提取失败（非关键错误）: {e}")
+        logger.info(f"[记忆] 提取失败（非关键错误）: {e}")
 
 
 async def apply_affection_delta(user_id: str, raw_msg: str):

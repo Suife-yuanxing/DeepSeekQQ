@@ -9,7 +9,7 @@ import json
 from typing import List, Dict, Any, Optional
 import aiohttp
 
-from .config import API_KEY, MODEL, BASE_URL
+from .config import API_KEY, MODEL, BASE_URL, API_MAX_TOKENS
 from .utils import clean_api_response
 
 _http_session: Optional[aiohttp.ClientSession] = None
@@ -41,7 +41,7 @@ async def call_deepseek_api(messages: List[Dict[str, str]], temperature: float =
         "model": MODEL,
         "messages": messages,
         "temperature": temperature,
-        "max_tokens": 1500,
+        "max_tokens": API_MAX_TOKENS,
         "stream": False
     }
 

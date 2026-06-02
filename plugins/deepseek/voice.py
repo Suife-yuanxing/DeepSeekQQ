@@ -19,9 +19,11 @@ from .config import (
     BAIDU_TTS_AK, BAIDU_TTS_SK,
     VOICE_ENABLED_PRIVATE, VOICE_ENABLED_GROUP,
     VOICE_CHANCE, VOICE_MAX_LENGTH, VOICE_TRY_CONVERT, VOICE_NAME,
-    VOICE_DIR
+    VOICE_DIR,
+    BAIDU_TTS_PER, BAIDU_TTS_SPD, BAIDU_TTS_PIT, BAIDU_TTS_VOL
 )
 from .api import get_http_session
+from nonebot import logger
 
 BAIDU_TTS_TOKEN: Optional[str] = None
 BAIDU_TTS_TOKEN_EXPIRE: float = 0.0
@@ -52,7 +54,7 @@ async def _get_baidu_token() -> str:
             BAIDU_TTS_TOKEN_EXPIRE = now + expires_in
             return BAIDU_TTS_TOKEN
     except Exception as e:
-        print(f"[语音] 获取百度Token失败: {e}")
+        logger.error(f"[语音] 获取百度Token失败: {e}")
         return ""
 
 async def _convert_mp3_to_silk(mp3_path: str) -> Optional[str]:
@@ -73,12 +75,12 @@ async def _convert_mp3_to_silk(mp3_path: str) -> Optional[str]:
         )
         _, stderr1 = await proc1.communicate()
         if proc1.returncode != 0:
-            print(f"[语音] ffmpeg pcm 转换失败: {stderr1.decode()[:200]}")
+            logger.warning(f"[语音] ffmpeg pcm 转换失败: {stderr1.decode()[:200]}")
             return None
 
         silk_encoder = "/usr/local/bin/silk_v3_encoder" if os.path.exists("/usr/local/bin/silk_v3_encoder") else (shutil.which("silk_v3_encoder") or shutil.which("silk_encoder"))
         if not silk_encoder:
-            print("[语音] 未找到 silk_v3_encoder，跳过 silk 编码")
+            logger.warning("[语音] 未找到 silk_v3_encoder，跳过 silk 编码")
             try:
                 os.remove(pcm_path)
             except:
@@ -98,13 +100,13 @@ async def _convert_mp3_to_silk(mp3_path: str) -> Optional[str]:
             pass
 
         if proc2.returncode == 0 and os.path.exists(silk_path) and os.path.getsize(silk_path) > 0:
-            print(f"[语音] silk 转码成功: {silk_path}")
+            logger.info(f"[语音] silk 转码成功: {silk_path}")
             return silk_path
         else:
-            print(f"[语音] silk 编码失败: {stderr2.decode()[:200]}")
+            logger.warning(f"[语音] silk 编码失败: {stderr2.decode()[:200]}")
             return None
     except Exception as e:
-        print(f"[语音] 转码异常: {e}")
+        logger.error(f"[语音] 转码异常: {e}")
         for p in [pcm_path, silk_path]:
             try:
                 if os.path.exists(p):
@@ -116,19 +118,19 @@ async def _convert_mp3_to_silk(mp3_path: str) -> Optional[str]:
 async def generate_voice_file(text: str) -> Optional[str]:
     """生成语音文件，返回本地路径。"""
     if len(text) > VOICE_MAX_LENGTH:
-        print(f"[语音] 文本过长({len(text)}字)，跳过语音")
+        logger.warning(f"[语音] 文本过长({len(text)}字)，跳过语音")
         return None
 
     token = await _get_baidu_token()
     if not token:
-        print("[语音] 百度 Token 获取失败")
+        logger.warning("[语音] 百度 Token 获取失败")
         return None
 
     tex = urllib.parse.quote(text)
     tts_url = (
         f"https://tsn.baidu.com/text2audio?"
         f"tex={tex}&tok={token}&cuid=deepseek_bot&ctp=1&"
-        f"lan=zh&spd=5&pit=5&vol=5&per=5118&aue=3"
+        f"lan=zh&spd={BAIDU_TTS_SPD}&pit={BAIDU_TTS_PIT}&vol={BAIDU_TTS_VOL}&per={BAIDU_TTS_PER}&aue=3"
     )
     mp3_path = f"{VOICE_DIR}/deepseek_voice_{int(datetime.now().timestamp() * 1000)}.mp3"
 
@@ -137,18 +139,18 @@ async def generate_voice_file(text: str) -> Optional[str]:
         async with session.get(tts_url) as resp:
             data = await resp.read()
             if len(data) < 1000 or data[:2] == b'{"':
-                print(f"[语音] 百度TTS错误/无效: {data[:200]}")
+                logger.warning(f"[语音] 百度TTS错误/无效: {data[:200]}")
                 return None
             async with aiofiles.open(mp3_path, "wb") as f:
                 await f.write(data)
 
         if os.path.exists(mp3_path) and os.path.getsize(mp3_path) > 1000:
-            print(f"[语音] 百度TTS生成成功: {mp3_path} ({os.path.getsize(mp3_path)} bytes)")
+            logger.info(f"[语音] 百度TTS生成成功: {mp3_path} ({os.path.getsize(mp3_path)} bytes)")
             return mp3_path
-        print("[语音] 文件过小或不存在")
+        logger.warning("[语音] 文件过小或不存在")
         return None
     except Exception as e:
-        print(f"[语音] 百度TTS失败: {e}")
+        logger.error(f"[语音] 百度TTS失败: {e}")
         return None
 
 async def _delayed_cleanup(path: str, delay: int = 300):
@@ -156,9 +158,9 @@ async def _delayed_cleanup(path: str, delay: int = 300):
     try:
         if os.path.exists(path):
             os.remove(path)
-            print(f"[语音] 已清理: {path}")
+            logger.info(f"[语音] 已清理: {path}")
     except Exception as e:
-        print(f"[语音] 清理失败: {e}")
+        logger.warning(f"[语音] 清理失败: {e}")
 
 async def send_voice(bot: Bot, event: MessageEvent, text: str):
     is_group = isinstance(event, GroupMessageEvent)
@@ -168,7 +170,7 @@ async def send_voice(bot: Bot, event: MessageEvent, text: str):
 
     voice_path = await generate_voice_file(text)
     if not voice_path or not os.path.exists(voice_path):
-        print("[语音] 无有效语音文件")
+        logger.info("[语音] 无有效语音文件")
         return
 
     try:
@@ -176,9 +178,9 @@ async def send_voice(bot: Bot, event: MessageEvent, text: str):
             audio_bytes = await vf.read()
             b64 = base64.b64encode(audio_bytes).decode()
         await bot.send(event, MessageSegment.record(file=f"base64://{b64}"))
-        print(f"[语音] base64 直发 ({len(audio_bytes)} bytes)")
+        logger.info(f"[语音] base64 直发 ({len(audio_bytes)} bytes)")
     except Exception as e:
-        print(f"[语音] 发送失败: {e}")
+        logger.error(f"[语音] 发送失败: {e}")
     finally:
         asyncio.create_task(_delayed_cleanup(voice_path))
 

@@ -113,3 +113,13 @@ AFFECTION_LEVELS = [
     (500, "专属主人"),
     (1000, "命定之人"),
 ]
+
+# === P2: 统一硬编码配置 ===
+API_MAX_TOKENS: int = int(getattr(cfg, "api_max_tokens", 1500))
+ANALYSIS_HISTORY_LIMIT: int = int(getattr(cfg, "analysis_history_limit", 4))
+CHAT_HISTORY_MULTIPLIER: int = int(getattr(cfg, "chat_history_multiplier", 2))
+URL_FETCH_COOLDOWN: int = int(getattr(cfg, "url_fetch_cooldown", 300))
+BAIDU_TTS_PER: int = int(getattr(cfg, "baidu_tts_per", 5118))
+BAIDU_TTS_SPD: int = int(getattr(cfg, "baidu_tts_spd", 5))
+BAIDU_TTS_PIT: int = int(getattr(cfg, "baidu_tts_pit", 5))
+BAIDU_TTS_VOL: int = int(getattr(cfg, "baidu_tts_vol", 5))

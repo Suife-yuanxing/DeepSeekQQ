@@ -8,12 +8,13 @@ from typing import List, Dict, Any
 
 from nonebot.adapters.onebot.v11 import Bot, MessageEvent, GroupMessageEvent, Message
 
-from .config import REPLY_LENGTH_CONFIG, RANDOM_REPLY_CHANCE
+from .config import REPLY_LENGTH_CONFIG, RANDOM_REPLY_CHANCE, ANALYSIS_HISTORY_LIMIT, CHAT_HISTORY_MULTIPLIER
 from .utils import split_long_reply, estimate_reply_length, get_session_id, check_rate_limit, filter_novel_actions
 from .memory import save_and_get_context, save_reply, apply_affection_delta
 from .share_parser import extract_and_cache_shares, get_recent_shares, format_shares_for_prompt, build_analysis_prompt
 from .api import call_deepseek_api
 from .voice import send_voice, should_send_voice
+from nonebot import logger
 
 
 def _get_time_context() -> str:
@@ -118,7 +119,7 @@ async def handle_chat(bot: Bot, event: MessageEvent):
         await _handle_chat_inner(bot, event)
     except Exception as e:
         import traceback
-        print(f"[handle_chat] 严重异常: {e}")
+        logger.error(f"[handle_chat] 严重异常: {e}")
         traceback.print_exc()
         try:
             await bot.send(event, Message("呜...脑袋有点乱，让我缓缓..."))
@@ -133,7 +134,7 @@ async def _handle_chat_inner(bot: Bot, event: MessageEvent):
     user_id = str(event.user_id)
 
     if not check_rate_limit(user_id):
-        print(f"[限流] 用户 {user_id} 请求过快，已忽略")
+        logger.info(f"[限流] 用户 {user_id} 请求过快，已忽略")
         return
 
     has_share = await extract_and_cache_shares(event, session_id)
@@ -161,7 +162,7 @@ async def _handle_chat_inner(bot: Bot, event: MessageEvent):
             latest_share["summary"] = raw_msg[:2000]
             latest_share["needs_paste"] = False
             latest_share["restricted"] = False
-            print(f"[分享] 用户补充了小黑盒正文，长度: {len(raw_msg)}，继续分析...")
+            logger.info(f"[分享] 用户补充了小黑盒正文，长度: {len(raw_msg)}，继续分析...")
             # 不 return，继续下面的分析流程
         elif any(kw in raw_msg for kw in ["讲了什么", "是什么", "内容", "说了什么", "这个呢", "怎么看", "分析一下", "评价"]):
             await bot.send(event, Message("小黑盒的内容网页端看不了呢...你把正文复制粘贴给我，我帮你分析~"))
@@ -200,7 +201,7 @@ async def _handle_chat_inner(bot: Bot, event: MessageEvent):
         sys_prompt += "\n回复风格：专业分析+个性点评。分析部分结构化、有深度，点评部分保持你的猫娘语气。绝对禁止括号动作描写。"
 
         messages = [{"role": "system", "content": sys_prompt}]
-        history_limit = 4
+        history_limit = ANALYSIS_HISTORY_LIMIT
         for mem in recent_memories[-history_limit:]:
             messages.append({"role": mem["role"], "content": mem["content"]})
         messages.append({"role": "user", "content": analysis_prompt})
@@ -208,7 +209,7 @@ async def _handle_chat_inner(bot: Bot, event: MessageEvent):
         length_info = estimate_reply_length(raw_msg, recent_memories)
         sys_prompt = _build_system_prompt(affection, mood, length_info, relevant_tags, shares_now, raw_msg)
         messages = [{"role": "system", "content": sys_prompt}]
-        history_limit = REPLY_LENGTH_CONFIG["context_depth"] * 2
+        history_limit = REPLY_LENGTH_CONFIG["context_depth"] * CHAT_HISTORY_MULTIPLIER
         for mem in recent_memories[-history_limit:]:
             messages.append({"role": mem["role"], "content": mem["content"]})
         if not messages or messages[-1]["role"] != "user":
@@ -222,10 +223,10 @@ async def _handle_chat_inner(bot: Bot, event: MessageEvent):
 
     send_as_voice = should_send_voice(raw_msg, reply_text, recent_memories)
     if send_as_voice:
-        print(f"[决策] 上下文判断发语音，跳过文字: {reply_text[:30]}...")
+        logger.warning(f"[决策] 上下文判断发语音，跳过文字: {reply_text[:30]}...")
         await send_voice(bot, event, reply_text)
     else:
-        print(f"[决策] 上下文判断发文字: {reply_text[:30]}...")
+        logger.info(f"[决策] 上下文判断发文字: {reply_text[:30]}...")
         parts = split_long_reply(reply_text)
         for i, part in enumerate(parts):
             if i > 0:
