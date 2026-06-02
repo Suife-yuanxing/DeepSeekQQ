@@ -8,8 +8,8 @@ from typing import List, Dict, Any, Optional
 
 from . import api
 from .config import MAX_MEMORY, AFFECTION_LEVELS
-from .database import (
 from nonebot import logger
+from .database import (
     save_message, get_recent_memories, trim_memories,
     count_memories, get_oldest_memories, get_keep_ids, delete_memories_except,
     get_affection, update_affection,
