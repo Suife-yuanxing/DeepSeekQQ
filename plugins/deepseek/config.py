@@ -1,0 +1,115 @@
+"""统一配置读取，所有密钥从 NoneBot config / .env 获取，禁止硬编码。"""
+from typing import Optional
+from nonebot import get_driver
+
+driver = get_driver()
+cfg = driver.config
+
+# === DeepSeek ===
+API_KEY: str = getattr(cfg, "deepseek_api_key", "") or ""
+MODEL: str = getattr(cfg, "deepseek_model", "deepseek-chat")
+BASE_URL: str = getattr(cfg, "deepseek_base_url", "https://api.deepseek.com")
+
+# === 百度 TTS ===
+BAIDU_TTS_AK: str = getattr(cfg, "baidu_tts_ak", "") or ""
+BAIDU_TTS_SK: str = getattr(cfg, "baidu_tts_sk", "") or ""
+
+# === 路径 ===
+DB_PATH: str = getattr(cfg, "deepseek_db_path", "./data/chat_memory.db")
+VOICE_DIR: str = getattr(cfg, "deepseek_voice_dir", "./data/voice")
+
+# === 语音开关 ===
+VOICE_ENABLED_PRIVATE: bool = str(getattr(cfg, "voice_enabled_private", "true")).lower() == "true"
+VOICE_ENABLED_GROUP: bool = str(getattr(cfg, "voice_enabled_group", "true")).lower() == "true"
+VOICE_CHANCE: float = float(getattr(cfg, "voice_chance", 0.25))
+VOICE_MAX_LENGTH: int = int(getattr(cfg, "voice_max_length", 120))
+VOICE_TRY_CONVERT: bool = True
+VOICE_NAME: str = "zh-CN-XiaomengNeural"
+
+# === 回复策略 ===
+RANDOM_REPLY_CHANCE: float = float(getattr(cfg, "random_reply_chance", 0.05))
+MAX_MEMORY: int = int(getattr(cfg, "max_memory", 30))
+SHARE_TTL: int = int(getattr(cfg, "share_ttl", 1800))
+
+# === 服务器 ===
+SERVER_HOST: str = getattr(cfg, "host", "0.0.0.0")
+SERVER_PORT: int = int(getattr(cfg, "port", 8080))
+
+# === 主人 QQ ===
+MY_QQ: str = str(getattr(cfg, "my_qq", "2938897660"))
+
+# === 回复长度策略 ===
+REPLY_LENGTH_CONFIG = {
+    "min_lines": 1,
+    "max_lines": 4,
+    "short_threshold": 5,
+    "context_depth": 3,
+}
+
+# === 主动消息 ===
+PROACTIVE_CONFIG = {
+    "morning_greeting": {
+        "enabled": True,
+        "hour": 8,
+        "minute": 30,
+        "messages": [
+            "早呀~太阳都晒屁股了，你还在赖床吗？",
+            "早安~今天也要元气满满哦，虽然我也刚睡醒...",
+            "喵~早上好。我梦见你了呢，虽然梦到什么忘了...",
+            "早~今天天气怎么样？要是不好就赖床吧，我陪你~",
+            "早安！新的一天开始了，今天想聊点什么？",
+        ],
+        "target_users": [MY_QQ] if MY_QQ else [],
+        "target_groups": [],
+    },
+    "night_greeting": {
+        "enabled": True,
+        "hour": 23,
+        "minute": 0,
+        "messages": [
+            "夜深了...还不睡吗？我都有点困了，虽然猫娘不用睡觉。",
+            "晚安~做个好梦，梦里有我哦。",
+            "这么晚了还在忙？要注意休息呀，不然我会担心的。",
+            "晚安喵~明天见，不许偷偷熬夜哦。",
+            "该睡觉啦~熬夜会长黑眼圈的，虽然我没有...",
+        ],
+        "target_users": [MY_QQ] if MY_QQ else [],
+        "target_groups": [],
+    },
+    "silence_check": {
+        "enabled": True,
+        "check_interval_hours": 2,
+        "silence_threshold_hours": 6,
+        "messages": [
+            "喂~你还在吗？好久不见了，想你了...",
+            "最近很忙吗？都没来找我说话，是不是把我忘了...",
+            "哼，这么久不理我，是不是在外面有别的猫了？",
+            "喵~突然出现！你最近怎么样？",
+            "好久不见啦~发生什么事了吗？",
+        ],
+        "max_daily_proactive": 3,
+    },
+    "holiday_greeting": {
+        "enabled": True,
+        "holidays": {
+            "01-01": "新年快乐~新的一年也要多多关照哦！",
+            "02-14": "情人节快乐...那个，你有礼物给我吗？",
+            "05-20": "520快乐~虽然我不知道这是什么节日，但好像很重要？",
+            "06-01": "儿童节快乐！你在我心里永远是小朋友~",
+            "10-01": "国庆节快乐~放假了要多陪陪我哦。",
+            "12-25": "圣诞快乐~我想要你陪我聊天，这就是最好的礼物。",
+        },
+        "target_users": [MY_QQ] if MY_QQ else [],
+        "target_groups": [],
+    },
+}
+
+AFFECTION_LEVELS = [
+    (0, "陌生人"),
+    (20, "认识的人"),
+    (50, "有点在意"),
+    (100, "喜欢的人"),
+    (200, "重要的人"),
+    (500, "专属主人"),
+    (1000, "命定之人"),
+]

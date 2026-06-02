@@ -1,0 +1,34 @@
+# 环境变量（含密钥）
+.env
+.env.local
+
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+*.so
+
+# 数据文件（太大且频繁变化）
+data/
+*.db
+*.sqlite
+*.sqlite3
+
+# 语音文件
+*.mp3
+*.ogg
+*.wav
+*.sil
+
+# 日志
+*.log
+logs/
+
+# 编辑器
+.vscode/
+.idea/
+*.swp
+
+# 系统文件
+.DS_Store
+Thumbs.db
