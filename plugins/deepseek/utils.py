@@ -1,6 +1,5 @@
 """通用工具函数。"""
 import re
-import random
 from typing import List, Dict, Any
 
 def split_long_reply(text: str) -> List[str]:
@@ -38,25 +37,6 @@ def split_long_reply(text: str) -> List[str]:
     return result
 
 
-def estimate_reply_length(user_msg: str, history: List[Dict[str, Any]]) -> Dict[str, Any]:
-    msg_len = len(user_msg.strip())
-    is_short = msg_len <= 5
-    is_question = any(kw in user_msg for kw in ["吗", "?", "？", "怎么", "为什么", "啥", "多少", "呢"])
-    is_emotional = any(kw in user_msg for kw in ["累", "难过", "开心", "喜欢", "讨厌", "想", "爱", "抱", "亲", "哼", "呜", "要"])
-    is_continuation = len(history) >= 2 and history[-1]["role"] == "assistant"
-    if is_short and not is_continuation:
-        target = random.randint(1, 2)
-        style = "简短随意"
-    elif is_emotional:
-        target = random.randint(2, 4)
-        style = "情感倾诉"
-    elif is_question:
-        target = random.randint(2, 3)
-        style = "认真回答"
-    else:
-        target = random.randint(1, 3)
-        style = "自然闲聊"
-    return {"target_lines": target, "style": style}
 
 
 def get_session_id(event) -> str:

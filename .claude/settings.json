@@ -1,0 +1,10 @@
+{
+  "enabledPlugins": {
+    "superpowers@superpowers-marketplace": true,
+    "example-skills@anthropic-agent-skills": true,
+    "regression-test@superpowers-extensions": true,
+    "pre-push-review@superpowers-extensions": true,
+    "refactor-analysis@superpowers-extensions": true,
+    "documentation-pipeline@levnikolaevich-skills-marketplace": true
+  }
+}
