@@ -3,7 +3,7 @@
 - 分享卡片去重
 - 内存缓存全局 TTL 清理（防泄漏）
 - 按平台解析 + 通用 fallback
-- 全局 URL 抓取冷却（防重复请求）
+- 全局 URL 抓取冷却（防重复请求）+ 容量上限防泄漏
 """
 import os
 import re
@@ -11,6 +11,7 @@ import json
 import hashlib
 from datetime import datetime
 from typing import Optional, List, Dict, Any
+from collections import OrderedDict
 
 import aiohttp
 
@@ -19,7 +20,21 @@ from .database import get_article_cache, save_article_cache
 from .api import get_http_session
 
 _recent_shares: Dict[str, List[Dict[str, Any]]] = {}
-_url_fetch_cooldown: Dict[str, float] = {}  # url -> 上次抓取时间
+
+# 使用 OrderedDict 实现 LRU，限制最大容量防止无限增长
+class LRUCooldownDict(OrderedDict):
+    MAX_SIZE = 500  # 最多缓存 500 个 URL
+
+    def __setitem__(self, key, value):
+        if key in self:
+            self.move_to_end(key)
+        else:
+            if len(self) >= self.MAX_SIZE:
+                oldest = next(iter(self))
+                del self[oldest]
+        super().__setitem__(key, value)
+
+_url_fetch_cooldown: Dict[str, float] = LRUCooldownDict()
 URL_FETCH_COOLDOWN_SECONDS = 300  # 5分钟内不重复抓取同一URL
 
 
@@ -63,12 +78,10 @@ def _is_valid_share(s: Dict[str, Any]) -> bool:
 
 async def fetch_url_content(url: str) -> Optional[Dict[str, str]]:
     """增强版网页抓取，按平台解析，带缓存和全局冷却。"""
-    # 全局冷却检查
     now = datetime.now().timestamp()
     last_fetch = _url_fetch_cooldown.get(url, 0)
     if now - last_fetch < URL_FETCH_COOLDOWN_SECONDS:
-        print(f"[分享] URL 在冷却中，跳过抓取: {url[:60]}")
-        # 尝试从缓存返回
+        # 冷却中，尝试返回缓存
         cache_key = hashlib.md5(url.encode()).hexdigest()
         cached = await get_article_cache(cache_key)
         if cached:
@@ -78,7 +91,6 @@ async def fetch_url_content(url: str) -> Optional[Dict[str, str]]:
     cache_key = hashlib.md5(url.encode()).hexdigest()
     cached = await get_article_cache(cache_key)
     if cached:
-        print(f"[分享] 命中缓存: {url[:60]}")
         return cached
 
     headers = {
@@ -99,7 +111,6 @@ async def fetch_url_content(url: str) -> Optional[Dict[str, str]]:
             if resp.status != 200:
                 return None
             final_url = str(resp.url)
-            # 限制 HTML 大小，防止内存爆炸
             html = await resp.text()
             if len(html) > 500_000:
                 html = html[:500_000]
@@ -155,7 +166,6 @@ def _parse_by_platform(html: str, url: str) -> Optional[Dict[str, str]]:
         title = re.sub(r'<[^>]+>', '', title.group(1)).strip() if title else "B站专栏"
         author = re.search(r'"name":"([^"]+)"', html)
         author = author.group(1) if author else "未知UP"
-        # 修复：去掉多余的 < （原 typo）
         content = re.search(
             r'<div[^>]*id="read-article-holder"[^>]*>(.*?)</div>\s*<div[^>]*class="[^"]*bottom-bar',
             html, re.DOTALL
@@ -224,11 +234,9 @@ def _parse_by_platform(html: str, url: str) -> Optional[Dict[str, str]]:
 
 def _parse_generic(html: str) -> Optional[Dict[str, str]]:
     """通用解析。安全清理大HTML。"""
-    # 限制大小防止正则回溯
     if len(html) > 500_000:
         html = html[:500_000]
 
-    # 使用更安全的正则，避免灾难性回溯
     text = re.sub(r'<script\b[^<]*(?:(?!</script>)<[^<]*)*</script>', '', html, flags=re.DOTALL | re.IGNORECASE)
     text = re.sub(r'<style\b[^<]*(?:(?!</style>)<[^<]*)*</style>', '', text, flags=re.DOTALL | re.IGNORECASE)
     text = re.sub(r'<nav\b[^<]*(?:(?!</nav>)<[^<]*)*</nav>', '', text, flags=re.DOTALL | re.IGNORECASE)
@@ -332,7 +340,7 @@ async def global_cleanup_shares():
             expired_sessions.append(sid)
     for sid in expired_sessions:
         del _recent_shares[sid]
-    # 清理全局 URL 冷却
+    # 清理全局 URL 冷却（LRU 会自动处理，但这里也清理过期的）
     expired_urls = [u for u, t in list(_url_fetch_cooldown.items()) if now - t > URL_FETCH_COOLDOWN_SECONDS * 2]
     for u in expired_urls:
         del _url_fetch_cooldown[u]
@@ -344,7 +352,7 @@ async def extract_and_cache_shares(event, session_id: str) -> bool:
     """提取消息中的分享内容并缓存。修复了卡片重复添加问题。"""
     msg = event.get_message()
     shares = []
-    seen_urls = set()  # 去重
+    seen_urls = set()
 
     for seg in msg:
         if seg.type == "text":

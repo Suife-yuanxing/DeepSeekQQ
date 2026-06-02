@@ -6,11 +6,11 @@ import asyncio
 import shutil
 from pathlib import Path
 
-from nonebot import on_message, get_driver
+from nonebot import on_message, get_driver, logger
 from nonebot.adapters.onebot.v11 import Bot, MessageEvent
 
 from .config import VOICE_DIR, SERVER_HOST, SERVER_PORT
-from .database import init_db, close_db
+from .database import init_db, close_db, checkpoint_db
 from .api import close_http_session
 from .proactive import register_proactive_jobs, shutdown_proactive
 from .handler import handle_chat
@@ -41,24 +41,24 @@ async def on_start():
                 voice_path = Path(VOICE_DIR).resolve()
                 try:
                     file_path = (voice_path / filename).resolve()
-                    if not str(file_path).startswith(str(voice_path)):
+                    if not file_path.is_relative_to(voice_path):
                         return {"error": "invalid path"}
                     if file_path.exists():
                         return FileResponse(str(file_path), media_type="audio/mpeg")
                     return {"error": "not found"}
                 except Exception:
                     return {"error": "invalid path"}
-            print(f"   语音文件服务已挂载: http://{SERVER_HOST}:{SERVER_PORT}/voice/")
+            logger.info(f"语音文件服务已挂载: http://{SERVER_HOST}:{SERVER_PORT}/voice/")
     except Exception as e:
-        print(f"   语音文件服务挂载失败: {e}")
+        logger.warning(f"语音文件服务挂载失败: {e}")
 
     has_ff = shutil.which("ffmpeg") is not None
-    print(f"✅ DeepSeek猫娘插件已启动~ 喵！")
-    print(f"   ffmpeg 检测: {'已安装 ✅' if has_ff else '未安装 ❌ 语音可能无法发送'}")
-    print(f"   语音开关: 私聊=True, 群聊=True")
-    print(f"   群聊随机回复概率: {5.0}%")
+    logger.info("✅ DeepSeek猫娘插件已启动~ 喵！")
+    logger.info(f"ffmpeg 检测: {'已安装 ✅' if has_ff else '未安装 ❌ 语音可能无法发送'}")
+    logger.info(f"语音开关: 私聊=True, 群聊=True")
+    logger.info(f"群聊随机回复概率: {5.0}%")
 
-    # 延迟注册主动消息
+    # 延迟注册主动消息（带异常保护）
     async def _wait_and_register():
         await asyncio.sleep(15)
         try:
@@ -68,17 +68,46 @@ async def on_start():
                 bot = list(bots.values())[0]
                 await register_proactive_jobs(bot)
             else:
-                print("[主动消息] Bot未连接，跳过")
+                logger.warning("[主动消息] Bot未连接，跳过")
         except Exception as e:
-            print(f"[主动消息] 注册失败: {e}")
-    asyncio.create_task(_wait_and_register())
+            logger.error(f"[主动消息] 注册失败: {e}")
 
-    # 每小时清理一次过期分享缓存
+    asyncio.create_task(_protected_task("主动消息注册", _wait_and_register))
+
+    # 每小时清理一次过期分享缓存（带异常保护）
     async def _periodic_share_cleanup():
         while True:
-            await asyncio.sleep(3600)
-            await global_cleanup_shares()
-    asyncio.create_task(_periodic_share_cleanup())
+            try:
+                await asyncio.sleep(3600)
+                await global_cleanup_shares()
+            except Exception as e:
+                logger.error(f"[清理任务] 分享缓存清理异常: {e}")
+
+    asyncio.create_task(_protected_task("分享缓存清理", _periodic_share_cleanup))
+
+    # 每 2 小时自动 checkpoint WAL，防止日志膨胀
+    async def _periodic_checkpoint():
+        while True:
+            try:
+                await asyncio.sleep(7200)
+                await checkpoint_db()
+                logger.info("[数据库] WAL checkpoint 完成")
+            except Exception as e:
+                logger.error(f"[数据库] checkpoint 异常: {e}")
+
+    asyncio.create_task(_protected_task("WAL checkpoint", _periodic_checkpoint))
+
+
+async def _protected_task(name: str, coro_func):
+    """包装后台任务，异常后自动重启，防止静默死亡。"""
+    while True:
+        try:
+            await coro_func()
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            logger.error(f"[{name}] 任务异常，5秒后重启: {e}")
+            await asyncio.sleep(5)
 
 
 @driver.on_shutdown
@@ -86,4 +115,4 @@ async def _on_shutdown():
     await shutdown_proactive()
     await close_http_session()
     await close_db()
-    print("✅ 插件资源已释放")
+    logger.info("✅ 插件资源已释放")

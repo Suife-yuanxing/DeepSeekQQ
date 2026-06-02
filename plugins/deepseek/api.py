@@ -15,7 +15,7 @@ from .utils import clean_api_response
 _http_session: Optional[aiohttp.ClientSession] = None
 
 async def get_http_session() -> aiohttp.ClientSession:
-    """获取全局复用的 HTTP Session。"""
+    """获取全局复用的 HTTP Session。异常后自动重建。"""
     global _http_session
     if _http_session is None or _http_session.closed:
         _http_session = aiohttp.ClientSession()
@@ -45,11 +45,11 @@ async def call_deepseek_api(messages: List[Dict[str, str]], temperature: float =
         "stream": False
     }
 
-    session = await get_http_session()
     last_exception = None
 
     for attempt in range(3):
         try:
+            session = await get_http_session()
             async with session.post(
                 url,
                 headers=headers,
@@ -65,8 +65,16 @@ async def call_deepseek_api(messages: List[Dict[str, str]], temperature: float =
                 data = await resp.json()
                 content = data["choices"][0]["message"]["content"]
                 return clean_api_response(content)
-        except asyncio.TimeoutError:
-            last_exception = "请求超时"
+        except (asyncio.TimeoutError, aiohttp.ClientError) as e:
+            last_exception = str(e)
+            # 网络异常时重置 Session，下次自动重建
+            global _http_session
+            if _http_session:
+                try:
+                    await _http_session.close()
+                except Exception:
+                    pass
+                _http_session = None
             await asyncio.sleep(2 ** attempt)
         except Exception as e:
             last_exception = str(e)

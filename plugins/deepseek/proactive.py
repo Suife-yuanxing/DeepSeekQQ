@@ -83,16 +83,26 @@ async def _holiday_greeting(bot):
 
 
 async def register_proactive_jobs(bot):
-    """注册主动消息定时任务。支持插件重载后更新 bot 实例。"""
+    """注册主动消息定时任务。支持插件重载后更新 bot 实例。使用 NoneBot 现有事件循环。"""
     global _scheduler, _registered_bot_id
     bot_id = id(bot)
     if _scheduler and _registered_bot_id == bot_id:
         return
     
     if _scheduler:
-        _scheduler.shutdown(wait=False)
+        try:
+            _scheduler.shutdown(wait=True)
+        except Exception:
+            pass
     
-    _scheduler = AsyncIOScheduler()
+    # 使用 NoneBot 现有的事件循环，避免冲突
+    try:
+        import nonebot
+        loop = nonebot.get_driver().loop
+    except Exception:
+        loop = asyncio.get_event_loop()
+    
+    _scheduler = AsyncIOScheduler(event_loop=loop)
     _registered_bot_id = bot_id
 
     mg = PROACTIVE_CONFIG["morning_greeting"]
@@ -118,7 +128,7 @@ async def register_proactive_jobs(bot):
 async def shutdown_proactive():
     global _scheduler, _registered_bot_id
     if _scheduler:
-        _scheduler.shutdown(wait=False)
+        _scheduler.shutdown(wait=True)
         _scheduler = None
         _registered_bot_id = None
         print("✅ 主动消息调度器已关闭")

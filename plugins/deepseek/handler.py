@@ -54,7 +54,6 @@ def _build_system_prompt(
 ) -> str:
     time_context = _get_time_context()
     
-    # 核心设定：时间置顶，用【】强调
     core_identity = f'''{time_context}
 
 【你是谁】
@@ -82,7 +81,6 @@ def _build_system_prompt(
 错误：（看到你终于多打了一个字，忍不住偷笑起来）
 正确：多打了一个字，有进步。'''
 
-    # 状态描述
     state_lines = []
     if affection["score"] >= 500:
         state_lines.append("你对这个人非常亲密，会撒娇、主动关心、偶尔任性，语气很软。")
@@ -116,6 +114,19 @@ def _build_system_prompt(
 
 
 async def handle_chat(bot: Bot, event: MessageEvent):
+    try:
+        await _handle_chat_inner(bot, event)
+    except Exception as e:
+        import traceback
+        print(f"[handle_chat] 严重异常: {e}")
+        traceback.print_exc()
+        try:
+            await bot.send(event, Message("呜...脑袋有点乱，让我缓缓..."))
+        except Exception:
+            pass
+
+
+async def _handle_chat_inner(bot: Bot, event: MessageEvent):
     raw_msg = event.get_message().extract_plain_text().strip()
     session_id = get_session_id(event)
     is_group = isinstance(event, GroupMessageEvent)
@@ -142,15 +153,17 @@ async def handle_chat(bot: Bot, event: MessageEvent):
 
     shares_now = get_recent_shares(session_id)
     latest_share = shares_now[-1] if shares_now else None
+    
+    # 小黑盒处理：用户粘贴正文后，立即分析，不需要再发一次消息
     if latest_share and latest_share.get("needs_paste") and latest_share.get("platform") == "小黑盒":
         if raw_msg and len(raw_msg) > 100 and not any(kw in raw_msg for kw in ["讲了什么", "是什么", "怎么看", "这个呢"]):
+            # 用户粘贴了正文，保存后继续正常流程分析
             latest_share["summary"] = raw_msg[:2000]
             latest_share["needs_paste"] = False
             latest_share["restricted"] = False
-            print(f"[分享] 用户补充了小黑盒正文，长度: {len(raw_msg)}")
-            await bot.send(event, Message("收到~让我看看写了什么..."))
-            return
-        if any(kw in raw_msg for kw in ["讲了什么", "是什么", "内容", "说了什么", "这个呢", "怎么看", "分析一下", "评价"]):
+            print(f"[分享] 用户补充了小黑盒正文，长度: {len(raw_msg)}，继续分析...")
+            # 不 return，继续下面的分析流程
+        elif any(kw in raw_msg for kw in ["讲了什么", "是什么", "内容", "说了什么", "这个呢", "怎么看", "分析一下", "评价"]):
             await bot.send(event, Message("小黑盒的内容网页端看不了呢...你把正文复制粘贴给我，我帮你分析~"))
             return
 
@@ -203,6 +216,8 @@ async def handle_chat(bot: Bot, event: MessageEvent):
 
     reply_text = await call_deepseek_api(messages)
     reply_text = filter_novel_actions(reply_text)
+    
+    # 保存回复到数据库（无论文字还是语音都要保存）
     await save_reply(session_id, user_id, raw_msg, reply_text)
 
     send_as_voice = should_send_voice(raw_msg, reply_text, recent_memories)
