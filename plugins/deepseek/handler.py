@@ -55,31 +55,48 @@ async def _handle_chat_inner(bot: Bot, event: MessageEvent):
 
     if not raw_msg and has_share:
         if not is_group or event.is_tome() or random.random() < 0.3:
-            # 检查是否是表情类型，做情绪回应
             recent = get_recent_shares(session_id)
             last_share = recent[-1] if recent else None
             if last_share and last_share.get("type") == "表情":
                 emoji_text = last_share.get("summary", "")
-                # 从 summary 中提取表情描述
                 import re as _re
-                emoji_match = _re.search(r'用户发送了(?:QQ表情|QQ商城表情|QQ内置表情)[：:]?\s*(.+?)]', emoji_text)
+                emoji_match = _re.search(r'用户发送了(?:QQ表情|QQ商城表情|QQ内置表情|表情)[：:]?\s*(.+?)]', emoji_text)
                 emoji_name = emoji_match.group(1).strip() if emoji_match else "表情"
-                # 根据表情类型做情绪回应
-                sad_emojis = ["大哭", "流泪", "难过", "委屈", "心碎"]
-                happy_emojis = ["微笑", "偷笑", "愉快", "呲牙", "得意", "爱心", "赞"]
-                angry_emojis = ["发怒", "咒骂", "骷髅"]
-                shy_emojis = ["害羞", "色", "飞吻"]
-                if any(e in emoji_name for e in sad_emojis):
-                    responses = ["怎么啦，不开心吗？", "呜...你别难过呀", "摸摸头，怎么了嘛", "发生什么事了？跟我说说"]
-                elif any(e in emoji_name for e in happy_emojis):
-                    responses = ["嘻嘻，心情不错嘛~", "嘿嘿，笑什么呢", "这么开心，有什么好事？", "看到你笑我也开心~"]
-                elif any(e in emoji_name for e in angry_emojis):
-                    responses = ["呜哇，谁惹你生气了？", "别气别气，深呼吸~", "怎么了嘛，发这么大火"]
-                elif any(e in emoji_name for e in shy_emojis):
-                    responses = ["哎呀，害羞什么嘛~", "嘿嘿，你在想什么呢", "哦？这是什么意思呀~"]
+                # 用 LLM 生成猫娘个性化回应
+                emotion_prompt = f"用户给你发了一个QQ表情「{emoji_name}」，没有说其他话。"
+                emoji_sys = (
+                    "你是一只猫娘，正在QQ上和人聊天。用户只给你发了一个表情，没有文字。"
+                    "根据表情的含义，用你的性格（猫系、会调侃、嘴硬、偶尔撒娇）回复1-2句。"
+                    "口语化、短句、像发QQ消息。不要加括号动作。"
+                    "如果适合发表情包，在末尾加 [sticker:情绪]（happy/angry/shy/sad/tsundere/cute/funny/love/speechless/exited）。大约40%概率加。"
+                )
+                emoji_messages = [
+                    {"role": "system", "content": emoji_sys},
+                    {"role": "user", "content": emotion_prompt}
+                ]
+                reply_text = await call_deepseek_api(emoji_messages, temperature=1.0)
+                reply_text = filter_novel_actions(reply_text)
+                # 解析表情包标签并发送
+                clean_reply, sticker_kept = filter_sticker_tag(reply_text, session_id)
+                if sticker_kept:
+                    send_text, sticker_emotion = parse_sticker_tag(clean_reply)
                 else:
-                    responses = [f"喵~你发了个{emoji_name}呀", f"嘿嘿，{emoji_name}~", f"收到你的{emoji_name}了~"]
-                await bot.send(event, Message(random.choice(responses)))
+                    send_text = clean_reply
+                    sticker_emotion = should_send_sticker_fallback(reply_text)
+                if send_text.strip():
+                    parts = split_long_reply(send_text)
+                    for i, part in enumerate(parts):
+                        if i > 0:
+                            await asyncio.sleep(random.uniform(0.8, 1.5))
+                        await bot.send(event, Message(part))
+                if sticker_emotion:
+                    sticker_path = select_sticker(sticker_emotion)
+                    if sticker_path:
+                        await asyncio.sleep(0.8)
+                        await bot.send(event, MessageSegment.image(file=Path(sticker_path)))
+                        logger.info(f"[表情包] 回应表情: {sticker_emotion} -> {os.path.basename(sticker_path)}")
+                # 保存回复
+                await save_reply(session_id, user_id, f"[表情:{emoji_name}]", send_text)
             else:
                 reactions = [
                     "喵？这是...让我看看~", "哦？什么东西，我瞧瞧~",
