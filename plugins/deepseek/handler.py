@@ -1,7 +1,9 @@
 """主消息处理器"""
+import os
 import asyncio
 import random
 import re
+from pathlib import Path
 from typing import List, Dict, Any
 
 from nonebot.adapters.onebot.v11 import Bot, MessageEvent, GroupMessageEvent, Message
@@ -19,6 +21,7 @@ from .search import should_search, search, format_search_for_prompt, extract_sea
 from .reminder import is_reminder_request, create_reminder, list_reminders, cancel_reminder_by_id, get_pending_reminders_context
 from .world_context import build_world_context_prompt, extract_city_from_message
 from .media import split_reply_and_links, extract_shareable_from_search, build_rich_message
+from .sticker import parse_sticker_tag, select_sticker, should_send_sticker_fallback
 from nonebot import logger
 
 
@@ -196,15 +199,21 @@ async def _handle_chat_inner(bot: Bot, event: MessageEvent):
     # 保存回复到数据库
     await save_reply(session_id, user_id, raw_msg, reply_text)
 
+    # 解析表情包标签
+    clean_text, sticker_emotion = parse_sticker_tag(reply_text)
+    if not sticker_emotion:
+        # LLM 没加标签，fallback 判断
+        sticker_emotion = should_send_sticker_fallback(reply_text, analysis.emotion.dominant if analysis.emotion.confidence >= 0.4 else None)
+
     # 提取回复中的链接和搜索结果
-    clean_text, reply_urls = split_reply_and_links(reply_text)
+    text_for_links = clean_text if sticker_emotion else reply_text
+    text_for_links, reply_urls = split_reply_and_links(text_for_links)
     search_items = extract_shareable_from_search(search_result) if search_result else []
 
     send_as_voice = should_send_voice(raw_msg, reply_text, recent_memories)
     if send_as_voice:
         logger.warning(f"[决策] 上下文判断发语音，跳过文字: {reply_text[:30]}...")
         await send_voice(bot, event, reply_text)
-        # 语音之后如果有链接，单独发一条
         if reply_urls or search_items:
             rich_msg = build_rich_message("", reply_urls, search_items)
             if rich_msg:
@@ -212,17 +221,25 @@ async def _handle_chat_inner(bot: Bot, event: MessageEvent):
                 await bot.send(event, rich_msg)
     else:
         logger.info(f"[决策] 上下文判断发文字: {reply_text[:30]}...")
-        # 构建富文本消息（文字+链接）
+        final_text = clean_text if sticker_emotion else reply_text
         if reply_urls or search_items:
-            rich_msg = build_rich_message(clean_text or reply_text, reply_urls, search_items)
+            rich_msg = build_rich_message(final_text, reply_urls, search_items)
             parts = split_long_reply(str(rich_msg))
             for i, part in enumerate(parts):
                 if i > 0:
                     await asyncio.sleep(random.uniform(1.0, 2.5))
                 await bot.send(event, Message(part))
         else:
-            parts = split_long_reply(reply_text)
+            parts = split_long_reply(final_text)
             for i, part in enumerate(parts):
                 if i > 0:
                     await asyncio.sleep(random.uniform(1.0, 2.5))
                 await bot.send(event, Message(part))
+
+    # 发送表情包
+    if sticker_emotion:
+        sticker_path = select_sticker(sticker_emotion)
+        if sticker_path:
+            await asyncio.sleep(0.8)
+            await bot.send(event, MessageSegment.image(file=Path(sticker_path)))
+            logger.info(f"[表情包] 发送: {sticker_emotion} -> {os.path.basename(sticker_path)}")

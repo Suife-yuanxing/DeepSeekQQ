@@ -135,7 +135,7 @@ REMINDER_ENABLED: bool = str(getattr(cfg, "reminder_enabled", "true")).lower() =
 REMINDER_CHECK_INTERVAL: int = int(getattr(cfg, "reminder_check_interval", 30))
 
 # === Phase 5: 表情包 ===
-STICKER_ENABLED: bool = str(getattr(cfg, "sticker_enabled", "false")).lower() == "true"
+STICKER_ENABLED: bool = str(getattr(cfg, "sticker_enabled", "true")).lower() == "true"
 STICKER_DIR: str = getattr(cfg, "sticker_dir", "./data/stickers")
 
 # === Phase 6: 天气 (和风天气) ===
