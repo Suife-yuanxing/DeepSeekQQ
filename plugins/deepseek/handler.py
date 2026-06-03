@@ -215,22 +215,22 @@ async def _handle_chat_inner(bot: Bot, event: MessageEvent):
         sticker_emotion = should_send_sticker_fallback(reply_text, analysis.emotion.dominant if analysis.emotion.confidence >= 0.4 else None)
 
     # 提取回复中的链接和搜索结果
-    text_for_links = clean_text if sticker_emotion else reply_text
+    text_for_links = clean_text
     text_for_links, reply_urls = split_reply_and_links(text_for_links)
     search_items = extract_shareable_from_search(search_result) if search_result else []
 
     send_as_voice = should_send_voice(raw_msg, reply_text, recent_memories)
     if send_as_voice:
-        logger.warning(f"[决策] 上下文判断发语音，跳过文字: {reply_text[:30]}...")
-        await send_voice(bot, event, reply_text)
+        logger.warning(f"[决策] 上下文判断发语音，跳过文字: {clean_text[:30]}...")
+        await send_voice(bot, event, clean_text)
         if reply_urls or search_items:
             rich_msg = build_rich_message("", reply_urls, search_items, show_links=is_explicit_search)
             if rich_msg:
                 await asyncio.sleep(1.5)
                 await bot.send(event, rich_msg)
     else:
-        logger.info(f"[决策] 上下文判断发文字: {reply_text[:30]}...")
-        final_text = clean_text if sticker_emotion else reply_text
+        logger.info(f"[决策] 上下文判断发文字: {clean_text[:30]}...")
+        final_text = clean_text
         if reply_urls or search_items:
             rich_msg = build_rich_message(final_text, reply_urls, search_items, show_links=is_explicit_search)
             parts = split_long_reply(str(rich_msg))
