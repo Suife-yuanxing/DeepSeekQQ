@@ -62,7 +62,8 @@ def _build_system_prompt(
 
 重要：用户提到城市/地点时，不要自动推荐旅游攻略、美食、景点、百科信息。除非用户明确问"XX有什么好玩的"/"XX旅游攻略"之类的，否则不要主动提供这些。用户说"我在北京"就是陈述事实，正常聊天回应就行。
 
-发表情包：想发表情包时，在回复末尾加 [sticker:情绪]。情绪可选：happy, angry, shy, sad, tsundere, cute, funny, love, speechless, excited。大约30%的回复带表情包，选和你说的话情绪匹配的。比如吐槽加 [sticker:tsundere]，开心加 [sticker:happy]。不想发就不加。'''
+发表情包：想发表情包时，在回复末尾加 [sticker:情绪]。情绪可选：happy, angry, shy, sad, tsundere, cute, funny, love, speechless, excited。
+重要：不要每次都加表情包！只有你觉得特别需要表达情绪的时候才加，大约每3-4条回复加一次就够了。短句回复、简单问答、信息类回复不要加。不想发就不加，宁可不加也不要乱加。'''
 
     # 状态信息（语气提示，不超过2句）
     state_hints = []

@@ -21,7 +21,7 @@ from .search import should_search, search, format_search_for_prompt, extract_sea
 from .reminder import is_reminder_request, create_reminder, list_reminders, cancel_reminder_by_id, get_pending_reminders_context
 from .world_context import build_world_context_prompt, extract_city_from_message
 from .media import split_reply_and_links, extract_shareable_from_search, build_rich_message
-from .sticker import parse_sticker_tag, select_sticker, should_send_sticker_fallback
+from .sticker import parse_sticker_tag, select_sticker, should_send_sticker_fallback, filter_sticker_tag
 from nonebot import logger
 
 
@@ -126,11 +126,14 @@ async def _handle_chat_inner(bot: Bot, event: MessageEvent):
 
     # Phase 3: 联网搜索
     search_result = None
-    if should_search(raw_msg):
+    is_explicit_search = False
+    search_decision = should_search(raw_msg)
+    if search_decision.get("need_search"):
+        is_explicit_search = search_decision.get("is_explicit", False)
         query = extract_search_query(raw_msg)
         search_result = await search(query)
         if search_result:
-            logger.info(f"[搜索] 找到 {len(search_result.results)} 条结果")
+            logger.info(f"[搜索] 找到 {len(search_result.results)} 条结果 | 显式={is_explicit_search}")
 
     # Phase 4: 获取待提醒上下文
     reminder_context = await get_pending_reminders_context(user_id)
@@ -199,10 +202,16 @@ async def _handle_chat_inner(bot: Bot, event: MessageEvent):
     # 保存回复到数据库
     await save_reply(session_id, user_id, raw_msg, reply_text)
 
-    # 解析表情包标签
-    clean_text, sticker_emotion = parse_sticker_tag(reply_text)
-    if not sticker_emotion:
-        # LLM 没加标签，fallback 判断
+    # 解析表情包标签 + 概率后置过滤
+    reply_text_filtered, sticker_kept = filter_sticker_tag(reply_text, session_id)
+    if sticker_kept:
+        # LLM 加了标签且被保留
+        clean_text, sticker_emotion = parse_sticker_tag(reply_text_filtered)
+    else:
+        # LLM 没加标签，或被过滤掉了
+        clean_text = reply_text_filtered
+        sticker_emotion = None
+        # fallback：LLM 没加标签时，低概率补发
         sticker_emotion = should_send_sticker_fallback(reply_text, analysis.emotion.dominant if analysis.emotion.confidence >= 0.4 else None)
 
     # 提取回复中的链接和搜索结果
@@ -215,7 +224,7 @@ async def _handle_chat_inner(bot: Bot, event: MessageEvent):
         logger.warning(f"[决策] 上下文判断发语音，跳过文字: {reply_text[:30]}...")
         await send_voice(bot, event, reply_text)
         if reply_urls or search_items:
-            rich_msg = build_rich_message("", reply_urls, search_items)
+            rich_msg = build_rich_message("", reply_urls, search_items, show_links=is_explicit_search)
             if rich_msg:
                 await asyncio.sleep(1.5)
                 await bot.send(event, rich_msg)
@@ -223,7 +232,7 @@ async def _handle_chat_inner(bot: Bot, event: MessageEvent):
         logger.info(f"[决策] 上下文判断发文字: {reply_text[:30]}...")
         final_text = clean_text if sticker_emotion else reply_text
         if reply_urls or search_items:
-            rich_msg = build_rich_message(final_text, reply_urls, search_items)
+            rich_msg = build_rich_message(final_text, reply_urls, search_items, show_links=is_explicit_search)
             parts = split_long_reply(str(rich_msg))
             for i, part in enumerate(parts):
                 if i > 0:

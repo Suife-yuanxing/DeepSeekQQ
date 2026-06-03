@@ -106,6 +106,47 @@ def parse_sticker_tag(text: str) -> Tuple[str, Optional[str]]:
     return text, None
 
 
+# ---------- 连续表情包追踪 ----------
+_last_sticker_session: Dict[str, int] = {}  # session_id -> 连续发送次数
+MAX_CONSECUTIVE_STICKERS = 2  # 最多连续发2张，第3张强制不发
+
+STICKER_KEEP_PROBABILITY = 0.35  # LLM 加了标签时，保留概率 35%
+
+
+def filter_sticker_tag(reply_text: str, session_id: str = "") -> Tuple[str, bool]:
+    """后置过滤：LLM 返回带 [sticker:xxx] 的回复后，概率性剥掉标签。
+
+    Returns:
+        (text, should_send_sticker)
+    """
+    clean_text, emotion = parse_sticker_tag(reply_text)
+    if not emotion:
+        # LLM 没加标签，不需要过滤
+        return reply_text, False
+
+    # 连续发送检查
+    if session_id:
+        consecutive = _last_sticker_session.get(session_id, 0)
+        if consecutive >= MAX_CONSECUTIVE_STICKERS:
+            _last_sticker_session[session_id] = 0
+            logger.info(f"[表情包] 连续{consecutive}张已达上限，本次跳过")
+            return clean_text, False
+
+    # 概率过滤：35% 保留，65% 剥掉
+    import random
+    if random.random() < STICKER_KEEP_PROBABILITY:
+        # 保留，更新连续计数
+        if session_id:
+            _last_sticker_session[session_id] = _last_sticker_session.get(session_id, 0) + 1
+        return reply_text, True
+    else:
+        # 剥掉标签，重置连续计数
+        if session_id:
+            _last_sticker_session[session_id] = 0
+        logger.info(f"[表情包] 概率过滤：剥掉 {emotion} 标签")
+        return clean_text, False
+
+
 def should_send_sticker_fallback(reply_text: str, emotion_hint: str = None) -> Optional[str]:
     """如果 LLM 没有嵌入标签，根据概率和情绪决定是否发送。
 

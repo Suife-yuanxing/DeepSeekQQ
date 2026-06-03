@@ -86,10 +86,16 @@ def split_reply_and_links(reply_text: str) -> Tuple[str, List[str]]:
 # 构建富文本消息
 # ============================================================
 
-def build_rich_message(clean_text: str, urls: List[str], search_items: List[ShareableItem] = None) -> Message:
+def build_rich_message(clean_text: str, urls: List[str],
+                       search_items: List[ShareableItem] = None,
+                       show_links: bool = True) -> Message:
     """构建包含文字+链接的富文本消息。
 
-    不使用 CQ 码转发链接（会被拦截），而是把链接自然融入文字。
+    Args:
+        clean_text: 纯文字内容
+        urls: 回复中自带的 URL
+        search_items: 搜索结果（可选）
+        show_links: 是否展示搜索链接（仅用户明确要求搜索时为True）
     """
     msg = Message()
 
@@ -97,16 +103,16 @@ def build_rich_message(clean_text: str, urls: List[str], search_items: List[Shar
     if clean_text:
         msg += MessageSegment.text(clean_text)
 
-    # 如果有搜索结果链接，附加到文字后面
-    if search_items:
+    # 只有用户明确要求搜索时，才附加搜索结果链接
+    if show_links and search_items:
         link_lines = []
-        for item in search_items[:2]:  # 最多2个链接
+        for item in search_items[:2]:
             if item.url:
                 link_lines.append(f"📎 {item.title}\n{item.url}")
         if link_lines:
             msg += MessageSegment.text("\n\n" + "\n\n".join(link_lines))
 
-    # 如果回复中自带 URL 且没有搜索结果链接，也加上
+    # 回复中自带的 URL（LLM 主动分享的链接）保留
     elif urls:
         for url in urls[:2]:
             msg += MessageSegment.text(f"\n{url}")

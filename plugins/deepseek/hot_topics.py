@@ -4,15 +4,17 @@
 - 定期抓取热搜/热点话题
 - 筛选有趣、非敏感的话题
 - 以猫娘口吻主动挑起话题
+- 附带话题链接和配图
 """
 import re
 import time
 import random
 from typing import List, Dict, Any, Optional
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import aiohttp
 from nonebot import logger
+from nonebot.adapters.onebot.v11 import MessageSegment, Message
 
 from .config import MY_QQ
 from .api import get_http_session, call_deepseek_api
@@ -28,6 +30,7 @@ class HotTopic:
     hot: str = ""        # 热度
     url: str = ""        # 链接
     category: str = ""   # 分类
+    image_url: str = ""  # 配图URL
 
 
 # ============================================================
@@ -86,6 +89,48 @@ async def fetch_trending() -> List[HotTopic]:
         logger.warning(f"[热搜] 搜索获取失败: {e}")
 
     return topics
+
+
+async def fetch_topic_image(topic_title: str) -> Optional[str]:
+    """为热搜话题抓取一张配图。使用 Tavily 搜索提取图片。"""
+    try:
+        from .config import TAVILY_API_KEY
+        if not TAVILY_API_KEY:
+            return None
+
+        from tavily import AsyncTavilyClient
+        client = AsyncTavilyClient(api_key=TAVILY_API_KEY)
+
+        response = await client.search(
+            query=topic_title,
+            max_results=3,
+            search_depth="basic",
+            include_images=True,
+        )
+
+        # 从 images 字段获取
+        images = response.get("images", [])
+        if images:
+            for img in images:
+                if isinstance(img, dict):
+                    img_url = img.get("url", "")
+                else:
+                    img_url = str(img)
+                if img_url and any(ext in img_url.lower() for ext in [".jpg", ".jpeg", ".png", ".webp", ".gif"]):
+                    return img_url
+
+        # 从 results 中提取 og:image 类的图片
+        for item in response.get("results", []):
+            img_url = item.get("image", "") or item.get("thumbnail", "")
+            if img_url:
+                return img_url
+
+    except ImportError:
+        logger.debug("[热搜] tavily-python 未安装，跳过图片抓取")
+    except Exception as e:
+        logger.debug(f"[热搜] 图片抓取失败: {e}")
+
+    return None
 
 
 def filter_topics(topics: List[HotTopic]) -> List[HotTopic]:
@@ -214,11 +259,33 @@ async def check_and_push_topics(bot) -> None:
     # 生成推送消息
     msg = await generate_push_message(topic)
 
+    # 抓取配图
+    image_url = await fetch_topic_image(topic.title)
+    if image_url:
+        topic.image_url = image_url
+        logger.info(f"[热搜] 配图: {image_url[:80]}")
+
     # 推送给主人
     target_users = [MY_QQ] if MY_QQ else []
     for user_id in target_users:
         try:
-            await bot.send_private_msg(user_id=int(user_id), message=msg)
+            # 构建多段消息：文字 → 图片 → 链接
+            rich_msg = Message()
+            rich_msg += MessageSegment.text(msg)
+
+            # 附带配图
+            if topic.image_url:
+                try:
+                    rich_msg += MessageSegment.text("\n")
+                    rich_msg += MessageSegment.image(topic.image_url)
+                except Exception as e:
+                    logger.debug(f"[热搜] 图片发送失败: {e}")
+
+            # 附带链接
+            if topic.url:
+                rich_msg += MessageSegment.text(f"\n🔗 {topic.url}")
+
+            await bot.send_private_msg(user_id=int(user_id), message=rich_msg)
             logger.info(f"[热搜] 已推送给 {user_id}: {topic.title[:30]}")
             _today_push_count += 1
             _last_push_time = time.time()

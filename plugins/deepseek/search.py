@@ -32,10 +32,11 @@ class SearchResult:
 # 搜索触发判断
 # ============================================================
 
-# 显式搜索关键词
+# 显式搜索关键词（用户明确要求搜索）
 _EXPLICIT_SEARCH_KEYWORDS = [
     "搜一下", "搜索", "查一下", "查查", "帮我查", "帮我搜",
-    "百度一下", "谷歌", "google", "搜一搜",
+    "百度一下", "谷歌", "google", "搜一搜", "查一查",
+    "帮我找", "找一下", "搜搜", "看看新闻", "有什么新闻",
 ]
 
 # 时间敏感词（暗示需要最新信息）
@@ -48,19 +49,36 @@ _TIME_SENSITIVE_KEYWORDS = [
 _FACT_PATTERNS = [
     r".*多少钱", r".*价格", r".*在哪", r".*地址",
     r".*怎么去", r".*什么时候", r".*几点",
-    r".*是谁", r".*是什么", r".*怎么样",
-    r"现在.*", r"今天.*天气.*",
+    r".*是谁", r".*是什么",
+    r"现在.*",
+]
+
+# 闲聊排除模式（这些场景即使匹配了时间敏感词也不搜索）
+_CASUAL_EXCLUDE_PATTERNS = [
+    r'^.{0,4}(吗|嘛|吧|呢|啊|呀|哦|啦|哈|嘛)$',  # 短句语气词结尾
+    r'^(嗯|哦|好|行|对|是|嗯嗯|好的|哈哈|嘿嘿|呜|哼|额|唔|666)',  # 简短回应
+    r'^(你在|你在吗|在吗|在不在|干嘛|干嘛呢|干啥)',  # 问候/闲聊
+    r'(想你|喜欢你|讨厌|哼|抱抱|亲亲|摸摸|乖|可爱)',  # 情感表达
+    r'(晚安|早安|早上好|晚上好|下午好|中午好|拜拜|再见|明天见)',  # 寒暄
+    r'^(啥|怎么了|怎么啦|咋了|咋啦|出了什么事)',  # 简短追问
 ]
 
 
-def should_search(user_msg: str) -> bool:
-    """判断用户消息是否需要联网搜索。"""
+def should_search(user_msg: str) -> dict:
+    """判断用户消息是否需要联网搜索。
+
+    Returns:
+        {"need_search": bool, "is_explicit": bool}
+        - need_search: 是否需要搜索
+        - is_explicit: 是否用户明确要求搜索（决定是否展示链接）
+    """
+    empty_result = {"need_search": False, "is_explicit": False}
     if not SEARCH_ENABLED or not TAVILY_API_KEY:
-        return False
+        return empty_result
 
     msg = user_msg.strip()
 
-    # 排除：简单的地点陈述（"我在XX"、"来XX了"、"去XX"、"XX人"等）
+    # 排除：简单的地点陈述
     _location_only_patterns = [
         r'^我在[一-龥]{2,4}$',
         r'^来[一-龥]{2,4}了?$',
@@ -68,35 +86,43 @@ def should_search(user_msg: str) -> bool:
         r'^去[一-龥]{2,4}$',
         r'^[一-龥]{2,4}人$',
         r'^[一-龥]{2,4}(的|呢)$',
-        r'^[一-龥]{2,4}(今天|现在)?天气',  # 天气由天气模块处理
+        r'^[一-龥]{2,4}(今天|现在)?天气',
     ]
     for pattern in _location_only_patterns:
         if re.match(pattern, msg):
-            return False
+            return empty_result
 
-    # 1. 显式搜索请求
+    # 排除：闲聊场景
+    for pattern in _CASUAL_EXCLUDE_PATTERNS:
+        if re.match(pattern, msg):
+            return empty_result
+
+    # 排除：过短消息（<6字且不含搜索关键词）
+    if len(msg) < 6 and not any(kw in msg for kw in _EXPLICIT_SEARCH_KEYWORDS):
+        return empty_result
+
+    # 1. 显式搜索请求 → 需要搜索 + 展示链接
     if any(kw in msg for kw in _EXPLICIT_SEARCH_KEYWORDS):
-        return True
+        return {"need_search": True, "is_explicit": True}
 
-    # 2. 时间敏感词 + 疑问句
+    # 2. 时间敏感词 + 疑问句 → 需要搜索 + 不展示链接（仅提供上下文）
     has_time = any(kw in msg for kw in _TIME_SENSITIVE_KEYWORDS)
     is_question = any(kw in msg for kw in ["吗", "?", "？", "怎么", "为什么", "啥", "多少", "呢", "是什么"])
     if has_time and is_question:
-        return True
+        return {"need_search": True, "is_explicit": False}
 
-    # 3. 事实性问题模式（排除纯地点相关的）
+    # 3. 事实性问题模式 → 需要搜索 + 不展示链接
     for pattern in _FACT_PATTERNS:
         if re.match(pattern, msg):
-            # 排除 "XX怎么样" 这种可能触发旅游推荐的模式
             if re.match(r'^[一-龥]{2,4}怎么样$', msg):
-                return False
-            return True
+                return empty_result
+            return {"need_search": True, "is_explicit": False}
 
-    # 4. 长消息中的搜索意图（超过10字且包含"查"/"搜"/"了解"）
+    # 4. 长消息中的搜索意图 → 需要搜索 + 不展示链接
     if len(msg) > 10 and any(kw in msg for kw in ["查", "搜", "了解", "知道", "介绍"]):
-        return True
+        return {"need_search": True, "is_explicit": False}
 
-    return False
+    return empty_result
 
 
 # ============================================================
