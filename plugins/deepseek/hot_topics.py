@@ -76,7 +76,7 @@ async def fetch_trending() -> List[HotTopic]:
     # 方案2: 直接搜索今日热点
     try:
         from .search import search
-        result = await search("今日热搜 热点新闻", max_results=5)
+        result = await search("今天微博热搜 最新新闻", max_results=5)
         if result and result.results:
             for item in result.results[:10]:
                 title = item.get("title", "").strip()
@@ -146,6 +146,10 @@ def filter_topics(topics: List[HotTopic]) -> List[HotTopic]:
             continue
         # 过滤广告
         if any(kw in title for kw in ["广告", "推广", "购买", "优惠券", "折扣"]):
+            continue
+        # 过滤聚合站/导航站类低质量结果
+        _LOW_QUALITY = ["热榜","热搜榜","热榜官网","导航","聚合","合集","资源合集","工具合集","模板合集","官网","首页","入口","大全","汇总","排行榜","排名"]
+        if any(kw in t.title.lower() for kw in _LOW_QUALITY):
             continue
         filtered.append(t)
     return filtered

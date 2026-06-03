@@ -21,6 +21,8 @@ from .api import get_http_session
 from nonebot import logger
 
 _recent_shares: Dict[str, List[Dict[str, Any]]] = {}
+_QQ_FACE_MAP={"0":"微笑","1":"撇嘴","2":"色","3":"发呆","4":"得意","5":"流泪","6":"害羞","7":"闭嘴","8":"睡","9":"大哭","10":"尴尬","11":"发怒","12":"调皮","13":"呲牙","14":"惊讶","15":"难过","16":"酷","17":"冷汗","18":"抓狂","19":"吐","20":"偷笑","21":"愉快","22":"白眼","23":"傲慢","30":"奋斗","34":"晕","37":"骷髅","41":"爱情","44":"拥抱","53":"玫瑰","55":"爱心","56":"心碎","60":"赞","63":"胜利","73":"裂开","81":"委屈"}
+
 
 # 使用 OrderedDict 实现 LRU，限制最大容量防止无限增长
 class LRUCooldownDict(OrderedDict):
@@ -383,12 +385,22 @@ async def extract_and_cache_shares(event, session_id: str) -> bool:
                     logger.warning(f"[分享] 链接内容无效或无法读取，跳过缓存: {url[:60]}")
 
         elif seg.type == "image":
-            shares.append({
-                "type": "图片",
-                "source": seg.data.get("url") or seg.data.get("file", "未知图片"),
-                "summary": "[图片内容暂无法直接识别]",
-                "time": datetime.now().timestamp()
-            })
+            sub_type = seg.data.get("sub_type", 0)
+            summary = seg.data.get("summary", "")
+            if sub_type == 1 or "动画表情" in summary:
+                emoji_desc = summary.replace("[动画表情]", "").strip()
+                if not emoji_desc: emoji_desc = "一个表情"
+                shares.append({"type": "表情", "source": f"用户发了{emoji_desc}", "summary": f"[用户发送了QQ表情：{emoji_desc}]", "time": datetime.now().timestamp()})
+            else:
+                shares.append({"type": "图片", "source": seg.data.get("url") or seg.data.get("file", "未知图片"), "summary": "[图片内容暂无法直接识别]", "time": datetime.now().timestamp()})
+        elif seg.type == "face":
+            face_id = seg.data.get("id", "")
+            face_text = _QQ_FACE_MAP.get(str(face_id), "表情")
+            shares.append({"type": "表情", "source": f"用户发了QQ表情[{face_text}]", "summary": f"[用户发送了QQ内置表情：{face_text}]", "time": datetime.now().timestamp()})
+        elif seg.type == "mface":
+            ed = seg.data.get("summary", "") or seg.data.get("desc", "") or "表情"
+            shares.append({"type": "表情", "source": f"用户发了商城表情[{ed}]", "summary": f"[用户发送了QQ商城表情：{ed}]", "time": datetime.now().timestamp()})
+
 
         elif seg.type == "json":
             try:
