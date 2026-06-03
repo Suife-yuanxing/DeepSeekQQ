@@ -11,7 +11,7 @@ import re
 import json
 import random
 from pathlib import Path
-from typing import List, Tuple, Optional
+from typing import List, Tuple, Optional, Dict
 
 from nonebot import logger
 from nonebot.adapters.onebot.v11 import MessageSegment, Message
