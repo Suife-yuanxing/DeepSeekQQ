@@ -14,6 +14,7 @@ from .api import close_http_session
 from .proactive import register_proactive_jobs, shutdown_proactive
 from .share_parser import global_cleanup_shares
 from .reminder import check_and_fire_reminders
+from .hot_topics import check_and_push_topics
 
 
 driver = get_driver()
@@ -102,6 +103,23 @@ async def on_start():
                 await asyncio.sleep(REMINDER_CHECK_INTERVAL)
 
     asyncio.create_task(_protected_task("提醒检查", _periodic_reminder_check))
+
+    # 热搜话题主动推送（每4小时检查一次）
+    async def _periodic_hot_topics():
+        import nonebot
+        await asyncio.sleep(60)  # 等待 bot 连接 + 冷启动
+        while True:
+            try:
+                bots = nonebot.get_bots()
+                if bots:
+                    bot = list(bots.values())[0]
+                    await check_and_push_topics(bot)
+                await asyncio.sleep(14400)  # 4小时
+            except Exception as e:
+                logger.error(f"[热搜] 检查异常: {e}")
+                await asyncio.sleep(14400)
+
+    asyncio.create_task(_protected_task("热搜推送", _periodic_hot_topics))
 
 
 async def _protected_task(name: str, coro_func):

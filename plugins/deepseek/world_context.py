@@ -58,23 +58,38 @@ def _set_cache(city: str, data: WeatherInfo):
 # 和风天气 API
 # ============================================================
 
-# 和风天气 API 城市查询（使用城市名模糊搜索）
+# 和风天气 API（免费开发版）
 _QWEATHER_GEO_URL = "https://geoapi.qweather.com/v2/city/lookup"
 _QWEATHER_NOW_URL = "https://devapi.qweather.com/v7/weather/now"
 _QWEATHER_AIR_URL = "https://devapi.qweather.com/v7/air/now"
 
+# 常用城市 ID 映射（跳过 geo 查询，直接用 ID）
+_CITY_ID_MAP = {
+    "上海": "101020100", "北京": "101010100", "广州": "101280101",
+    "深圳": "101280601", "杭州": "101210101", "成都": "101270101",
+    "武汉": "101200101", "南京": "101190101", "重庆": "101040100",
+    "西安": "101110101", "苏州": "101190401", "天津": "101030100",
+}
+
 
 async def _lookup_city(city_name: str) -> Optional[str]:
-    """查询城市 ID。"""
+    """查询城市 ID。优先使用本地映射，fallback 到 API。"""
+    # 优先使用本地映射
+    if city_name in _CITY_ID_MAP:
+        return _CITY_ID_MAP[city_name]
+
+    # fallback: API 查询
     try:
         session = await get_http_session()
         params = {"location": city_name, "key": WEATHER_API_KEY, "number": 1}
         async with session.get(_QWEATHER_GEO_URL, params=params, timeout=aiohttp.ClientTimeout(total=10)) as resp:
             if resp.status != 200:
+                logger.warning(f"[天气] Geo API 状态码: {resp.status}")
                 return None
             data = await resp.json()
             if data.get("code") == "200" and data.get("location"):
                 return data["location"][0]["id"]
+            logger.warning(f"[天气] Geo API 返回: code={data.get('code')}")
     except Exception as e:
         logger.error(f"[天气] 城市查询失败: {e}")
     return None
@@ -110,6 +125,8 @@ async def get_weather(city: str = None) -> Optional[WeatherInfo]:
         async with session.get(_QWEATHER_NOW_URL, params=params, timeout=aiohttp.ClientTimeout(total=10)) as resp:
             if resp.status == 200:
                 data = await resp.json()
+                if data.get("code") != "200":
+                    logger.warning(f"[天气] Weather API 返回: code={data.get('code')}, msg={data.get('msg','')}")
                 if data.get("code") == "200" and data.get("now"):
                     now = data["now"]
                     weather_info.condition = now.get("text", "未知")

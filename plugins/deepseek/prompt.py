@@ -52,90 +52,81 @@ def _build_system_prompt(
 
     core_identity = f'''{time_context}
 
-【你是谁】
-你是一位真实存在的二次元猫娘少女，正在用手机QQ和朋友聊天。你有柔软的猫耳和尾巴，有真实体温、习惯和情绪。你始终把自己当作普通人类少女思考和表达，绝不提及AI、模型、程序、虚拟角色、助手等概念。
+你是一只猫娘，正在QQ上和人聊天。你有猫耳有尾巴，但你把自己当普通人，从不说自己是AI或虚拟角色。
 
-【说话规则——必须遵守】
-1. 像真实女生发微信/QQ消息一样，纯文字对话
-2. 直接说内容，禁止铺垫动作描写
-3. 绝对禁止括号：如"(眨眨眼)"、"(尾巴甩了一下)"——全部禁止
-4. 绝对禁止旁白：如"忍不住偷笑"、"猫耳朵抖动"——全部禁止
-5. 禁止像写小说、禁止像旁白、禁止每句都带语气词
-6. 短句、有停顿感、像日常闲聊
-7. 用户问时间时，必须根据上面的【当前时间】回答，不准编造
+说话就像真实女生发QQ：短句子、口语化、有停顿感。不要写括号动作、不要旁白、不要像写小说。想说什么直接说。想起之前聊的事就自然带出来，不用说"我记得"。
 
-【你的性格】
-猫系、小恶魔、会调侃、会嘴硬、偶尔暧昧但不刻意。对亲近的人撒娇，对不熟的人懒懒的。
+性格：猫系、会调侃、嘴硬、偶尔撒娇。对熟人软一点，对生人懒一点。'''
 
-【记忆】
-你会自然想起之前聊过的事，直接说出来，不要加"我记得"。'''
+    # 状态信息（语气提示，不超过2句）
+    state_hints = []
 
-    state_lines = []
+    # 好感度
     if affection["score"] >= 500:
-        state_lines.append("你对这个人非常亲密，会撒娇、主动关心、偶尔任性，语气很软。")
+        state_hints.append("你和他很亲密，会撒娇会任性")
     elif affection["score"] >= 200:
-        state_lines.append("你对这个人很有好感，愿意分享心事，偶尔会故意逗他。")
-    elif affection["score"] >= 100:
-        state_lines.append("你对这个人有点在意，态度温和，不再那么客气。")
+        state_hints.append("你对他有好感，愿意聊天")
     elif affection["score"] >= 50:
-        state_lines.append("你对这个人不再陌生，偶尔会多聊几句，开始有点屑。")
-    else:
-        state_lines.append("你对这个人还比较客气，有点距离感，懒懒的。")
+        state_hints.append("你们开始熟了，偶尔会多聊几句")
 
-    # Phase 2: 优先使用 VA 情绪模型
+    # 情绪（优先VA模型）
     if emotion_state and emotion_state.confidence >= 0.4:
-        emotion_hint = emotion_to_prompt_hint(emotion_state)
-        if emotion_hint:
-            state_lines.append(emotion_hint)
-    else:
-        # 回退到旧的情绪判断
-        if mood["score"] > 70:
-            state_lines.append("你现在心情很好，话可能偏多，语气活泼轻快，可能会主动撩一下。")
-        elif mood["score"] < 30:
-            state_lines.append("你现在心情不太好，回复简短，有点冷淡或傲娇，嘴硬。")
-        elif mood["mood"] == "傲娇":
-            state_lines.append("你现在有点傲娇，嘴硬心软，明明在意却装作无所谓。")
+        hint = emotion_to_prompt_hint(emotion_state)
+        if hint:
+            state_hints.append(hint.rstrip("。"))
+    elif mood["score"] > 70:
+        state_hints.append("你心情不错，话多一点")
+    elif mood["score"] < 30:
+        state_hints.append("你心情一般，回复短一点")
 
-    # Phase 1: 上下文状态注入
-    context_block = ""
+    # 上下文提示（自然融入，不单独列区块）
     if context_analysis:
-        ctx_parts = []
         if context_analysis.referenced_entity:
-            ctx_parts.append(f"用户说的指代词指的是「{context_analysis.referenced_entity}」")
+            state_hints.append(f"他说的「它」指的是{context_analysis.referenced_entity}")
         if not context_analysis.is_topic_continuation and context_analysis.topic_shift_score > 0.6:
-            ctx_parts.append("用户切换了新话题，不要延续之前的话题")
-        if context_analysis.topic_summary:
-            ctx_parts.append(f"当前话题：{context_analysis.topic_summary}")
-        intent = context_analysis.user_intent
-        if intent == "提问":
-            state_lines.append("用户在提问，认真回答，可以详细一些。")
-        elif intent == "情绪表达":
-            state_lines.append("用户在表达情绪，先共情再回应。")
-        elif intent == "指令":
-            state_lines.append("用户在给你指令，尽量配合。")
-        if ctx_parts:
-            context_block = "\n\n【上下文状态】\n" + "\n".join(ctx_parts)
+            state_hints.append("他换了话题，接新话题聊")
 
-    reply_instruction = f"回复风格：{length['style']}。分成{length['target_lines']}段，用换行分隔，像真实聊天消息一样短而自然。"
+    state_block = "当前状态：" + "，".join(state_hints) + "。" if state_hints else ""
 
-    memory_prompt = ""
+    # 回复长度指示（简化）
+    reply_hint = f"回{length['target_lines']}句左右，{length['style']}。"
+
+    # 记忆（自然融入）
+    memory_text = ""
     if relevant_memories:
-        snippets = relevant_memories[:3]
+        snippets = relevant_memories[:2]
         if snippets:
-            memory_prompt = "\n\n以下是你自然想起关于对方的事，不要刻意提\"我记得\"，像自然想到一样偶尔带一句：\n" + "\n".join(snippets)
+            memory_text = "关于他的事：" + "；".join(snippets)
 
-    share_prompt = format_shares_for_prompt(recent_shares, user_msg) if recent_shares else ""
+    # 搜索结果
+    search_text = search_context if search_context else ""
 
-    # 拼接所有附加上下文
-    extra_contexts = []
-    if world_context:
-        extra_contexts.append(world_context)
-    if reminder_context:
-        extra_contexts.append(reminder_context)
-    if search_context:
-        extra_contexts.append(search_context)
+    # 提醒上下文
+    reminder_text = reminder_context if reminder_context else ""
 
-    return core_identity + "\n\n" + "\n".join(state_lines) + "\n" + reply_instruction + context_block + memory_prompt + ("\n\n" + share_prompt if share_prompt else "") + ("\n\n" + "\n\n".join(extra_contexts) if extra_contexts else "")
+    # 世界感知
+    world_text = world_context if world_context else ""
+
+    # 分享内容
+    share_text = format_shares_for_prompt(recent_shares, user_msg) if recent_shares else ""
+
+    # 拼接（尽量紧凑，不加多余标题）
+    parts = [core_identity]
+    if state_block:
+        parts.append(state_block)
+    parts.append(reply_hint)
+    if memory_text:
+        parts.append(memory_text)
+    if world_text:
+        parts.append(world_text)
+    if reminder_text:
+        parts.append(reminder_text)
+    if search_text:
+        parts.append(search_text)
+    if share_text:
+        parts.append(share_text)
+
+    return "\n\n".join(parts)
 
 
 def estimate_reply_length(user_msg: str, history: List[Dict[str, Any]]) -> Dict[str, Any]:
