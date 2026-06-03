@@ -83,7 +83,7 @@ async def _convert_mp3_to_silk(mp3_path: str) -> Optional[str]:
             logger.warning("[语音] 未找到 silk_v3_encoder，跳过 silk 编码")
             try:
                 os.remove(pcm_path)
-            except:
+            except Exception:
                 pass
             return None
 
@@ -96,7 +96,7 @@ async def _convert_mp3_to_silk(mp3_path: str) -> Optional[str]:
         _, stderr2 = await proc2.communicate()
         try:
             os.remove(pcm_path)
-        except:
+        except Exception:
             pass
 
         if proc2.returncode == 0 and os.path.exists(silk_path) and os.path.getsize(silk_path) > 0:
@@ -111,7 +111,7 @@ async def _convert_mp3_to_silk(mp3_path: str) -> Optional[str]:
             try:
                 if os.path.exists(p):
                     os.remove(p)
-            except:
+            except Exception:
                 pass
         return None
 
