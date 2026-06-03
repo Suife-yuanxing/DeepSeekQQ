@@ -18,6 +18,7 @@ import aiohttp
 from .config import SHARE_TTL, VOICE_DIR, URL_FETCH_COOLDOWN
 from .database import get_article_cache, save_article_cache
 from .api import get_http_session
+from .vision import recognize_sticker
 from nonebot import logger
 
 _recent_shares: Dict[str, List[Dict[str, Any]]] = {}
@@ -441,7 +442,12 @@ async def extract_and_cache_shares(event, session_id: str) -> bool:
                 if emoji_desc:
                     shares.append({"type": "表情", "source": f"用户发了表情[{emoji_desc}]", "summary": f"[用户发送了QQ表情：{emoji_desc}]", "image_url": img_url, "time": datetime.now().timestamp()})
                 else:
-                    shares.append({"type": "表情", "source": "用户发了一个表情", "summary": "[用户发送了一个QQ表情图片，无法确定具体内容]", "image_url": img_url, "time": datetime.now().timestamp()})
+                    # 尝试用 Qwen-VL 视觉识别
+                    emotion = await recognize_sticker(img_url) if img_url else None
+                    if emotion:
+                        shares.append({"type": "表情", "source": f"用户发了一个表情[{emotion}]", "summary": f"[用户发送了QQ表情：{emotion}]", "image_url": img_url, "time": datetime.now().timestamp()})
+                    else:
+                        shares.append({"type": "表情", "source": "用户发了一个表情", "summary": "[用户发送了一个QQ表情图片，无法确定具体内容]", "image_url": img_url, "time": datetime.now().timestamp()})
             else:
                 shares.append({"type": "图片", "source": seg.data.get("url") or seg.data.get("file", "未知图片"), "summary": "[图片内容暂无法直接识别]", "time": datetime.now().timestamp()})
         elif seg.type == "face":

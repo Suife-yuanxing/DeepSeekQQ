@@ -143,3 +143,7 @@ WEATHER_ENABLED: bool = str(getattr(cfg, "weather_enabled", "true")).lower() == 
 WEATHER_API_KEY: str = getattr(cfg, "weather_api_key", "") or ""
 WEATHER_CITY: str = getattr(cfg, "weather_city", "上海")
 WEATHER_CACHE_TTL: int = int(getattr(cfg, "weather_cache_ttl", 1800))
+
+# === Qwen-VL 视觉识别 ===
+QWEN_VL_API_KEY: str = getattr(cfg, "qwen_vl_api_key", "") or ""
+QWEN_VL_MODEL: str = getattr(cfg, "qwen_vl_model", "qwen-vl-plus")
