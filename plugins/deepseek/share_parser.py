@@ -147,6 +147,53 @@ def _parse_by_platform(html: str, url: str) -> Optional[Dict[str, str]]:
         "url": url
     }
 
+    if "douyin.com" in url or "v.douyin.com" in url:
+        title = re.search(r'<meta[^>]*property="og:title"[^>]*content="([^"]*)"', html)
+        if not title:
+            title = re.search(r'"desc"\s*:\s*"([^"]{4,})"', html)
+        if not title:
+            title = re.search(r'<title[^>]*>(.*?)</title>', html, re.DOTALL)
+        title = re.sub(r'<[^>]+>', '', title.group(1)).strip() if title else "抖音视频"
+
+        desc = re.search(r'<meta[^>]*property="og:description"[^>]*content="([^"]*)"', html)
+        if not desc:
+            desc = re.search(r'"desc"\s*:\s*"([^"]{4,})"', html)
+        desc_text = desc.group(1).strip() if desc else ""
+
+        author = re.search(r'"nickname"\s*:\s*"([^"]+)"', html)
+        if not author:
+            author = re.search(r'<meta[^>]*name="author"[^>]*content="([^"]*)"', html)
+        author = author.group(1).strip() if author else "抖音用户"
+
+        # 提取封面图
+        image = re.search(r'<meta[^>]*property="og:image"[^>]*content="([^"]*)"', html)
+        image_url = image.group(1) if image else ""
+
+        # 提取视频时长
+        duration = re.search(r'"duration"\s*:\s*(\d+)', html)
+        duration_text = ""
+        if duration:
+            secs = int(duration.group(1))
+            if secs > 60:
+                duration_text = f"({secs // 60}分{secs % 60}秒)"
+            else:
+                duration_text = f"({secs}秒)"
+
+        summary_parts = []
+        if desc_text and desc_text != title:
+            summary_parts.append(desc_text[:500])
+        summary = " ".join(summary_parts) if summary_parts else title
+
+        return {
+            **base_fields,
+            "title": title[:100],
+            "author": author,
+            "summary": f"[抖音视频{duration_text}] {summary}"[:800],
+            "platform": "douyin",
+            "image_url": image_url,
+            "restricted": True,  # 视频内容无法文字提取
+        }
+
     if "xiaoheike" in url or "xiaoheihe" in url or "xiaoheih" in url:
         title = re.search(r'<meta[^>]*property="og:title"[^>]*content="([^"]*)"', html)
         if not title:

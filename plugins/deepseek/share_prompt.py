@@ -19,6 +19,8 @@ def format_shares_for_prompt(shares: List[Dict[str, Any]], user_msg: str = "") -
             lines.append(f"   摘要: {s['summary'][:400]}")
         if s.get('needs_paste') and s.get('platform') == '小黑盒':
             lines.append(f"   ⚠️ 小黑盒的内容网页端无法自动读取。请用户把正文复制粘贴过来，我再帮你分析~")
+        elif s.get('platform') == 'douyin':
+            lines.append(f"   📹 这是一个抖音视频，基于标题和描述回复，可以吐槽/讨论视频主题。")
         elif s.get('restricted'):
             lines.append(
                 f"   ⚠️ 该内容来自{s.get('platform', '第三方平台')}，网页端无法获取完整正文，需要登录APP查看。请基于标题和自身知识回答，不要编造正文细节。"
@@ -76,7 +78,9 @@ def build_analysis_prompt(shares: List[Dict[str, Any]], user_question: str) -> s
     has_restricted = False
     for i, s in enumerate(target_shares, 1):
         block = f"【内容{i}】类型：{s.get('type', '未知')} | 来源：{s.get('source', '未知')}"
-        if s.get("restricted") and not s.get("needs_paste"):
+        if s.get("platform") == "douyin":
+            block += f"\n📹 状态：这是一个抖音视频，仅有标题和描述可用。基于视频主题回复，可以讨论、吐槽、发表看法。"
+        elif s.get("restricted") and not s.get("needs_paste"):
             block += f"\n⚠️ 状态：该内容来自{s.get('platform', '第三方平台')}，网页端无法获取完整正文，仅有标题和描述。"
             block += f"\n标题描述：{s.get('summary', '')[:300]}"
             has_restricted = True
