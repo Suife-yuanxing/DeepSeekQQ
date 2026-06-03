@@ -21,7 +21,7 @@ VOICE_DIR: str = getattr(cfg, "deepseek_voice_dir", "./data/voice")
 # === 语音开关 ===
 VOICE_ENABLED_PRIVATE: bool = str(getattr(cfg, "voice_enabled_private", "true")).lower() == "true"
 VOICE_ENABLED_GROUP: bool = str(getattr(cfg, "voice_enabled_group", "true")).lower() == "true"
-VOICE_CHANCE: float = float(getattr(cfg, "voice_chance", 0.25))
+VOICE_CHANCE: float = float(getattr(cfg, "voice_chance", 0.03))
 VOICE_MAX_LENGTH: int = int(getattr(cfg, "voice_max_length", 120))
 VOICE_TRY_CONVERT: bool = True
 VOICE_NAME: str = "zh-CN-XiaomengNeural"

@@ -110,43 +110,54 @@ def filter_topics(topics: List[HotTopic]) -> List[HotTopic]:
 # 话题推送消息生成
 # ============================================================
 
-_PUSH_PROMPT = """你是一只猫娘，正在QQ上主动找人聊天。你想和他分享一个热搜话题，自然地挑起话题。
+_PUSH_PROMPT = """你要主动找人聊天，分享一个你刚看到的热搜话题。
 
 话题：{topic}
 
-要求：
-1. 像真实女生看到热搜后随手分享一样，口语化
-2. 不要说"我看到新闻"、"热搜上说"这种开头
-3. 直接抛出话题，用你自己的语气（可以带点好奇、吐槽、惊讶）
-4. 1-2句话就好，不要太长
-5. 可以问对方怎么看，引导他回复
-6. 不要加括号动作描写
+像刷手机刷到有趣东西随手分享给朋友一样，用你自己的话说。每次开头和语气都不一样，不要每次都用同样的句式。
 
-示例风格：
-- "诶你看到没，XXX上热搜了哈哈哈"
-- "今天有个瓜你吃了没？XXX"
-- "突然发现XXX，你有关注吗"
-- "XXX居然...你怎么看？"
+可以是吐槽、好奇、惊讶、分享欲、想讨论……什么情绪都行。
+1-2句，短一点，口语化，像发QQ消息。
+不要加括号动作。
 
 你的消息："""
+
+# 多样化的 fallback 消息模板
+_FALLBACK_TEMPLATES = [
+    "哈哈你看{topic}没，笑死",
+    "{topic}你关注了吗？有点意思",
+    "刚刷到{topic}，你怎么看",
+    "卧槽{topic}也太离谱了吧",
+    "{topic}啊...我有点好奇",
+    "你听说{topic}了吗",
+    "今天{topic}好多人在聊",
+    "{topic}这个瓜你吃了没",
+    "有个事想跟你聊，{topic}",
+    "emmm看到{topic}想问问你",
+]
 
 
 async def generate_push_message(topic: HotTopic) -> str:
     """用 LLM 生成猫娘风格的推送消息。"""
     try:
         messages = [
-            {"role": "system", "content": "你是猫娘，用QQ聊天的语气说话。只输出消息内容，不要任何其他文字。"},
+            {"role": "system", "content": "你是一只猫娘少女，正在刷手机看到有趣的东西想分享给朋友。用QQ聊天的语气，口语化，短句。只输出消息内容，不要任何其他文字。"},
             {"role": "user", "content": _PUSH_PROMPT.format(topic=topic.title)}
         ]
-        msg = await call_deepseek_api(messages, temperature=0.9)
-        # 清理
+        msg = await call_deepseek_api(messages, temperature=1.0)
         msg = msg.strip().strip('"').strip("'")
+        # 去掉可能的动作描写
+        msg = re.sub(r'[（(][^）)]*[）)]', '', msg).strip()
         if len(msg) > 100:
             msg = msg[:100]
-        return msg
+        if len(msg) > 5:
+            return msg
     except Exception as e:
         logger.error(f"[热搜] 生成推送消息失败: {e}")
-        return f"诶你看到没，{topic.title}上热搜了，你知道吗？"
+
+    # fallback: 随机选一个模板
+    template = random.choice(_FALLBACK_TEMPLATES)
+    return template.format(topic=topic.title)
 
 
 # ============================================================
