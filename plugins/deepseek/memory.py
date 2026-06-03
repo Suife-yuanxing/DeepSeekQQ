@@ -15,8 +15,10 @@ from .database import (
     get_affection, update_affection,
     get_catgirl_mood, update_catgirl_mood,
     get_memory_summary, append_memory_summary,
-    save_memory_tags, get_relevant_memory_tags
+    save_memory_tags, get_relevant_memory_tags,
+    get_user_mood
 )
+from .context_analyzer import analyze_context_and_emotion, AnalysisResult
 
 # ---------- 记忆冷却控制 ----------
 _recently_used_memories: Dict[str, List[str]] = {}  # user_id -> [最近用过的记忆内容]
@@ -24,14 +26,50 @@ MEMORY_COOLDOWN_ROUNDS = 3  # 同一记忆至少间隔3轮才再次使用
 MAX_MEMORY_PER_REPLY = 1   # 每次回复最多插入1条记忆
 
 
-async def save_and_get_context(session_id: str, user_id: str, raw_msg: str) -> tuple:
-    """保存用户消息，返回最近记忆 + 相关标签 + 情感信息。"""
+async def save_and_get_context(session_id: str, user_id: str, raw_msg: str,
+                               analysis: AnalysisResult = None) -> tuple:
+    """保存用户消息，返回最近记忆 + 相关标签 + 情感信息。
+
+    如果传入了 analysis（来自 context_analyzer），则使用 VA 情绪模型；
+    否则回退到旧的关键词匹配。
+    """
+    await save_message(session_id, "user", raw_msg)
+    recent = await get_recent_memories(session_id, MAX_MEMORY)
+    tags = await _get_relevant_memories(user_id, session_id, raw_msg)
+    affection = await get_affection(user_id)
+
+    if analysis and analysis.emotion.confidence >= 0.4:
+        # 使用新的 VA 情绪模型（已经通过 analyze_context_and_emotion 持久化了）
+        from .context_analyzer import emotion_to_mood_label
+        mood = emotion_to_mood_label(analysis.emotion)
+        # 同时更新旧的全局 mood 表保持兼容
+        await update_catgirl_mood(raw_msg)
+    else:
+        # 回退到旧的关键词匹配
+        mood = await update_catgirl_mood(raw_msg)
+
+    return recent, tags, affection, mood
+
+
+async def save_and_get_context_with_history(session_id: str, user_id: str, raw_msg: str) -> tuple:
+    """保存用户消息并返回历史（用于分析器）。
+
+    与 save_and_get_context 类似，但额外返回最近历史供 context_analyzer 使用。
+    返回: (recent, tags, affection, mood, history_for_analysis)
+    """
     await save_message(session_id, "user", raw_msg)
     recent = await get_recent_memories(session_id, MAX_MEMORY)
     tags = await _get_relevant_memories(user_id, session_id, raw_msg)
     affection = await get_affection(user_id)
     mood = await update_catgirl_mood(raw_msg)
-    return recent, tags, affection, mood
+
+    # 提取最近历史给分析器（不包含刚保存的用户消息本身）
+    history_for_analysis = [
+        {"role": m["role"], "content": m["content"][:200]}
+        for m in recent[:-1]  # 排除最后一条（刚保存的用户消息）
+    ][-6:]  # 最多6条
+
+    return recent, tags, affection, mood, history_for_analysis
 
 
 async def save_reply(session_id: str, user_id: str, raw_msg: str, reply_text: str):

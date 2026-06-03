@@ -2,9 +2,10 @@
 import random
 import pytz
 from datetime import datetime
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
 from .share_prompt import format_shares_for_prompt
+from .context_analyzer import ContextAnalysis, EmotionState, emotion_to_prompt_hint
 
 
 def _get_time_context() -> str:
@@ -40,7 +41,12 @@ def _build_system_prompt(
     length: Dict[str, Any],
     relevant_memories: List[str] = None,
     recent_shares: List[Dict[str, Any]] = None,
-    user_msg: str = ""
+    user_msg: str = "",
+    context_analysis: ContextAnalysis = None,
+    emotion_state: EmotionState = None,
+    search_context: str = "",
+    reminder_context: str = "",
+    world_context: str = "",
 ) -> str:
     time_context = _get_time_context()
 
@@ -76,12 +82,39 @@ def _build_system_prompt(
     else:
         state_lines.append("你对这个人还比较客气，有点距离感，懒懒的。")
 
-    if mood["score"] > 70:
-        state_lines.append("你现在心情很好，话可能偏多，语气活泼轻快，可能会主动撩一下。")
-    elif mood["score"] < 30:
-        state_lines.append("你现在心情不太好，回复简短，有点冷淡或傲娇，嘴硬。")
-    elif mood["mood"] == "傲娇":
-        state_lines.append("你现在有点傲娇，嘴硬心软，明明在意却装作无所谓。")
+    # Phase 2: 优先使用 VA 情绪模型
+    if emotion_state and emotion_state.confidence >= 0.4:
+        emotion_hint = emotion_to_prompt_hint(emotion_state)
+        if emotion_hint:
+            state_lines.append(emotion_hint)
+    else:
+        # 回退到旧的情绪判断
+        if mood["score"] > 70:
+            state_lines.append("你现在心情很好，话可能偏多，语气活泼轻快，可能会主动撩一下。")
+        elif mood["score"] < 30:
+            state_lines.append("你现在心情不太好，回复简短，有点冷淡或傲娇，嘴硬。")
+        elif mood["mood"] == "傲娇":
+            state_lines.append("你现在有点傲娇，嘴硬心软，明明在意却装作无所谓。")
+
+    # Phase 1: 上下文状态注入
+    context_block = ""
+    if context_analysis:
+        ctx_parts = []
+        if context_analysis.referenced_entity:
+            ctx_parts.append(f"用户说的指代词指的是「{context_analysis.referenced_entity}」")
+        if not context_analysis.is_topic_continuation and context_analysis.topic_shift_score > 0.6:
+            ctx_parts.append("用户切换了新话题，不要延续之前的话题")
+        if context_analysis.topic_summary:
+            ctx_parts.append(f"当前话题：{context_analysis.topic_summary}")
+        intent = context_analysis.user_intent
+        if intent == "提问":
+            state_lines.append("用户在提问，认真回答，可以详细一些。")
+        elif intent == "情绪表达":
+            state_lines.append("用户在表达情绪，先共情再回应。")
+        elif intent == "指令":
+            state_lines.append("用户在给你指令，尽量配合。")
+        if ctx_parts:
+            context_block = "\n\n【上下文状态】\n" + "\n".join(ctx_parts)
 
     reply_instruction = f"回复风格：{length['style']}。分成{length['target_lines']}段，用换行分隔，像真实聊天消息一样短而自然。"
 
@@ -93,7 +126,16 @@ def _build_system_prompt(
 
     share_prompt = format_shares_for_prompt(recent_shares, user_msg) if recent_shares else ""
 
-    return core_identity + "\n\n" + "\n".join(state_lines) + "\n" + reply_instruction + memory_prompt + ("\n\n" + share_prompt if share_prompt else "")
+    # 拼接所有附加上下文
+    extra_contexts = []
+    if world_context:
+        extra_contexts.append(world_context)
+    if reminder_context:
+        extra_contexts.append(reminder_context)
+    if search_context:
+        extra_contexts.append(search_context)
+
+    return core_identity + "\n\n" + "\n".join(state_lines) + "\n" + reply_instruction + context_block + memory_prompt + ("\n\n" + share_prompt if share_prompt else "") + ("\n\n" + "\n\n".join(extra_contexts) if extra_contexts else "")
 
 
 def estimate_reply_length(user_msg: str, history: List[Dict[str, Any]]) -> Dict[str, Any]:

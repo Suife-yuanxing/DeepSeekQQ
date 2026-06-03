@@ -8,11 +8,12 @@ from nonebot import get_driver, logger
 from fastapi import FastAPI
 from fastapi.responses import FileResponse
 
-from .config import VOICE_DIR, SERVER_HOST, SERVER_PORT
+from .config import VOICE_DIR, SERVER_HOST, SERVER_PORT, REMINDER_CHECK_INTERVAL
 from .database import init_db, close_db, checkpoint_db
 from .api import close_http_session
 from .proactive import register_proactive_jobs, shutdown_proactive
 from .share_parser import global_cleanup_shares
+from .reminder import check_and_fire_reminders
 
 
 driver = get_driver()
@@ -84,6 +85,23 @@ async def on_start():
                 logger.error(f"[数据库] checkpoint 异常: {e}")
 
     asyncio.create_task(_protected_task("WAL checkpoint", _periodic_checkpoint))
+
+    # Phase 4: 提醒检查定时任务
+    async def _periodic_reminder_check():
+        import nonebot
+        await asyncio.sleep(20)  # 等待 bot 连接
+        while True:
+            try:
+                bots = nonebot.get_bots()
+                if bots:
+                    bot = list(bots.values())[0]
+                    await check_and_fire_reminders(bot)
+                await asyncio.sleep(REMINDER_CHECK_INTERVAL)
+            except Exception as e:
+                logger.error(f"[提醒] 检查异常: {e}")
+                await asyncio.sleep(REMINDER_CHECK_INTERVAL)
+
+    asyncio.create_task(_protected_task("提醒检查", _periodic_reminder_check))
 
 
 async def _protected_task(name: str, coro_func):

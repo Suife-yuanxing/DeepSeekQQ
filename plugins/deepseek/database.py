@@ -117,6 +117,31 @@ async def init_db():
             timestamp REAL NOT NULL
         )
     """)
+    # Phase 2: 每用户独立情绪（VA模型）
+    await db.execute("""
+        CREATE TABLE IF NOT EXISTS user_mood (
+            user_id TEXT PRIMARY KEY,
+            valence REAL DEFAULT 0,
+            arousal REAL DEFAULT 0.2,
+            dominant TEXT DEFAULT '平静',
+            last_updated REAL
+        )
+    """)
+    # Phase 4: 备忘录/提醒
+    await db.execute("""
+        CREATE TABLE IF NOT EXISTS reminders (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id TEXT NOT NULL,
+            session_id TEXT NOT NULL,
+            content TEXT NOT NULL,
+            trigger_time REAL NOT NULL,
+            repeat_type TEXT DEFAULT 'none',
+            status TEXT DEFAULT 'pending',
+            created_at REAL NOT NULL,
+            original_msg TEXT
+        )
+    """)
+    await db.execute("CREATE INDEX IF NOT EXISTS idx_reminders_trigger ON reminders(status, trigger_time)")
     await db.commit()
 
 
@@ -386,3 +411,141 @@ async def get_silent_private_users(threshold: float) -> List[str]:
     ) as cursor:
         rows = await cursor.fetchall()
         return [r["session_id"].replace("private_", "") for r in rows]
+
+
+# ---------- user_mood (Phase 2: VA情绪模型) ----------
+async def get_user_mood(user_id: str) -> Optional[Dict[str, Any]]:
+    """获取用户专属情绪状态。"""
+    db = await get_db()
+    async with db.execute(
+        "SELECT valence, arousal, dominant, last_updated FROM user_mood WHERE user_id = ?",
+        (str(user_id),)
+    ) as cursor:
+        row = await cursor.fetchone()
+        if not row:
+            return None
+        return {
+            "valence": row["valence"],
+            "arousal": row["arousal"],
+            "dominant": row["dominant"],
+            "last_updated": row["last_updated"],
+        }
+
+
+async def update_user_mood(user_id: str, valence: float, arousal: float, dominant: str):
+    """更新用户情绪状态。"""
+    db = await get_db()
+    now = datetime.now().timestamp()
+    await db.execute(
+        """INSERT INTO user_mood (user_id, valence, arousal, dominant, last_updated)
+           VALUES (?, ?, ?, ?, ?)
+           ON CONFLICT(user_id) DO UPDATE SET
+           valence = ?, arousal = ?, dominant = ?, last_updated = ?""",
+        (str(user_id), valence, arousal, dominant, now,
+         valence, arousal, dominant, now)
+    )
+    await db.commit()
+
+
+async def decay_user_mood(user_id: str, decay_factor: float = 0.9):
+    """对用户情绪做自然衰减（向平静回归）。"""
+    db = await get_db()
+    async with db.execute(
+        "SELECT valence, arousal FROM user_mood WHERE user_id = ?",
+        (str(user_id),)
+    ) as cursor:
+        row = await cursor.fetchone()
+    if not row:
+        return
+    new_v = row["valence"] * decay_factor
+    new_a = row["arousal"] * decay_factor
+    now = datetime.now().timestamp()
+    await db.execute(
+        "UPDATE user_mood SET valence = ?, arousal = ?, last_updated = ? WHERE user_id = ?",
+        (new_v, new_a, now, str(user_id))
+    )
+    await db.commit()
+
+
+# ---------- reminders (Phase 4: 备忘录) ----------
+async def save_reminder(user_id: str, session_id: str, content: str,
+                        trigger_time: float, repeat_type: str = "none",
+                        original_msg: str = "") -> int:
+    """创建提醒，返回 reminder id。"""
+    db = await get_db()
+    now = datetime.now().timestamp()
+    cursor = await db.execute(
+        """INSERT INTO reminders (user_id, session_id, content, trigger_time, repeat_type, status, created_at, original_msg)
+           VALUES (?, ?, ?, ?, ?, 'pending', ?, ?)""",
+        (str(user_id), session_id, content, trigger_time, repeat_type, now, original_msg)
+    )
+    await db.commit()
+    return cursor.lastrowid
+
+
+async def get_due_reminders() -> List[Dict[str, Any]]:
+    """获取所有到期的提醒（status=pending 且 trigger_time <= now）。"""
+    db = await get_db()
+    now = datetime.now().timestamp()
+    async with db.execute(
+        """SELECT id, user_id, session_id, content, trigger_time, repeat_type, original_msg
+           FROM reminders WHERE status = 'pending' AND trigger_time <= ?
+           ORDER BY trigger_time ASC""",
+        (now,)
+    ) as cursor:
+        rows = await cursor.fetchall()
+        return [dict(r) for r in rows]
+
+
+async def mark_reminder_done(reminder_id: int):
+    """标记提醒为已完成。"""
+    db = await get_db()
+    await db.execute("UPDATE reminders SET status = 'done' WHERE id = ?", (reminder_id,))
+    await db.commit()
+
+
+async def reschedule_reminder(reminder_id: int, next_trigger: float):
+    """重复提醒：更新下一次触发时间。"""
+    db = await get_db()
+    await db.execute(
+        "UPDATE reminders SET trigger_time = ? WHERE id = ?",
+        (next_trigger, reminder_id)
+    )
+    await db.commit()
+
+
+async def get_user_reminders(user_id: str, status: str = "pending") -> List[Dict[str, Any]]:
+    """获取用户的所有指定状态提醒。"""
+    db = await get_db()
+    async with db.execute(
+        """SELECT id, content, trigger_time, repeat_type, original_msg
+           FROM reminders WHERE user_id = ? AND status = ?
+           ORDER BY trigger_time ASC""",
+        (str(user_id), status)
+    ) as cursor:
+        rows = await cursor.fetchall()
+        return [dict(r) for r in rows]
+
+
+async def cancel_reminder(user_id: str, reminder_id: int) -> bool:
+    """取消提醒。只能取消自己的。"""
+    db = await get_db()
+    cursor = await db.execute(
+        "UPDATE reminders SET status = 'cancelled' WHERE id = ? AND user_id = ?",
+        (reminder_id, str(user_id))
+    )
+    await db.commit()
+    return cursor.rowcount > 0
+
+
+async def find_reminder_by_content(user_id: str, keyword: str) -> List[Dict[str, Any]]:
+    """按关键词搜索用户的待提醒。"""
+    db = await get_db()
+    async with db.execute(
+        """SELECT id, content, trigger_time, repeat_type
+           FROM reminders WHERE user_id = ? AND status = 'pending' AND content LIKE ?
+           ORDER BY trigger_time ASC""",
+        (str(user_id), f"%{keyword}%")
+    ) as cursor:
+        rows = await cursor.fetchall()
+        return [dict(r) for r in rows]

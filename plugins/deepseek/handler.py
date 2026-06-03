@@ -9,11 +9,15 @@ from nonebot.adapters.onebot.v11 import Bot, MessageEvent, GroupMessageEvent, Me
 from .config import REPLY_LENGTH_CONFIG, RANDOM_REPLY_CHANCE, ANALYSIS_HISTORY_LIMIT, CHAT_HISTORY_MULTIPLIER
 from .prompt import _build_system_prompt, estimate_reply_length
 from .utils import split_long_reply, get_session_id, check_rate_limit, filter_novel_actions
-from .memory import save_and_get_context, save_reply, apply_affection_delta
+from .memory import save_and_get_context, save_reply, apply_affection_delta, save_and_get_context_with_history
 from .share_parser import extract_and_cache_shares, get_recent_shares
 from .share_prompt import build_analysis_prompt
 from .api import call_deepseek_api
 from .voice import send_voice, should_send_voice
+from .context_analyzer import analyze_context_and_emotion, AnalysisResult
+from .search import should_search, search, format_search_for_prompt, extract_search_query
+from .reminder import is_reminder_request, create_reminder, list_reminders, cancel_reminder_by_id, get_pending_reminders_context
+from .world_context import build_world_context_prompt
 from nonebot import logger
 
 
@@ -84,7 +88,51 @@ async def _handle_chat_inner(bot: Bot, event: MessageEvent):
                 raw_msg = "在吗"
 
     await apply_affection_delta(user_id, raw_msg)
-    recent_memories, relevant_tags, affection, mood = await save_and_get_context(session_id, user_id, raw_msg)
+
+    # Phase 1+2: 先获取历史，再做上下文+情绪分析
+    recent_memories, relevant_tags, affection, mood, history_for_analysis = \
+        await save_and_get_context_with_history(session_id, user_id, raw_msg)
+
+    analysis = await analyze_context_and_emotion(raw_msg, history_for_analysis, user_id)
+
+    # 指代消解
+    if analysis.context.referenced_entity:
+        logger.info(f"[指代消解] 检测到指代: {analysis.context.referenced_entity}")
+
+    # Phase 4: 备忘录/提醒检测（优先级最高，直接回复并返回）
+    reminder_intent = is_reminder_request(raw_msg)
+    if reminder_intent == "create":
+        reply_text = await create_reminder(user_id, session_id, raw_msg)
+        await bot.send(event, Message(reply_text))
+        return
+    elif reminder_intent == "list":
+        reply_text = await list_reminders(user_id)
+        await bot.send(event, Message(reply_text))
+        return
+    elif reminder_intent == "cancel":
+        # 尝试从消息中提取 reminder ID
+        import re as _re
+        id_match = _re.search(r'(\d+)', raw_msg)
+        if id_match:
+            reply_text = await cancel_reminder_by_id(user_id, int(id_match.group(1)))
+        else:
+            reply_text = "告诉我你要取消的提醒ID嘛~"
+        await bot.send(event, Message(reply_text))
+        return
+
+    # Phase 3: 联网搜索
+    search_result = None
+    if should_search(raw_msg):
+        query = extract_search_query(raw_msg)
+        search_result = await search(query)
+        if search_result:
+            logger.info(f"[搜索] 找到 {len(search_result.results)} 条结果")
+
+    # Phase 4: 获取待提醒上下文
+    reminder_context = await get_pending_reminders_context(user_id)
+
+    # Phase 6: 世界上下文（天气）
+    world_context = await build_world_context_prompt()
 
     analysis_keywords = [
         "怎么看", "怎么讲", "分析一下", "评价", "观点", "有什么想法",
@@ -100,7 +148,13 @@ async def _handle_chat_inner(bot: Bot, event: MessageEvent):
             return
 
         length_info = {"target_lines": 4, "style": "专业分析+个性点评"}
-        sys_prompt = _build_system_prompt(affection, mood, length_info, relevant_tags, shares_now, raw_msg)
+        search_ctx = format_search_for_prompt(search_result) if search_result else ""
+        sys_prompt = _build_system_prompt(
+            affection, mood, length_info, relevant_tags, shares_now, raw_msg,
+            context_analysis=analysis.context, emotion_state=analysis.emotion,
+            search_context=search_ctx, reminder_context=reminder_context,
+            world_context=world_context,
+        )
         sys_prompt += "\n回复风格：专业分析+个性点评。分析部分结构化、有深度，点评部分保持你的猫娘语气。绝对禁止括号动作描写。"
 
         messages = [{"role": "system", "content": sys_prompt}]
@@ -110,7 +164,13 @@ async def _handle_chat_inner(bot: Bot, event: MessageEvent):
         messages.append({"role": "user", "content": analysis_prompt})
     else:
         length_info = estimate_reply_length(raw_msg, recent_memories)
-        sys_prompt = _build_system_prompt(affection, mood, length_info, relevant_tags, shares_now, raw_msg)
+        search_ctx = format_search_for_prompt(search_result) if search_result else ""
+        sys_prompt = _build_system_prompt(
+            affection, mood, length_info, relevant_tags, shares_now, raw_msg,
+            context_analysis=analysis.context, emotion_state=analysis.emotion,
+            search_context=search_ctx, reminder_context=reminder_context,
+            world_context=world_context,
+        )
         messages = [{"role": "system", "content": sys_prompt}]
         history_limit = REPLY_LENGTH_CONFIG["context_depth"] * CHAT_HISTORY_MULTIPLIER
         for mem in recent_memories[-history_limit:]:
