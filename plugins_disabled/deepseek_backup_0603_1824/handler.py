@@ -1,0 +1,137 @@
+"""主消息处理器"""
+import asyncio
+import random
+import re
+from typing import List, Dict, Any
+
+from nonebot.adapters.onebot.v11 import Bot, MessageEvent, GroupMessageEvent, Message
+
+from .config import REPLY_LENGTH_CONFIG, RANDOM_REPLY_CHANCE, ANALYSIS_HISTORY_LIMIT, CHAT_HISTORY_MULTIPLIER
+from .prompt import _build_system_prompt, estimate_reply_length
+from .utils import split_long_reply, get_session_id, check_rate_limit, filter_novel_actions
+from .memory import save_and_get_context, save_reply, apply_affection_delta
+from .share_parser import extract_and_cache_shares, get_recent_shares
+from .share_prompt import build_analysis_prompt
+from .api import call_deepseek_api
+from .voice import send_voice, should_send_voice
+from nonebot import logger
+
+
+async def handle_chat(bot: Bot, event: MessageEvent):
+    try:
+        await _handle_chat_inner(bot, event)
+    except Exception as e:
+        import traceback
+        logger.error(f"[handle_chat] 严重异常: {e}")
+        traceback.print_exc()
+        try:
+            await bot.send(event, Message("呜...脑袋有点乱，让我缓缓..."))
+        except Exception:
+            pass
+
+
+async def _handle_chat_inner(bot: Bot, event: MessageEvent):
+    raw_msg = event.get_message().extract_plain_text().strip()
+    session_id = get_session_id(event)
+    is_group = isinstance(event, GroupMessageEvent)
+    user_id = str(event.user_id)
+
+    if not check_rate_limit(user_id):
+        logger.info(f"[限流] 用户 {user_id} 请求过快，已忽略")
+        return
+
+    has_share = await extract_and_cache_shares(event, session_id)
+
+    if not raw_msg and not has_share:
+        return
+
+    if not raw_msg and has_share:
+        if not is_group or event.is_tome() or random.random() < 0.3:
+            reactions = [
+                "喵？这是...让我看看~", "哦？什么东西，我瞧瞧~",
+                "又有新东西？让我闻闻...", "哼，这次又是什么~",
+                "发来我看看，别是什么无聊的哦？"
+            ]
+            await bot.send(event, Message(random.choice(reactions)))
+        return
+
+    shares_now = get_recent_shares(session_id)
+    latest_share = shares_now[-1] if shares_now else None
+    
+    # 小黑盒处理：用户粘贴正文后，立即分析，不需要再发一次消息
+    if latest_share and latest_share.get("needs_paste") and latest_share.get("platform") == "小黑盒":
+        if raw_msg and len(raw_msg) > 100 and not any(kw in raw_msg for kw in ["讲了什么", "是什么", "怎么看", "这个呢"]):
+            # 用户粘贴了正文，保存后继续正常流程分析
+            latest_share["summary"] = raw_msg[:2000]
+            latest_share["needs_paste"] = False
+            latest_share["restricted"] = False
+            logger.info(f"[分享] 用户补充了小黑盒正文，长度: {len(raw_msg)}，继续分析...")
+            # 不 return，继续下面的分析流程
+        elif any(kw in raw_msg for kw in ["讲了什么", "是什么", "内容", "说了什么", "这个呢", "怎么看", "分析一下", "评价"]):
+            await bot.send(event, Message("小黑盒的内容网页端看不了呢...你把正文复制粘贴给我，我帮你分析~"))
+            return
+
+    if is_group:
+        is_at_me = event.is_tome()
+        nicknames = ["猫娘", "kitty", "喵喵", "在吗", "bot", "机器人"]
+        has_nickname = any(nick in raw_msg for nick in nicknames)
+        should_reply = is_at_me or has_nickname or (random.random() < RANDOM_REPLY_CHANCE)
+        if not should_reply:
+            return
+        if is_at_me:
+            raw_msg = re.sub(r'\[CQ:at,qq=\d+\]', '', raw_msg).strip()
+            if not raw_msg:
+                raw_msg = "在吗"
+
+    await apply_affection_delta(user_id, raw_msg)
+    recent_memories, relevant_tags, affection, mood = await save_and_get_context(session_id, user_id, raw_msg)
+
+    analysis_keywords = [
+        "怎么看", "怎么讲", "分析一下", "评价", "观点", "有什么想法",
+        "说说", "讲讲", "如何理解", "什么意思", "详细介绍", "详细说说"
+    ]
+    valid_shares_now = [s for s in shares_now if s.get("summary")]
+    is_asking_analysis = any(kw in raw_msg for kw in analysis_keywords) and valid_shares_now
+
+    if is_asking_analysis:
+        analysis_prompt = build_analysis_prompt(valid_shares_now, raw_msg)
+        if analysis_prompt == "[小黑盒内容需要用户粘贴正文后才能分析]":
+            await bot.send(event, Message("小黑盒的内容网页端看不了呢...你把正文复制粘贴给我，我帮你分析~"))
+            return
+
+        length_info = {"target_lines": 4, "style": "专业分析+个性点评"}
+        sys_prompt = _build_system_prompt(affection, mood, length_info, relevant_tags, shares_now, raw_msg)
+        sys_prompt += "\n回复风格：专业分析+个性点评。分析部分结构化、有深度，点评部分保持你的猫娘语气。绝对禁止括号动作描写。"
+
+        messages = [{"role": "system", "content": sys_prompt}]
+        history_limit = ANALYSIS_HISTORY_LIMIT
+        for mem in recent_memories[-history_limit:]:
+            messages.append({"role": mem["role"], "content": mem["content"]})
+        messages.append({"role": "user", "content": analysis_prompt})
+    else:
+        length_info = estimate_reply_length(raw_msg, recent_memories)
+        sys_prompt = _build_system_prompt(affection, mood, length_info, relevant_tags, shares_now, raw_msg)
+        messages = [{"role": "system", "content": sys_prompt}]
+        history_limit = REPLY_LENGTH_CONFIG["context_depth"] * CHAT_HISTORY_MULTIPLIER
+        for mem in recent_memories[-history_limit:]:
+            messages.append({"role": mem["role"], "content": mem["content"]})
+        if not messages or messages[-1]["role"] != "user":
+            messages.append({"role": "user", "content": raw_msg})
+
+    reply_text = await call_deepseek_api(messages)
+    reply_text = filter_novel_actions(reply_text)
+    
+    # 保存回复到数据库（无论文字还是语音都要保存）
+    await save_reply(session_id, user_id, raw_msg, reply_text)
+
+    send_as_voice = should_send_voice(raw_msg, reply_text, recent_memories)
+    if send_as_voice:
+        logger.warning(f"[决策] 上下文判断发语音，跳过文字: {reply_text[:30]}...")
+        await send_voice(bot, event, reply_text)
+    else:
+        logger.info(f"[决策] 上下文判断发文字: {reply_text[:30]}...")
+        parts = split_long_reply(reply_text)
+        for i, part in enumerate(parts):
+            if i > 0:
+                await asyncio.sleep(random.uniform(1.0, 2.5))
+            await bot.send(event, Message(part))

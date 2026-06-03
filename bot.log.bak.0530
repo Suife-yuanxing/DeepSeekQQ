@@ -1,0 +1,48 @@
+nohup: ignoring input
+05-30 22:35:10 [SUCCESS] nonebot | NoneBot is initializing...
+05-30 22:35:10 [INFO] nonebot | Current Env: prod
+05-30 22:35:11 [SUCCESS] nonebot | Succeeded to load plugin "deepseek" from "plugins.deepseek"
+05-30 22:35:11 [SUCCESS] nonebot | Running NoneBot...
+05-30 22:35:11 [SUCCESS] nonebot | Loaded adapters: OneBot V11
+05-30 22:35:11 [INFO] uvicorn | Started server process [207666]
+05-30 22:35:11 [INFO] uvicorn | Waiting for application startup.
+   语音文件服务已挂载: http://129.211.7.67:8082/voice
+✅ DeepSeek猫娘插件已启动~ 喵！
+   ffmpeg 检测: 已安装 ✅
+   语音开关: 私聊=True, 群聊=True
+05-30 22:35:11 [INFO] uvicorn | Application startup complete.
+05-30 22:35:11 [INFO] uvicorn | Uvicorn running on http://0.0.0.0:8082 (Press CTRL+C to quit)
+05-30 22:35:13 [INFO] uvicorn | 123.88.255.231:4452 - "WebSocket /onebot/v11/ws" [accepted]
+05-30 22:35:13 [INFO] nonebot | OneBot V11 | Bot 3033578949 connected
+05-30 22:35:13 [INFO] websockets | connection open
+05-30 22:35:58 [SUCCESS] nonebot | OneBot V11 3033578949 | [message.private.friend]: Message 1357401156 from 2938897660 '你好'
+05-30 22:35:58 [INFO] nonebot | Event will be handled by Matcher(type='message', module=plugins.deepseek, lineno=458)
+[延迟回复] 0.2s 后回复 2938897660
+[语音] edge-tts 生成成功: /home/ubuntu/DeepSeekQQ/plugins/deepseek/data/voice/deepseek_voice_1780151760360.mp3
+[语音] 未找到 silk_v3_encoder，跳过 silk 编码，依赖 OneBot 端自行转码
+[语音] 正在发送 URL: http://129.211.7.67:8082/voice/deepseek_voice_1780151760360.mp3
+05-30 22:36:02 [INFO] uvicorn | 123.88.255.231:4460 - "GET /voice/deepseek_voice_1780151760360.mp3 HTTP/1.1" 200
+[语音] 发送指令已提交
+05-30 22:36:03 [INFO] nonebot | Matcher(type='message', module=plugins.deepseek, lineno=458) running complete
+05-30 22:36:12 [SUCCESS] nonebot | OneBot V11 3033578949 | [message.private.friend]: Message 1750192332 from 2938897660 '额'
+05-30 22:36:12 [INFO] nonebot | Event will be handled by Matcher(type='message', module=plugins.deepseek, lineno=458)
+[延迟回复] 0.2s 后回复 2938897660
+[语音] edge-tts 生成成功: /home/ubuntu/DeepSeekQQ/plugins/deepseek/data/voice/deepseek_voice_1780151774128.mp3
+[语音] 未找到 silk_v3_encoder，跳过 silk 编码，依赖 OneBot 端自行转码
+[语音] 正在发送 URL: http://129.211.7.67:8082/voice/deepseek_voice_1780151774128.mp3
+05-30 22:36:17 [INFO] uvicorn | 123.88.255.231:4462 - "GET /voice/deepseek_voice_1780151774128.mp3 HTTP/1.1" 200
+[语音] 发送指令已提交
+05-30 22:36:18 [INFO] nonebot | Matcher(type='message', module=plugins.deepseek, lineno=458) running complete
+05-30 22:36:18 [SUCCESS] nonebot | OneBot V11 3033578949 | [message.private.friend]: Message 1085310041 from 2938897660 '要'
+05-30 22:36:18 [INFO] nonebot | Event will be handled by Matcher(type='message', module=plugins.deepseek, lineno=458)
+[延迟回复] 0.2s 后回复 2938897660
+[语音] edge-tts 生成成功: /home/ubuntu/DeepSeekQQ/plugins/deepseek/data/voice/deepseek_voice_1780151783084.mp3
+[语音] 未找到 silk_v3_encoder，跳过 silk 编码，依赖 OneBot 端自行转码
+[语音] 正在发送 URL: http://129.211.7.67:8082/voice/deepseek_voice_1780151783084.mp3
+05-30 22:36:25 [INFO] uvicorn | 123.88.255.231:4467 - "GET /voice/deepseek_voice_1780151783084.mp3 HTTP/1.1" 200
+[语音] 发送指令已提交
+05-30 22:36:25 [INFO] nonebot | Matcher(type='message', module=plugins.deepseek, lineno=458) running complete
+05-30 22:36:45 [SUCCESS] nonebot | OneBot V11 3033578949 | [message.private.friend]: Message 1901987869 from 2938897660 '唔'
+05-30 22:36:45 [INFO] nonebot | Event will be handled by Matcher(type='message', module=plugins.deepseek, lineno=458)
+[延迟回复] 0.2s 后回复 2938897660
+05-30 22:36:47 [INFO] nonebot | Matcher(type='message', module=plugins.deepseek, lineno=458) running complete
