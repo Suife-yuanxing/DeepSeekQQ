@@ -128,7 +128,7 @@ BAIDU_TTS_VOL: int = int(getattr(cfg, "baidu_tts_vol", 5))
 TAVILY_API_KEY: str = getattr(cfg, "tavily_api_key", "") or ""
 SEARCH_ENABLED: bool = str(getattr(cfg, "search_enabled", "true")).lower() == "true"
 SEARCH_MAX_RESULTS: int = int(getattr(cfg, "search_max_results", 3))
-SEARCH_CACHE_TTL: int = int(getattr(cfg, "search_cache_ttl", 3600))
+SEARCH_CACHE_TTL: int = int(getattr(cfg, "search_cache_ttl", 1800))
 
 # === Phase 4: 备忘录/提醒 ===
 REMINDER_ENABLED: bool = str(getattr(cfg, "reminder_enabled", "true")).lower() == "true"

@@ -18,6 +18,7 @@ from .context_analyzer import analyze_context_and_emotion, AnalysisResult
 from .search import should_search, search, format_search_for_prompt, extract_search_query
 from .reminder import is_reminder_request, create_reminder, list_reminders, cancel_reminder_by_id, get_pending_reminders_context
 from .world_context import build_world_context_prompt
+from .media import split_reply_and_links, extract_shareable_from_search, build_rich_message
 from nonebot import logger
 
 
@@ -180,18 +181,37 @@ async def _handle_chat_inner(bot: Bot, event: MessageEvent):
 
     reply_text = await call_deepseek_api(messages)
     reply_text = filter_novel_actions(reply_text)
-    
-    # 保存回复到数据库（无论文字还是语音都要保存）
+
+    # 保存回复到数据库
     await save_reply(session_id, user_id, raw_msg, reply_text)
+
+    # 提取回复中的链接和搜索结果
+    clean_text, reply_urls = split_reply_and_links(reply_text)
+    search_items = extract_shareable_from_search(search_result) if search_result else []
 
     send_as_voice = should_send_voice(raw_msg, reply_text, recent_memories)
     if send_as_voice:
         logger.warning(f"[决策] 上下文判断发语音，跳过文字: {reply_text[:30]}...")
         await send_voice(bot, event, reply_text)
+        # 语音之后如果有链接，单独发一条
+        if reply_urls or search_items:
+            rich_msg = build_rich_message("", reply_urls, search_items)
+            if rich_msg:
+                await asyncio.sleep(1.5)
+                await bot.send(event, rich_msg)
     else:
         logger.info(f"[决策] 上下文判断发文字: {reply_text[:30]}...")
-        parts = split_long_reply(reply_text)
-        for i, part in enumerate(parts):
-            if i > 0:
-                await asyncio.sleep(random.uniform(1.0, 2.5))
-            await bot.send(event, Message(part))
+        # 构建富文本消息（文字+链接）
+        if reply_urls or search_items:
+            rich_msg = build_rich_message(clean_text or reply_text, reply_urls, search_items)
+            parts = split_long_reply(str(rich_msg))
+            for i, part in enumerate(parts):
+                if i > 0:
+                    await asyncio.sleep(random.uniform(1.0, 2.5))
+                await bot.send(event, Message(part))
+        else:
+            parts = split_long_reply(reply_text)
+            for i, part in enumerate(parts):
+                if i > 0:
+                    await asyncio.sleep(random.uniform(1.0, 2.5))
+                await bot.send(event, Message(part))

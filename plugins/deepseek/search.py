@@ -116,8 +116,9 @@ async def search(query: str, max_results: int = None) -> Optional[SearchResult]:
         response = await client.search(
             query=query,
             max_results=max_results,
-            search_depth="basic",
+            search_depth="advanced",    # 深度搜索，结果更全更新
             include_answer=True,
+            days=3,                     # 只要最近3天的结果
         )
 
         results = []
@@ -172,14 +173,8 @@ def format_search_for_prompt(result: Optional[SearchResult]) -> str:
         title = item["title"][:60]
         snippet = item["snippet"][:200]
         url = item["url"]
-        # 提取域名作为来源
-        domain = ""
-        try:
-            from urllib.parse import urlparse
-            domain = urlparse(url).netloc.replace("www.", "")
-        except Exception:
-            domain = url[:30]
-        lines.append(f"{i}. [{title}] {snippet}（来源：{domain}）")
+        # 直接包含完整URL，方便AI分享
+        lines.append(f"{i}. [{title}] {snippet}\n   链接：{url}")
 
     lines.append("请基于以上最新信息回答，引用时注明来源。如果信息不够准确，坦诚说明。")
 
