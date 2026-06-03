@@ -449,7 +449,7 @@ async def extract_and_cache_shares(event, session_id: str) -> bool:
             face_text = seg.data.get("text", "") or seg.data.get("faceText", "")
             if face_text: face_text = face_text.strip().lstrip("/")
             if not face_text: face_text = _QQ_FACE_MAP.get(face_id, "")
-            if not face_text: face_text = f"表情{id}" if face_id else "一个表情"
+            if not face_text: face_text = f"表情({face_id})" if face_id else "一个表情"
             shares.append({"type": "表情", "source": f"用户发了QQ表情[{face_text}]", "summary": f"[用户发送了QQ表情：{face_text}]", "time": datetime.now().timestamp()})
         elif seg.type == "mface":
             ed = seg.data.get("summary", "") or seg.data.get("desc", "") or "表情"
