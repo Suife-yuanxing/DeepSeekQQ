@@ -73,18 +73,25 @@ async def fetch_trending() -> List[HotTopic]:
     except Exception as e:
         logger.warning(f"[热搜] 韩小韩API失败: {e}")
 
-    # 方案2: 直接搜索今日热点
+    # 方案2: 直接搜索今日热点（使用更精准的查询）
     try:
         from .search import search
-        result = await search("今日热搜 热点新闻", max_results=5)
-        if result and result.results:
-            for item in result.results[:10]:
-                title = item.get("title", "").strip()
-                if title and len(title) > 3:
-                    topics.append(HotTopic(title=title, url=item.get("url", ""), category="搜索"))
-            if topics:
-                logger.info(f"[热搜] 搜索获取 {len(topics)} 条")
-                return topics
+        queries = ["今天微博热搜 最新", "今日新闻热点", "今天发生的大事"]
+        for query in queries:
+            result = await search(query, max_results=5)
+            if result and result.results:
+                for item in result.results[:10]:
+                    title = item.get("title", "").strip()
+                    url = item.get("url", "")
+                    if title and len(title) > 3:
+                        # 从标题中清理常见后缀
+                        clean_title = re.sub(r'\s*[-_|].*$', '', title).strip()
+                        if len(clean_title) > 3:
+                            title = clean_title
+                        topics.append(HotTopic(title=title, url=url, category="搜索"))
+                if topics:
+                    logger.info(f"[热搜] 搜索获取 {len(topics)} 条 (query: {query})")
+                    return topics
     except Exception as e:
         logger.warning(f"[热搜] 搜索获取失败: {e}")
 
@@ -136,6 +143,13 @@ async def fetch_topic_image(topic_title: str) -> Optional[str]:
 def filter_topics(topics: List[HotTopic]) -> List[HotTopic]:
     """过滤敏感/低质量话题。"""
     filtered = []
+    # 低质量关键词：聚合站、导航站、非具体话题
+    _LOW_QUALITY_KEYWORDS = [
+        "热榜", "热搜榜", "热榜官网", "导航", "聚合",
+        "合集", "资源合集", "工具合集", "模板合集",
+        "官网", "首页", "入口", "大全", "汇总",
+        "排行榜", "排名", "top50", "top100",
+    ]
     for t in topics:
         title = t.title.lower()
         # 过滤敏感词
@@ -146,6 +160,14 @@ def filter_topics(topics: List[HotTopic]) -> List[HotTopic]:
             continue
         # 过滤广告
         if any(kw in title for kw in ["广告", "推广", "购买", "优惠券", "折扣"]):
+            continue
+        # 过滤聚合站/导航站类低质量结果
+        if any(kw in title for kw in _LOW_QUALITY_KEYWORDS):
+            logger.debug(f"[热搜] 过滤低质量: {t.title}")
+            continue
+        # 过滤标题中包含大量特殊符号的
+        special_count = sum(1 for c in t.title if not c.isalnum() and not '一' <= c <= '鿿' and c not in ' -')
+        if special_count > 3:
             continue
         filtered.append(t)
     return filtered

@@ -22,6 +22,27 @@ from nonebot import logger
 
 _recent_shares: Dict[str, List[Dict[str, Any]]] = {}
 
+# QQ 内置表情 ID → 文字映射（常用）
+_QQ_FACE_MAP = {
+    "0": "微笑", "1": "撇嘴", "2": "色", "3": "发呆", "4": "得意",
+    "5": "流泪", "6": "害羞", "7": "闭嘴", "8": "睡", "9": "大哭",
+    "10": "尴尬", "11": "发怒", "12": "调皮", "13": "呲牙", "14": "惊讶",
+    "15": "难过", "16": "酷", "17": "冷汗", "18": "抓狂", "19": "吐",
+    "20": "偷笑", "21": "愉快", "22": "白眼", "23": "傲慢", "24": "饥饿",
+    "25": "困", "26": "惊恐", "27": "流汗", "28": "憨笑", "29": "悠闲",
+    "30": "奋斗", "31": "咒骂", "32": "疑问", "33": "嘘", "34": "晕",
+    "35": "折磨", "36": "衰", "37": "骷髅", "38": "敲打", "39": "再见",
+    "40": "发抖", "41": "爱情", "42": "跳跳", "43": "猪头", "44": "拥抱",
+    "45": "蛋糕", "46": "闪电", "47": "炸弹", "48": "刀", "49": "足球",
+    "50": "便便", "51": "咖啡", "52": "饭", "53": "玫瑰", "54": "凋谢",
+    "55": "爱心", "56": "心碎", "57": "礼物", "58": "太阳", "59": "月亮",
+    "60": "赞", "61": "踩", "62": "握手", "63": "胜利", "64": "飞吻",
+    "65": "怄火", "66": "西瓜", "67": "冷酷", "68": "色眯眯", "69": "好怕怕",
+    "70": "得意", "71": "尬笑", "72": "菜狗", "73": "裂开", "74": "苦涩",
+    "75": "叹气", "76": "戳一戳", "77": "托腮", "78": "歪嘴笑",
+    "79": "左看看", "80": "右看看", "81": "委屈", "82": "裂开",
+}
+
 # 使用 OrderedDict 实现 LRU，限制最大容量防止无限增长
 class LRUCooldownDict(OrderedDict):
     MAX_SIZE = 500  # 最多缓存 500 个 URL
@@ -383,10 +404,46 @@ async def extract_and_cache_shares(event, session_id: str) -> bool:
                     logger.warning(f"[分享] 链接内容无效或无法读取，跳过缓存: {url[:60]}")
 
         elif seg.type == "image":
+            sub_type = seg.data.get("sub_type", 0)
+            summary = seg.data.get("summary", "")
+            # sub_type=1 或 summary 包含"动画表情" → QQ表情/贴图
+            if sub_type == 1 or "动画表情" in summary:
+                # 尝试从 summary 提取表情描述
+                emoji_desc = summary.replace("[动画表情]", "").strip()
+                if not emoji_desc:
+                    emoji_desc = "一个表情"
+                shares.append({
+                    "type": "表情",
+                    "source": f"用户发了一个{emoji_desc}",
+                    "summary": f"[用户发送了QQ表情：{emoji_desc}]",
+                    "time": datetime.now().timestamp()
+                })
+            else:
+                shares.append({
+                    "type": "图片",
+                    "source": seg.data.get("url") or seg.data.get("file", "未知图片"),
+                    "summary": "[图片内容暂无法直接识别]",
+                    "time": datetime.now().timestamp()
+                })
+
+        elif seg.type == "face":
+            # QQ 内置表情（如 [微笑] [大哭] 等）
+            face_id = seg.data.get("id", "")
+            face_text = _QQ_FACE_MAP.get(str(face_id), "表情")
             shares.append({
-                "type": "图片",
-                "source": seg.data.get("url") or seg.data.get("file", "未知图片"),
-                "summary": "[图片内容暂无法直接识别]",
+                "type": "表情",
+                "source": f"用户发了QQ表情[{face_text}]",
+                "summary": f"[用户发送了QQ内置表情：{face_text}]",
+                "time": datetime.now().timestamp()
+            })
+
+        elif seg.type == "mface":
+            # QQ 商城表情（高级贴图）
+            emoji_desc = seg.data.get("summary", "") or seg.data.get("desc", "") or "表情"
+            shares.append({
+                "type": "表情",
+                "source": f"用户发了一个商城表情[{emoji_desc}]",
+                "summary": f"[用户发送了QQ商城表情：{emoji_desc}]",
                 "time": datetime.now().timestamp()
             })
 
