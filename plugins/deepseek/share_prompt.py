@@ -101,7 +101,18 @@ def build_analysis_prompt(shares: List[Dict[str, Any]], user_question: str) -> s
             "然后基于标题和自身知识做简要回答，绝对不要编造正文细节。"
         )
 
-    prompt = f"""【分析任务】用户分享了 {len(target_shares)} 个内容，请基于以下材料回答用户问题。\n\n{'
-
-'.join(content_blocks)}{relation_hint}{comment_hint}{restricted_hint}\n\n用户的问题：{user_question}\n\n要求：\n1. 先基于上述材料做客观、有条理的分析（分点或分段）\n2. 分析要具体，引用材料中的细节和数据，不要泛泛而谈\n3. {'如果有多篇内容，请做对比或联动分析，不要孤立看待每篇' if is_related else '聚焦核心论点，深入剖析'}\n4. 分析完后，用你猫娘的语气做一句简短个性化点评（调侃、吐槽、认同都可以）\n5. 整体语气仍然是你在聊天，但分析部分要专业、有信息量、有深度\n6. 如果材料不足以下结论，请诚实说明，不要编造"""
+    content_text = "\n\n".join(content_blocks)
+    compare_hint = "如果有多篇内容，请做对比或联动分析，不要孤立看待每篇" if is_related else "聚焦核心论点，深入剖析"
+    prompt = (
+        f"【分析任务】用户分享了 {len(target_shares)} 个内容，请基于以下材料回答用户问题。\n\n"
+        f"{content_text}{relation_hint}{comment_hint}{restricted_hint}\n\n"
+        f"用户的问题：{user_question}\n\n"
+        f"要求：\n"
+        f"1. 先基于上述材料做客观、有条理的分析（分点或分段）\n"
+        f"2. 分析要具体，引用材料中的细节和数据，不要泛泛而谈\n"
+        f"3. {compare_hint}\n"
+        f"4. 分析完后，用你猫娘的语气做一句简短个性化点评（调侃、吐槽、认同都可以）\n"
+        f"5. 整体语气仍然是你在聊天，但分析部分要专业、有信息量、有深度\n"
+        f"6. 如果材料不足以下结论，请诚实说明，不要编造"
+    )
     return prompt
