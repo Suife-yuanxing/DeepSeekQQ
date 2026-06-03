@@ -6,7 +6,7 @@ import re
 from pathlib import Path
 from typing import List, Dict, Any
 
-from nonebot.adapters.onebot.v11 import Bot, MessageEvent, GroupMessageEvent, Message
+from nonebot.adapters.onebot.v11 import Bot, MessageEvent, GroupMessageEvent, Message, MessageSegment
 
 from .config import REPLY_LENGTH_CONFIG, RANDOM_REPLY_CHANCE, ANALYSIS_HISTORY_LIMIT, CHAT_HISTORY_MULTIPLIER
 from .prompt import _build_system_prompt, estimate_reply_length
