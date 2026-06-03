@@ -60,6 +60,20 @@ def should_search(user_msg: str) -> bool:
 
     msg = user_msg.strip()
 
+    # 排除：简单的地点陈述（"我在XX"、"来XX了"、"去XX"、"XX人"等）
+    _location_only_patterns = [
+        r'^我在[一-龥]{2,4}$',
+        r'^来[一-龥]{2,4}了?$',
+        r'^到[一-龥]{2,4}了?$',
+        r'^去[一-龥]{2,4}$',
+        r'^[一-龥]{2,4}人$',
+        r'^[一-龥]{2,4}(的|呢)$',
+        r'^[一-龥]{2,4}(今天|现在)?天气',  # 天气由天气模块处理
+    ]
+    for pattern in _location_only_patterns:
+        if re.match(pattern, msg):
+            return False
+
     # 1. 显式搜索请求
     if any(kw in msg for kw in _EXPLICIT_SEARCH_KEYWORDS):
         return True
@@ -70,9 +84,12 @@ def should_search(user_msg: str) -> bool:
     if has_time and is_question:
         return True
 
-    # 3. 事实性问题模式
+    # 3. 事实性问题模式（排除纯地点相关的）
     for pattern in _FACT_PATTERNS:
         if re.match(pattern, msg):
+            # 排除 "XX怎么样" 这种可能触发旅游推荐的模式
+            if re.match(r'^[一-龥]{2,4}怎么样$', msg):
+                return False
             return True
 
     # 4. 长消息中的搜索意图（超过10字且包含"查"/"搜"/"了解"）

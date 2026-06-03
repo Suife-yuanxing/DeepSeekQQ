@@ -17,7 +17,7 @@ from .voice import send_voice, should_send_voice
 from .context_analyzer import analyze_context_and_emotion, AnalysisResult
 from .search import should_search, search, format_search_for_prompt, extract_search_query
 from .reminder import is_reminder_request, create_reminder, list_reminders, cancel_reminder_by_id, get_pending_reminders_context
-from .world_context import build_world_context_prompt
+from .world_context import build_world_context_prompt, extract_city_from_message
 from .media import split_reply_and_links, extract_shareable_from_search, build_rich_message
 from nonebot import logger
 
@@ -132,8 +132,19 @@ async def _handle_chat_inner(bot: Bot, event: MessageEvent):
     # Phase 4: 获取待提醒上下文
     reminder_context = await get_pending_reminders_context(user_id)
 
-    # Phase 6: 世界上下文（天气）
-    world_context = await build_world_context_prompt()
+    # Phase 6: 世界上下文（天气）- 动态读取用户城市
+    user_city = extract_city_from_message(raw_msg)
+    # 也从记忆标签中查找用户所在城市
+    if not user_city:
+        for tag in relevant_tags:
+            tag_str = str(tag)
+            for city_name in ["上海", "北京", "广州", "深圳", "杭州", "成都", "武汉", "南京", "重庆", "西安", "苏州", "天津"]:
+                if city_name in tag_str:
+                    user_city = city_name
+                    break
+            if user_city:
+                break
+    world_context = await build_world_context_prompt(user_city)
 
     analysis_keywords = [
         "怎么看", "怎么讲", "分析一下", "评价", "观点", "有什么想法",

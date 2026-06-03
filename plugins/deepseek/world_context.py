@@ -95,6 +95,32 @@ async def _lookup_city(city_name: str) -> Optional[str]:
     return None
 
 
+def extract_city_from_message(msg: str) -> Optional[str]:
+    """从用户消息中提取城市名。"""
+    import re
+    # 匹配 "我在XX" / "XX天气" / "XX今天" 等模式
+    patterns = [
+        r'我在([一-龥]{2,4})',
+        r'([一-龥]{2,4})天气',
+        r'([一-龥]{2,4})今天',
+        r'([一-龥]{2,4})多少度',
+        r'来([一-龥]{2,4})了',
+        r'到([一-龥]{2,4})了',
+        r'去([一-龥]{2,4})',
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, msg)
+        if match:
+            city = match.group(1)
+            # 验证是否在城市ID映射中（常见的）
+            if city in _CITY_ID_MAP:
+                return city
+            # 也可能是其他城市，尝试查询
+            if 2 <= len(city) <= 4:
+                return city
+    return None
+
+
 async def get_weather(city: str = None) -> Optional[WeatherInfo]:
     """获取天气信息（带缓存）。"""
     if not WEATHER_API_KEY:
@@ -202,12 +228,12 @@ def get_season() -> str:
 # Prompt 注入
 # ============================================================
 
-async def build_world_context_prompt() -> str:
-    """构建世界上下文 prompt 注入文本。"""
+async def build_world_context_prompt(city: str = None) -> str:
+    """构建世界上下文 prompt 注入文本。city 可由用户消息或记忆标签提供。"""
     if not WEATHER_API_KEY:
         return ""
 
-    weather = await get_weather()
+    weather = await get_weather(city)
     if not weather:
         return ""
 
