@@ -17,7 +17,7 @@ from nonebot import logger
 from . import api
 from .database import (
     get_user_mood, update_user_mood, get_catgirl_mood,
-    decay_user_mood
+    decay_user_mood, get_bot_mood, update_bot_mood
 )
 
 # ============================================================
@@ -290,3 +290,110 @@ def emotion_to_mood_label(emotion: EmotionState) -> Dict[str, Any]:
         mood = "平淡"
 
     return {"mood": mood, "score": round(score, 1)}
+
+
+# ============================================================
+# Bot 情绪状态机（让bot的情绪像人类一样持续变化）
+# ============================================================
+
+# 情绪持续时间配置（秒）
+BOT_MOOD_DURATION = {
+    "生气": 900,     # 生气持续 ~15分钟
+    "难过": 1800,    # 难过持续 ~30分钟
+    "害羞": 300,     # 害羞持续 ~5分钟
+    "开心": 600,     # 开心持续 ~10分钟
+    "兴奋": 600,     # 兴奋持续 ~10分钟
+    "担心": 1200,    # 担心持续 ~20分钟
+}
+
+# 触发bot情绪变化的关键词
+_BOT_EMOTION_TRIGGERS = {
+    "生气": {
+        "keywords": ["滚", "烦死了", "闭嘴", "讨厌", "你烦不烦", "别说了", "不想理你", "无语", "sb", "傻逼"],
+        "valence": -0.7, "arousal": 0.8, "reason": "被用户凶了",
+    },
+    "难过": {
+        "keywords": ["不想聊了", "没意思", "算了", "无所谓", "随便吧", "你走吧", "不想说"],
+        "valence": -0.6, "arousal": 0.3, "reason": "感觉被冷落了",
+    },
+    "开心": {
+        "keywords": ["喜欢你", "你真好", "可爱", "乖", "想你了", "爱你", "宝贝", "最棒了", "辛苦了"],
+        "valence": 0.7, "arousal": 0.6, "reason": "被夸奖了",
+    },
+    "害羞": {
+        "keywords": ["好看", "漂亮", "美女", "心动", "表白", "在一起", "亲一个", "抱抱我"],
+        "valence": 0.3, "arousal": 0.65, "reason": "被撩了",
+    },
+}
+
+# 安抚关键词（可以加速消解负面情绪）
+_COMFORT_KEYWORDS = ["对不起", "抱歉", "别生气", "我错了", "抱抱", "乖", "不生气了", "心疼", "安慰", "好了好了"]
+
+
+async def update_bot_emotion(user_msg: str, user_emotion: EmotionState) -> Dict[str, Any]:
+    """更新bot自己的情绪状态。
+
+    逻辑：
+    1. 检查用户消息是否触发了新的情绪
+    2. 如果bot当前有负面情绪且用户没有安抚，情绪持续
+    3. 如果用户安抚了，加速衰减负面情绪
+    4. 自然衰减：负面情绪随时间减弱
+    """
+    old_mood = await get_bot_mood()
+    now = time.time()
+
+    # 计算旧情绪的衰减
+    dt = now - old_mood.get("last_updated", now)
+    duration = BOT_MOOD_DURATION.get(old_mood["dominant"], 600)
+
+    # 自然衰减：超过持续时间后回归平静
+    if dt > duration and old_mood["dominant"] != "平静":
+        await update_bot_mood(0.0, 0.2, "平静", "自然消退")
+        logger.info(f"[Bot情绪] 自然消退: {old_mood['dominant']} -> 平静 (过了{int(dt)}秒)")
+        return {"dominant": "平静", "reason": "自然消退"}
+
+    # 检查用户是否在安抚
+    is_comforting = any(kw in user_msg for kw in _COMFORT_KEYWORDS)
+
+    # 如果bot在负面情绪中且用户在安抚
+    if old_mood["dominant"] in ("生气", "难过") and is_comforting:
+        # 安抚后情绪减弱（缩短一半持续时间）
+        decay_ratio = 0.5
+        new_v = old_mood["valence"] * decay_ratio
+        new_a = old_mood["arousal"] * decay_ratio
+        if abs(new_v) < 0.15:
+            await update_bot_mood(0.0, 0.2, "平静", "被安抚了")
+            logger.info(f"[Bot情绪] 被安抚消退: {old_mood['dominant']} -> 平静")
+            return {"dominant": "平静", "reason": "被安抚了"}
+        else:
+            new_dominant = "傲娇" if old_mood["dominant"] == "生气" else "平静"
+            await update_bot_mood(new_v, new_a, new_dominant, "被安抚了但还有点情绪")
+            logger.info(f"[Bot情绪] 被安抚减弱: {old_mood['dominant']} -> {new_dominant}")
+            return {"dominant": new_dominant, "reason": "被安抚了"}
+
+    # 检查是否触发新情绪（只有当旧情绪已衰减或平静时才触发新情绪）
+    triggered = None
+    if old_mood["dominant"] == "平静" or dt > duration * 0.5:
+        for emotion_name, trigger in _BOT_EMOTION_TRIGGERS.items():
+            if any(kw in user_msg for kw in trigger["keywords"]):
+                triggered = (emotion_name, trigger)
+                break
+
+    if triggered:
+        emotion_name, trigger = triggered
+        await update_bot_mood(trigger["valence"], trigger["arousal"], emotion_name, trigger["reason"])
+        logger.info(f"[Bot情绪] 触发新情绪: {emotion_name} ({trigger['reason']})")
+        return {"dominant": emotion_name, "reason": trigger["reason"]}
+
+    # 没有触发新情绪，返回当前状态（衰减后的）
+    if old_mood["dominant"] != "平静":
+        # 衰减旧情绪
+        progress = dt / duration  # 0~1
+        decayed_v = old_mood["valence"] * (1 - progress)
+        decayed_a = old_mood["arousal"] * (1 - progress)
+        if abs(decayed_v) < 0.1:
+            await update_bot_mood(0.0, 0.2, "平静", "自然消退")
+            return {"dominant": "平静", "reason": "自然消退"}
+        return {"dominant": old_mood["dominant"], "reason": old_mood.get("trigger_reason", ""), "decaying": True}
+
+    return {"dominant": "平静", "reason": ""}

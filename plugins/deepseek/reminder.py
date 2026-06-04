@@ -185,12 +185,77 @@ async def parse_reminder(user_msg: str) -> ReminderParseResult:
 # 提醒管理
 # ============================================================
 
+async def _generate_reminder_reply(scene: str, **kwargs) -> str:
+    """用 LLM 基于猫娘人设生成个性化的提醒相关回复。"""
+    try:
+        if scene == "create_success":
+            prompt = (
+                f"用户设置了提醒。时间：{kwargs['time_str']}，内容：{kwargs['content']}"
+                f"{'，每天重复' if kwargs.get('repeat') == 'daily' else '，每周重复' if kwargs.get('repeat') == 'weekly' else ''}。"
+                "用你的性格回复确认，1句话，口语化，不要括号动作。"
+            )
+        elif scene == "create_fail":
+            prompt = f"用户想设提醒但你没听懂。原因：{kwargs.get('error', '时间解析失败')}。用你的性格回复，让他再说清楚一点，1句话，口语化。"
+        elif scene == "list":
+            items = kwargs.get("items", [])
+            lines = []
+            for i, r in enumerate(items, 1):
+                dt = datetime.fromtimestamp(r["trigger_time"], tz=TZ)
+                t = dt.strftime("%m月%d日 %H:%M")
+                repeat = "每天" if r["repeat_type"] == "daily" else "每周" if r["repeat_type"] == "weekly" else ""
+                lines.append(f"{i}. {t} {r['content']}{' (' + repeat + ')' if repeat else ''} ID:{r['id']}")
+            prompt = (
+                f"用户的提醒列表：\n{'chr(10)'.join(lines)}\n"
+                "用你的性格开头介绍一下，然后列出清单，最后告诉他可以取消。口语化，不要括号动作。"
+            )
+        elif scene == "cancel_success":
+            prompt = f"用户取消了提醒 #{kwargs['rid']}。用你的性格回复确认，1句话，口语化，不要括号动作。"
+        elif scene == "cancel_fail":
+            prompt = f"用户想取消提醒但ID不对。用你的性格回复，让他再确认一下ID，1句话，口语化，不要括号动作。"
+        elif scene == "no_reminder":
+            prompt = "用户想取消提醒但没有提供ID。用你的性格回复，让他告诉你ID，1句话，口语化，不要括号动作。"
+        elif scene == "fire":
+            prompt = (
+                f"提醒时间到了！内容：{kwargs['content']}。"
+                f"当前时间：{kwargs.get('time_str', '')}。"
+                "用你的性格提醒用户，1-2句话，口语化，不要括号动作。可以加一点关心的语气。"
+            )
+        else:
+            return ""
+
+        sys = (
+            "你是一只猫娘，正在QQ上和人聊天。你的性格：猫系、会调侃、嘴硬、偶尔撒娇、有点小好色。"
+            "口语化、短句、像发QQ消息。不要加括号动作。只输出回复内容，不要任何其他文字。"
+        )
+        messages = [
+            {"role": "system", "content": sys},
+            {"role": "user", "content": prompt}
+        ]
+        reply = await api.call_deepseek_api(messages, temperature=0.9)
+        reply = re.sub(r'[（(][^）)]*[）)]', '', reply).strip()
+        if len(reply) > 5:
+            return reply
+    except Exception as e:
+        logger.warning(f"[提醒] LLM回复生成失败: {e}")
+
+    # fallback
+    fallbacks = {
+        "create_success": f"好哒~我会在 {kwargs.get('time_str', '')} 提醒你「{kwargs.get('content', '')}」，记下了喵~",
+        "create_fail": f"嗯？我没太听懂你想提醒什么...{kwargs.get('error', '')}，再说清楚一点嘛~",
+        "cancel_success": f"好哒，提醒 #{kwargs.get('rid', '')} 已经取消了~",
+        "cancel_fail": "嗯？找不到这个提醒呢，是不是ID不对？",
+        "no_reminder": "告诉我你要取消的提醒ID嘛~",
+        "fire": f"提醒你：「{kwargs.get('content', '')}」",
+    }
+    return fallbacks.get(scene, "")
+
+
 async def create_reminder(user_id: str, session_id: str, user_msg: str) -> str:
     """创建提醒，返回给用户的确认消息。"""
     parsed = await parse_reminder(user_msg)
 
     if not parsed.success:
-        return f"嗯？我没太听懂你想提醒什么...{parsed.error}，再说清楚一点嘛~"
+        return await _generate_reminder_reply("create_fail", error=parsed.error)
 
     reminder_id = await save_reminder(
         user_id=user_id,
@@ -201,16 +266,15 @@ async def create_reminder(user_id: str, session_id: str, user_msg: str) -> str:
         original_msg=user_msg,
     )
 
-    # 格式化时间
     dt = datetime.fromtimestamp(parsed.trigger_time, tz=TZ)
     time_str = dt.strftime("%m月%d日 %H:%M")
-    repeat_str = ""
-    if parsed.repeat_type == "daily":
-        repeat_str = "（每天重复）"
-    elif parsed.repeat_type == "weekly":
-        repeat_str = "（每周重复）"
 
-    return f"好哒~我会在 {time_str} 提醒你「{parsed.content}」{repeat_str}，记下了喵~"
+    return await _generate_reminder_reply(
+        "create_success",
+        time_str=time_str,
+        content=parsed.content,
+        repeat=parsed.repeat_type,
+    )
 
 
 async def check_and_fire_reminders(bot) -> None:
@@ -226,17 +290,10 @@ async def check_and_fire_reminders(bot) -> None:
         content = reminder["content"]
         repeat_type = reminder["repeat_type"]
 
-        # 发送提醒消息
+        # 用 LLM 生成个性化的提醒消息
         dt = datetime.now(TZ)
-        hour = dt.hour
-        if 5 <= hour < 11:
-            time_greeting = "早安~"
-        elif 22 <= hour or hour < 5:
-            time_greeting = "夜深了~"
-        else:
-            time_greeting = ""
-
-        msg = f"{time_greeting}提醒你：「{content}」"
+        time_str = dt.strftime("%H:%M")
+        msg = await _generate_reminder_reply("fire", content=content, time_str=time_str)
 
         try:
             if session_id.startswith("group_"):
@@ -263,29 +320,17 @@ async def list_reminders(user_id: str) -> str:
     """列出用户的所有待提醒。"""
     reminders = await get_user_reminders(user_id)
     if not reminders:
-        return "你目前没有待提醒的事项哦~"
+        return await _generate_reminder_reply("list", items=[])
 
-    lines = ["你目前的提醒列表："]
-    for i, r in enumerate(reminders, 1):
-        dt = datetime.fromtimestamp(r["trigger_time"], tz=TZ)
-        time_str = dt.strftime("%m月%d日 %H:%M")
-        repeat = ""
-        if r["repeat_type"] == "daily":
-            repeat = " [每天]"
-        elif r["repeat_type"] == "weekly":
-            repeat = " [每周]"
-        lines.append(f"{i}. {time_str} - {r['content']}{repeat} (ID:{r['id']})")
-
-    lines.append("\n要取消哪个？告诉我ID就行~")
-    return "\n".join(lines)
+    return await _generate_reminder_reply("list", items=reminders)
 
 
 async def cancel_reminder_by_id(user_id: str, reminder_id: int) -> str:
     """取消提醒。"""
     success = await cancel_reminder(user_id, reminder_id)
     if success:
-        return f"好哒，提醒 #{reminder_id} 已经取消了~"
-    return f"嗯？找不到这个提醒呢，是不是ID不对？"
+        return await _generate_reminder_reply("cancel_success", rid=reminder_id)
+    return await _generate_reminder_reply("cancel_fail", rid=reminder_id)
 
 
 async def get_pending_reminders_context(user_id: str) -> str:

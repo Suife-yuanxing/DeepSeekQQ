@@ -77,6 +77,22 @@ async def init_db():
         (datetime.now().timestamp(),)
     )
     await db.execute("""
+        CREATE TABLE IF NOT EXISTS bot_mood (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            valence REAL DEFAULT 0.0,
+            arousal REAL DEFAULT 0.2,
+            dominant TEXT DEFAULT '平静',
+            trigger_reason TEXT DEFAULT '',
+            trigger_time REAL DEFAULT 0,
+            last_updated REAL DEFAULT 0
+        )
+    """)
+    await db.execute(
+        "INSERT OR IGNORE INTO bot_mood (id, valence, arousal, dominant, trigger_reason, trigger_time, last_updated) "
+        "VALUES (1, 0.0, 0.2, '平静', '', 0, ?)",
+        (datetime.now().timestamp(),)
+    )
+    await db.execute("""
         CREATE TABLE IF NOT EXISTS memory_tags (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id TEXT NOT NULL,
@@ -300,6 +316,37 @@ async def update_catgirl_mood(user_msg: str) -> Dict[str, Any]:
     )
     await db.commit()
     return {"mood": mood, "score": new_score}
+
+
+# ---------- bot mood (bot自己的情绪状态机) ----------
+async def get_bot_mood() -> Dict[str, Any]:
+    """获取bot自己的情绪状态。"""
+    db = await get_db()
+    async with db.execute(
+        "SELECT valence, arousal, dominant, trigger_reason, trigger_time, last_updated FROM bot_mood WHERE id = 1"
+    ) as cursor:
+        row = await cursor.fetchone()
+        if not row:
+            return {"valence": 0.0, "arousal": 0.2, "dominant": "平静", "trigger_reason": "", "trigger_time": 0, "last_updated": 0}
+        return {
+            "valence": row["valence"],
+            "arousal": row["arousal"],
+            "dominant": row["dominant"],
+            "trigger_reason": row["trigger_reason"],
+            "trigger_time": row["trigger_time"],
+            "last_updated": row["last_updated"],
+        }
+
+
+async def update_bot_mood(valence: float, arousal: float, dominant: str, reason: str = ""):
+    """更新bot的情绪状态。"""
+    db = await get_db()
+    now = datetime.now().timestamp()
+    await db.execute(
+        "UPDATE bot_mood SET valence=?, arousal=?, dominant=?, trigger_reason=?, trigger_time=?, last_updated=? WHERE id=1",
+        (valence, arousal, dominant, reason, now, now)
+    )
+    await db.commit()
 
 
 # ---------- memory summaries ----------

@@ -4,6 +4,7 @@
 - 加载表情包标签库
 - 解析回复中的表情包标签 [sticker:emotion]
 - 根据情绪从对应池中随机选图
+- 联网检索补充
 - 发送表情包
 """
 import os
@@ -86,6 +87,33 @@ def select_sticker(emotion: str) -> Optional[str]:
     return None
 
 
+async def select_sticker_with_search(emotion: str) -> Optional[str]:
+    """先尝试本地选图，找不到合适的则联网搜索。"""
+    # 先尝试本地
+    local_path = select_sticker(emotion)
+    if local_path:
+        # 检查是否只是 fallback 到了 default（说明没有精确匹配）
+        fallbacks = _EMOTION_FALLBACK.get(emotion, [emotion, "default"])
+        _load_tags()
+        # 如果主标签有图，直接用本地的
+        primary_candidates = [fn for fn, t in _tags.items() if t == emotion]
+        if primary_candidates:
+            return local_path
+
+    # 本地没有精确匹配，尝试联网搜索
+    try:
+        from .sticker_search import search_sticker_online
+        web_path = await search_sticker_online(emotion)
+        if web_path:
+            logger.info(f"[表情包] 联网检索成功: {emotion} -> {os.path.basename(web_path)}")
+            return web_path
+    except Exception as e:
+        logger.warning(f"[表情包] 联网检索失败: {e}")
+
+    # 联网也失败，用本地的 fallback
+    return local_path
+
+
 def parse_sticker_tag(text: str) -> Tuple[str, Optional[str]]:
     """从回复中解析表情包标签。
 
@@ -108,9 +136,9 @@ def parse_sticker_tag(text: str) -> Tuple[str, Optional[str]]:
 
 # ---------- 连续表情包追踪 ----------
 _last_sticker_session: Dict[str, int] = {}  # session_id -> 连续发送次数
-MAX_CONSECUTIVE_STICKERS = 2  # 最多连续发2张，第3张强制不发
+MAX_CONSECUTIVE_STICKERS = 1  # 最多连续发1张，第2张强制不发
 
-STICKER_KEEP_PROBABILITY = 0.35  # LLM 加了标签时，保留概率 35%
+STICKER_KEEP_PROBABILITY = 0.25  # LLM 加了标签时，保留概率 25%
 
 
 def filter_sticker_tag(reply_text: str, session_id: str = "") -> Tuple[str, bool]:
@@ -156,8 +184,8 @@ def should_send_sticker_fallback(reply_text: str, emotion_hint: str = None) -> O
     if not STICKER_ENABLED:
         return None
 
-    # 30% 概率 fallback
-    if random.random() > 0.30:
+    # 15% 概率 fallback
+    if random.random() > 0.15:
         return None
 
     # 根据回复内容推断情绪

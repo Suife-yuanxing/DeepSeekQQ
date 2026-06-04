@@ -15,6 +15,7 @@ from .proactive import register_proactive_jobs, shutdown_proactive
 from .share_parser import global_cleanup_shares
 from .reminder import check_and_fire_reminders
 from .hot_topics import check_and_push_topics
+from .sticker_search import cleanup_old_downloads
 
 
 driver = get_driver()
@@ -75,6 +76,17 @@ async def on_start():
                 logger.error(f"[清理任务] 分享缓存清理异常: {e}")
 
     asyncio.create_task(_protected_task("分享缓存清理", _periodic_share_cleanup))
+
+    # 表情包下载缓存清理（每天清理一次）
+    async def _periodic_sticker_cleanup():
+        while True:
+            try:
+                await asyncio.sleep(86400)
+                await cleanup_old_downloads()
+            except Exception as e:
+                logger.error(f"[清理任务] 表情包缓存清理异常: {e}")
+
+    asyncio.create_task(_protected_task("表情包缓存清理", _periodic_sticker_cleanup))
 
     async def _periodic_checkpoint():
         while True:

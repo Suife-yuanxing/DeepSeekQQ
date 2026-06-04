@@ -16,12 +16,13 @@ from .share_parser import extract_and_cache_shares, get_recent_shares
 from .share_prompt import build_analysis_prompt
 from .api import call_deepseek_api
 from .voice import send_voice, should_send_voice
-from .context_analyzer import analyze_context_and_emotion, AnalysisResult
+from .stt import recognize_voice
+from .context_analyzer import analyze_context_and_emotion, AnalysisResult, update_bot_emotion
 from .search import should_search, search, format_search_for_prompt, extract_search_query
-from .reminder import is_reminder_request, create_reminder, list_reminders, cancel_reminder_by_id, get_pending_reminders_context
+from .reminder import is_reminder_request, create_reminder, list_reminders, cancel_reminder_by_id, get_pending_reminders_context, _generate_reminder_reply
 from .world_context import build_world_context_prompt, extract_city_from_message
 from .media import split_reply_and_links, extract_shareable_from_search, build_rich_message
-from .sticker import parse_sticker_tag, select_sticker, should_send_sticker_fallback, filter_sticker_tag
+from .sticker import parse_sticker_tag, select_sticker, should_send_sticker_fallback, filter_sticker_tag, select_sticker_with_search
 from nonebot import logger
 
 
@@ -43,6 +44,22 @@ async def _handle_chat_inner(bot: Bot, event: MessageEvent):
     session_id = get_session_id(event)
     is_group = isinstance(event, GroupMessageEvent)
     user_id = str(event.user_id)
+
+    # 语音识别：如果用户发了语音消息，先转为文字
+    has_voice = any(seg.type == "record" for seg in event.get_message())
+    if has_voice and not raw_msg:
+        recognized_text = await recognize_voice(event)
+        if recognized_text:
+            raw_msg = recognized_text
+            logger.info(f"[STT] 语音识别结果: {raw_msg[:50]}")
+        else:
+            logger.info("[STT] 语音识别失败或无内容")
+            # 识别失败时回复提示
+            try:
+                await bot.send(event, Message("听不太清楚呢...能打字告诉我吗？"))
+            except Exception:
+                pass
+            return
 
     if not check_rate_limit(user_id):
         logger.info(f"[限流] 用户 {user_id} 请求过快，已忽略")
@@ -68,7 +85,7 @@ async def _handle_chat_inner(bot: Bot, event: MessageEvent):
                     "你是一只猫娘，正在QQ上和人聊天。用户只给你发了一个表情，没有文字。"
                     "根据表情的含义，用你的性格（猫系、会调侃、嘴硬、偶尔撒娇）回复1-2句。"
                     "口语化、短句、像发QQ消息。不要加括号动作。"
-                    "如果适合发表情包，在末尾加 [sticker:情绪]（happy/angry/shy/sad/tsundere/cute/funny/love/speechless/exited）。大约40%概率加。"
+                    "如果适合发表情包，在末尾加 [sticker:情绪]（happy/angry/shy/sad/tsundere/cute/funny/love/speechless/excited）。大约20%概率加。绝对不要输出 [doge]、[微笑] 等QQ内置表情标签。"
                 )
                 emoji_messages = [
                     {"role": "system", "content": emoji_sys},
@@ -90,7 +107,7 @@ async def _handle_chat_inner(bot: Bot, event: MessageEvent):
                             await asyncio.sleep(random.uniform(0.8, 1.5))
                         await bot.send(event, Message(part))
                 if sticker_emotion:
-                    sticker_path = select_sticker(sticker_emotion)
+                    sticker_path = await select_sticker_with_search(sticker_emotion)
                     if sticker_path:
                         await asyncio.sleep(0.8)
                         await bot.send(event, MessageSegment.image(file=Path(sticker_path)))
@@ -98,12 +115,25 @@ async def _handle_chat_inner(bot: Bot, event: MessageEvent):
                 # 保存回复
                 await save_reply(session_id, user_id, f"[表情:{emoji_name}]", send_text)
             else:
-                reactions = [
-                    "喵？这是...让我看看~", "哦？什么东西，我瞧瞧~",
-                    "又有新东西？让我闻闻...", "哼，这次又是什么~",
-                    "发来我看看，别是什么无聊的哦？"
+                # 用 LLM 生成猫娘对分享链接的个性化回应
+                share_sys = (
+                    "你是一只猫娘，正在QQ上和人聊天。用户给你发了一个链接/分享，没有说其他话。"
+                    "用你的性格（猫系、会调侃、嘴硬、偶尔撒娇、有点小好色）回复1句话，表示你看到了。"
+                    "口语化、短句、像发QQ消息。不要加括号动作。只输出回复内容。"
+                )
+                share_messages = [
+                    {"role": "system", "content": share_sys},
+                    {"role": "user", "content": "用户发了一个链接，没有其他文字。回复一句表示你看到了。"}
                 ]
-                await bot.send(event, Message(random.choice(reactions)))
+                try:
+                    share_reply = await call_deepseek_api(share_messages, temperature=1.0)
+                    share_reply = filter_novel_actions(share_reply).strip()
+                    if len(share_reply) > 3:
+                        await bot.send(event, Message(share_reply))
+                    else:
+                        raise ValueError("回复太短")
+                except Exception:
+                    await bot.send(event, Message("喵？什么东西，让我看看~"))
         return
 
     shares_now = get_recent_shares(session_id)
@@ -142,6 +172,9 @@ async def _handle_chat_inner(bot: Bot, event: MessageEvent):
 
     analysis = await analyze_context_and_emotion(raw_msg, history_for_analysis, user_id)
 
+    # 更新bot自己的情绪状态
+    bot_mood_result = await update_bot_emotion(raw_msg, analysis.emotion)
+
     # 指代消解
     if analysis.context.referenced_entity:
         logger.info(f"[指代消解] 检测到指代: {analysis.context.referenced_entity}")
@@ -163,7 +196,7 @@ async def _handle_chat_inner(bot: Bot, event: MessageEvent):
         if id_match:
             reply_text = await cancel_reminder_by_id(user_id, int(id_match.group(1)))
         else:
-            reply_text = "告诉我你要取消的提醒ID嘛~"
+            reply_text = await _generate_reminder_reply("no_reminder")
         await bot.send(event, Message(reply_text))
         return
 
@@ -214,7 +247,7 @@ async def _handle_chat_inner(bot: Bot, event: MessageEvent):
             affection, mood, length_info, relevant_tags, shares_now, raw_msg,
             context_analysis=analysis.context, emotion_state=analysis.emotion,
             search_context=search_ctx, reminder_context=reminder_context,
-            world_context=world_context,
+            world_context=world_context, bot_mood=bot_mood_result,
         )
         sys_prompt += "\n回复风格：专业分析+个性点评。分析部分结构化、有深度，点评部分保持你的猫娘语气。绝对禁止括号动作描写。"
 
@@ -224,13 +257,13 @@ async def _handle_chat_inner(bot: Bot, event: MessageEvent):
             messages.append({"role": mem["role"], "content": mem["content"]})
         messages.append({"role": "user", "content": analysis_prompt})
     else:
-        length_info = estimate_reply_length(raw_msg, recent_memories)
+        length_info = estimate_reply_length(raw_msg, recent_memories, bot_mood_result)
         search_ctx = format_search_for_prompt(search_result) if search_result else ""
         sys_prompt = _build_system_prompt(
             affection, mood, length_info, relevant_tags, shares_now, raw_msg,
             context_analysis=analysis.context, emotion_state=analysis.emotion,
             search_context=search_ctx, reminder_context=reminder_context,
-            world_context=world_context,
+            world_context=world_context, bot_mood=bot_mood_result,
         )
         messages = [{"role": "system", "content": sys_prompt}]
         history_limit = REPLY_LENGTH_CONFIG["context_depth"] * CHAT_HISTORY_MULTIPLIER
@@ -289,7 +322,7 @@ async def _handle_chat_inner(bot: Bot, event: MessageEvent):
 
     # 发送表情包
     if sticker_emotion:
-        sticker_path = select_sticker(sticker_emotion)
+        sticker_path = await select_sticker_with_search(sticker_emotion)
         if sticker_path:
             await asyncio.sleep(0.8)
             await bot.send(event, MessageSegment.image(file=Path(sticker_path)))

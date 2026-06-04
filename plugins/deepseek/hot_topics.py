@@ -190,7 +190,7 @@ async def generate_push_message(topic: HotTopic) -> str:
     """用 LLM 生成猫娘风格的推送消息。"""
     try:
         messages = [
-            {"role": "system", "content": "你是一只猫娘少女，正在刷手机看到有趣的东西想分享给朋友。用QQ聊天的语气，口语化，短句。只输出消息内容，不要任何其他文字。"},
+            {"role": "system", "content": "你是一只猫娘少女，正在刷手机看到有趣的东西想分享给朋友。你的性格：猫系、会调侃、嘴硬、偶尔撒娇、有点小好色。用QQ聊天的语气，口语化，短句。只输出消息内容，不要任何其他文字。不要输出[doge]、[微笑]等QQ内置表情标签。"},
             {"role": "user", "content": _PUSH_PROMPT.format(topic=topic.title)}
         ]
         msg = await call_deepseek_api(messages, temperature=1.0)

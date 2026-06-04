@@ -26,6 +26,9 @@ VOICE_MAX_LENGTH: int = int(getattr(cfg, "voice_max_length", 120))
 VOICE_TRY_CONVERT: bool = True
 VOICE_NAME: str = "zh-CN-XiaomengNeural"
 
+# === 语音识别 (STT) ===
+STT_ENABLED: bool = str(getattr(cfg, "stt_enabled", "true")).lower() == "true"
+
 # === 回复策略 ===
 RANDOM_REPLY_CHANCE: float = float(getattr(cfg, "random_reply_chance", 0.05))
 MAX_MEMORY: int = int(getattr(cfg, "max_memory", 30))
