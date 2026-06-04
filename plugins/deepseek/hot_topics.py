@@ -19,6 +19,7 @@ from nonebot.adapters.onebot.v11 import MessageSegment, Message
 from .config import MY_QQ
 from .api import get_http_session, call_deepseek_api
 from .database import get_silent_private_users
+from .memory import save_reply
 
 # ============================================================
 # 数据结构
@@ -348,6 +349,12 @@ async def check_and_push_topics(bot) -> None:
                 rich_msg += MessageSegment.text(f"\n🔗 {topic.url}")
 
             await bot.send_private_msg(user_id=int(user_id), message=rich_msg)
+            # 存入对话记忆
+            session_id = f"private_{user_id}"
+            memory_text = f"[热搜推送:{topic.category}] {topic.title}"
+            if topic.url:
+                memory_text += f" {topic.url}"
+            await save_reply(session_id, str(user_id), "[热搜推送]", memory_text)
             logger.info(f"[热搜] 已推送给 {user_id}: {topic.title[:30]}")
             _today_push_count += 1
             _last_push_time = time.time()

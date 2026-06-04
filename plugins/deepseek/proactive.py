@@ -11,6 +11,7 @@ from nonebot.adapters.onebot.v11 import Message as OBMessage
 from .config import PROACTIVE_CONFIG, MY_QQ
 from .database import get_today_proactive_count, log_proactive, get_silent_private_users, get_affection
 from .api import call_deepseek_api
+from .memory import save_reply
 from nonebot import logger
 
 _scheduler: Optional[AsyncIOScheduler] = None
@@ -21,6 +22,9 @@ async def _send_proactive_message(bot, target_type: str, target_id: str, message
     try:
         if target_type == "private":
             await bot.send_private_msg(user_id=int(target_id), message=OBMessage(message))
+            # 存入对话记忆
+            session_id = f"private_{target_id}"
+            await save_reply(session_id, target_id, "[主动消息]", message)
             logger.info(f"[主动消息] 私聊 {target_id}: {message[:50]}...")
         elif target_type == "group":
             await bot.send_group_msg(group_id=int(target_id), message=OBMessage(message))

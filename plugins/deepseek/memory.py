@@ -136,10 +136,14 @@ async def _get_relevant_memories(user_id: str, session_id: str, current_msg: str
             _recently_used_memories[user_id] = _recently_used_memories[user_id][-MEMORY_COOLDOWN_ROUNDS * MAX_MEMORY_PER_REPLY:]
             return [f"[{s}]" for s in selected]
         
-        # 摘要记忆不受冷却限制，但也不要每次都带
+        # 摘要记忆：用户提到过往话题时始终带，否则80%概率
         summary = await get_memory_summary(session_id)
-        if summary and random.random() < 0.3:  # 30% 概率带摘要
-            return [f"[之前聊过的：{summary[:150]}]"]
+        if summary:
+            summary_keywords = set(re.findall(r'[一-龥]{2,}', summary))
+            user_keywords = set(re.findall(r'[一-龥]{2,}', current_msg))
+            has_overlap = bool(summary_keywords & user_keywords)
+            if has_overlap or random.random() < 0.8:
+                return [f"[之前聊过的：{summary[:150]}]"]
         
         return []
     except Exception as e:
