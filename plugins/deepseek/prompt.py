@@ -1,7 +1,6 @@
 """Prompt 构建与回复长度策略模块。"""
 import random
-import pytz
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from typing import List, Dict, Any, Optional
 
 from .share_prompt import format_shares_for_prompt
@@ -10,8 +9,7 @@ from .meme_lexicon import pick_meme
 
 
 def _get_time_context() -> str:
-    tz = pytz.timezone('Asia/Shanghai')
-    now = datetime.now(tz)
+    now = datetime.now(timezone(timedelta(hours=8)))
 
     weekday_names = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"]
     weekday = weekday_names[now.weekday()]

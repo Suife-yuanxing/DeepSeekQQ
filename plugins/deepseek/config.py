@@ -25,6 +25,7 @@ VOICE_CHANCE: float = float(getattr(cfg, "voice_chance", 0.03))
 VOICE_MAX_LENGTH: int = int(getattr(cfg, "voice_max_length", 120))
 VOICE_TRY_CONVERT: bool = True
 VOICE_NAME: str = "zh-CN-XiaomengNeural"
+VOICE_TOKEN: str = getattr(cfg, "voice_token", "") or ""  # 语音文件端点鉴权 token
 
 # === 语音识别 (STT) ===
 STT_ENABLED: bool = str(getattr(cfg, "stt_enabled", "true")).lower() == "true"
@@ -140,6 +141,12 @@ REMINDER_CHECK_INTERVAL: int = int(getattr(cfg, "reminder_check_interval", 30))
 # === Phase 5: 表情包 ===
 STICKER_ENABLED: bool = str(getattr(cfg, "sticker_enabled", "true")).lower() == "true"
 STICKER_DIR: str = getattr(cfg, "sticker_dir", "./data/stickers")
+STICKER_KEEP_PROBABILITY: float = float(getattr(cfg, "sticker_keep_probability", 0.25))
+MAX_CONSECUTIVE_STICKERS: int = int(getattr(cfg, "max_consecutive_stickers", 1))
+
+# === 热搜推送 ===
+MAX_DAILY_PUSH: int = int(getattr(cfg, "max_daily_push", 3))
+PUSH_COOLDOWN_HOURS: int = int(getattr(cfg, "push_cooldown_hours", 4))
 
 # === Phase 6: 天气 (和风天气) ===
 WEATHER_ENABLED: bool = str(getattr(cfg, "weather_enabled", "true")).lower() == "true"

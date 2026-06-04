@@ -4,7 +4,7 @@ import asyncio
 import random
 import re
 from pathlib import Path
-from typing import List, Dict, Any
+from typing import List
 
 from nonebot.adapters.onebot.v11 import Bot, MessageEvent, GroupMessageEvent, Message, MessageSegment
 
@@ -76,11 +76,11 @@ async def _handle_chat_inner(bot: Bot, event: MessageEvent):
             last_share = recent[-1] if recent else None
             if last_share and last_share.get("type") == "表情":
                 emoji_text = last_share.get("summary", "")
-                import re as _re
-                emoji_match = _re.search(r'用户发送了(?:QQ表情|QQ商城表情|QQ内置表情|表情)[：:]?\s*(.+?)]', emoji_text)
+                emoji_match = re.search(r'用户发送了(?:QQ表情|QQ商城表情|QQ内置表情|表情)[：:]?\s*(.+?)]', emoji_text)
                 emoji_name = emoji_match.group(1).strip() if emoji_match else "表情"
-                # 用 LLM 生成猫娘个性化回应
-                emotion_prompt = f"用户给你发了一个QQ表情「{emoji_name}」，没有说其他话。"
+                # 用 LLM 生成猫娘个性化回应（用户输入用标签隔离防注入）
+                safe_emoji = emoji_name.replace("{", "").replace("}", "").replace("system", "").replace("assistant", "").replace("user", "")[:20]
+                emotion_prompt = f"用户给你发了一个QQ表情「{safe_emoji}」，没有说其他话。"
                 emoji_sys = (
                     "你是一只猫娘，正在QQ上和人聊天。用户只给你发了一个表情，没有文字。"
                     "根据表情的含义，用你的性格（猫系、会调侃、嘴硬、偶尔撒娇）回复1-2句。"
@@ -192,8 +192,7 @@ async def _handle_chat_inner(bot: Bot, event: MessageEvent):
         return
     elif reminder_intent == "cancel":
         # 尝试从消息中提取 reminder ID
-        import re as _re
-        id_match = _re.search(r'(\d+)', raw_msg)
+        id_match = re.search(r'(\d+)', raw_msg)
         if id_match:
             reply_text = await cancel_reminder_by_id(user_id, int(id_match.group(1)))
         else:

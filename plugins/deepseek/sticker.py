@@ -17,7 +17,7 @@ from typing import List, Tuple, Optional, Dict
 from nonebot import logger
 from nonebot.adapters.onebot.v11 import MessageSegment, Message
 
-from .config import STICKER_DIR, STICKER_ENABLED
+from .config import STICKER_DIR, STICKER_ENABLED, STICKER_KEEP_PROBABILITY, MAX_CONSECUTIVE_STICKERS
 
 # ============================================================
 # 标签库（支持 v1 单标签 + v2 多标签+场景）
@@ -199,9 +199,6 @@ def parse_sticker_tag(text: str) -> Tuple[str, Optional[str], str]:
 
 # ---------- 连续表情包追踪 ----------
 _last_sticker_session: Dict[str, int] = {}  # session_id -> 连续发送次数
-MAX_CONSECUTIVE_STICKERS = 1  # 最多连续发1张，第2张强制不发
-
-STICKER_KEEP_PROBABILITY = 0.25  # LLM 加了标签时，保留概率 25%
 
 
 def filter_sticker_tag(reply_text: str, session_id: str = "") -> Tuple[str, bool]:

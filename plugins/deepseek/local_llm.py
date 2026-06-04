@@ -5,12 +5,11 @@
 """
 import asyncio
 import json
-import logging
 from typing import List, Dict, Optional
 
 import aiohttp
 
-logger = logging.getLogger("deepseek.local_llm")
+from nonebot import logger
 
 OLLAMA_HOST = "http://localhost:11434"
 DEFAULT_MODEL = "moondream"  # 视觉模型，也支持基础文本
@@ -43,9 +42,10 @@ async def call_ollama_chat(
     }
 
     try:
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
-                f"{host}/api/chat",
+        from .api import get_http_session
+        session = await get_http_session()
+        async with session.post(
+            f"{host}/api/chat",
                 json=payload,
                 timeout=aiohttp.ClientTimeout(total=timeout),
             ) as resp:
@@ -77,9 +77,10 @@ async def call_ollama_generate(
         "stream": False,
     }
     try:
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
-                f"{host}/api/generate",
+        from .api import get_http_session
+        session = await get_http_session()
+        async with session.post(
+            f"{host}/api/generate",
                 json=payload,
                 timeout=aiohttp.ClientTimeout(total=timeout),
             ) as resp:
@@ -98,12 +99,13 @@ async def call_ollama_generate(
 async def check_ollama_available(host: str = OLLAMA_HOST) -> bool:
     """检查 Ollama 服务是否可用。"""
     try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(
-                f"{host}/api/tags",
-                timeout=aiohttp.ClientTimeout(total=5),
-            ) as resp:
-                return resp.status == 200
+        from .api import get_http_session
+        session = await get_http_session()
+        async with session.get(
+            f"{host}/api/tags",
+            timeout=aiohttp.ClientTimeout(total=5),
+        ) as resp:
+            return resp.status == 200
     except Exception:
         return False
 
@@ -111,9 +113,10 @@ async def check_ollama_available(host: str = OLLAMA_HOST) -> bool:
 async def list_local_models(host: str = OLLAMA_HOST) -> List[str]:
     """列出本地已安装的模型。"""
     try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(
-                f"{host}/api/tags",
+        from .api import get_http_session
+        session = await get_http_session()
+        async with session.get(
+            f"{host}/api/tags",
                 timeout=aiohttp.ClientTimeout(total=5),
             ) as resp:
                 if resp.status != 200:

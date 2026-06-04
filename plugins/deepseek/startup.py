@@ -8,7 +8,7 @@ from nonebot import get_driver, logger
 from fastapi import FastAPI
 from fastapi.responses import FileResponse
 
-from .config import VOICE_DIR, SERVER_HOST, SERVER_PORT, REMINDER_CHECK_INTERVAL
+from .config import VOICE_DIR, SERVER_HOST, SERVER_PORT, REMINDER_CHECK_INTERVAL, VOICE_TOKEN
 from .database import init_db, close_db, checkpoint_db
 from .api import close_http_session
 from .proactive import register_proactive_jobs, shutdown_proactive
@@ -26,12 +26,15 @@ async def on_start():
     os.makedirs(VOICE_DIR, exist_ok=True)
     await init_db()
 
-    # 挂载语音文件服务（安全路径检查）
+    # 挂载语音文件服务（安全路径检查 + token 鉴权）
     try:
         app = driver.server_app
         if app and isinstance(app, FastAPI):
             @app.get("/voice/{filename}")
-            async def serve_voice(filename: str):
+            async def serve_voice(filename: str, token: str = ""):
+                # 简单 token 鉴权（防止未授权访问）
+                if VOICE_TOKEN and token != VOICE_TOKEN:
+                    return {"error": "unauthorized"}
                 voice_path = Path(VOICE_DIR).resolve()
                 try:
                     file_path = (voice_path / filename).resolve()
@@ -47,10 +50,11 @@ async def on_start():
         logger.warning(f"语音文件服务挂载失败: {e}")
 
     has_ff = shutil.which("ffmpeg") is not None
+    from .config import RANDOM_REPLY_CHANCE, VOICE_ENABLED_PRIVATE, VOICE_ENABLED_GROUP
     logger.info("✅ DeepSeek猫娘插件已启动~ 喵！")
     logger.info(f"ffmpeg 检测: {'已安装 ✅' if has_ff else '未安装 ❌ 语音可能无法发送'}")
-    logger.info(f"语音开关: 私聊=True, 群聊=True")
-    logger.info(f"群聊随机回复概率: {5.0}%")
+    logger.info(f"语音开关: 私聊={VOICE_ENABLED_PRIVATE}, 群聊={VOICE_ENABLED_GROUP}")
+    logger.info(f"群聊随机回复概率: {RANDOM_REPLY_CHANCE*100:.1f}%")
 
     async def _wait_and_register():
         await asyncio.sleep(15)

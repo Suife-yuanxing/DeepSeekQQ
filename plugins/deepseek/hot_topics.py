@@ -16,7 +16,7 @@ import aiohttp
 from nonebot import logger
 from nonebot.adapters.onebot.v11 import MessageSegment, Message
 
-from .config import MY_QQ
+from .config import MY_QQ, MAX_DAILY_PUSH, PUSH_COOLDOWN_HOURS
 from .api import get_http_session, call_deepseek_api
 from .database import get_silent_private_users
 from .memory import save_reply
@@ -276,17 +276,13 @@ _last_push_time: float = 0
 _today_push_count: int = 0
 _last_push_date: str = ""
 
-MAX_DAILY_PUSH = 3
-PUSH_COOLDOWN_HOURS = 4
-
 
 async def check_and_push_topics(bot) -> None:
     """检查并推送热点话题。由定时任务调用。"""
     global _last_push_time, _today_push_count, _last_push_date
 
-    import pytz
-    from datetime import datetime
-    now = datetime.now(pytz.timezone('Asia/Shanghai'))
+    from datetime import datetime, timezone, timedelta
+    now = datetime.now(timezone(timedelta(hours=8)))
 
     # 重置每日计数
     today = now.strftime("%Y-%m-%d")

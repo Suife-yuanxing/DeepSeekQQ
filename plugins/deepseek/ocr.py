@@ -4,14 +4,12 @@
 - 全局可调用：from .ocr import extract_text_from_image
 """
 import io
-import logging
 from pathlib import Path
 from typing import Optional
 
 import requests
 from PIL import Image
-
-logger = logging.getLogger("deepseek.ocr")
+from nonebot import logger
 
 _ocr_engine = None
 
@@ -31,7 +29,7 @@ def _get_engine():
 
 
 def extract_text_from_image(source: str, lang: str = "ch") -> str:
-    """从图片中提取文字（同步版本）。
+    """从图片中提取文字（同步版本，通过 asyncio.to_thread 调用避免阻塞）。
 
     Args:
         source: 图片文件路径 或 HTTP(S) URL
@@ -44,7 +42,7 @@ def extract_text_from_image(source: str, lang: str = "ch") -> str:
     if engine is None:
         return ""
 
-    # 获取图片
+    # 获取图片（同步，通过 to_thread 避免阻塞事件循环）
     try:
         if source.startswith(("http://", "https://")):
             resp = requests.get(source, timeout=15)

@@ -7,6 +7,7 @@
 替代原有的关键词匹配方案，实现语义级理解。
 """
 import json
+import math
 import re
 import time
 from dataclasses import dataclass, field
@@ -232,7 +233,6 @@ async def analyze_context_and_emotion(
 
 def _decay_factor(dt_seconds: float) -> float:
     """计算衰减因子：指数衰减，半衰期 DECAY_HALF_LIFE_SECONDS"""
-    import math
     return math.exp(-0.693 * dt_seconds / DECAY_HALF_LIFE_SECONDS)
 
 

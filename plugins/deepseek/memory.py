@@ -24,6 +24,17 @@ from .context_analyzer import analyze_context_and_emotion, AnalysisResult
 _recently_used_memories: Dict[str, List[str]] = {}  # user_id -> [最近用过的记忆内容]
 MEMORY_COOLDOWN_ROUNDS = 3  # 同一记忆至少间隔3轮才再次使用
 MAX_MEMORY_PER_REPLY = 1   # 每次回复最多插入1条记忆
+_MEMORY_CACHE_MAX_USERS = 200  # 最大缓存用户数，超过时清理最旧的
+
+
+def _cleanup_memory_cache():
+    """清理不活跃用户的记忆冷却缓存，防止内存泄漏。"""
+    if len(_recently_used_memories) <= _MEMORY_CACHE_MAX_USERS:
+        return
+    # 超过上限时，清空一半（简单策略）
+    keys = list(_recently_used_memories.keys())
+    for k in keys[:len(keys) // 2]:
+        del _recently_used_memories[k]
 
 
 async def save_and_get_context(session_id: str, user_id: str, raw_msg: str,
@@ -104,9 +115,10 @@ def _is_memory_relevant(memory_content: str, user_msg: str) -> bool:
 async def _get_relevant_memories(user_id: str, session_id: str, current_msg: str, limit: int = 5) -> List[str]:
     """获取相关记忆提示语。增加冷却和相关性过滤。"""
     try:
+        _cleanup_memory_cache()
         now = datetime.now().timestamp()
         rows = await get_relevant_memory_tags(user_id, limit)
-        
+
         # 冷却列表
         cooldown_list = _recently_used_memories.get(user_id, [])
         

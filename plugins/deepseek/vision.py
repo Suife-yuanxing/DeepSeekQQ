@@ -90,11 +90,12 @@ async def _try_qwen_vl(img_b64: str, prompt: str) -> Optional[str]:
     }
 
     try:
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
-                url, json=payload, headers=headers,
-                timeout=aiohttp.ClientTimeout(total=30),
-            ) as resp:
+        from .api import get_http_session
+        session = await get_http_session()
+        async with session.post(
+            url, json=payload, headers=headers,
+            timeout=aiohttp.ClientTimeout(total=30),
+        ) as resp:
                 if resp.status != 200:
                     text = await resp.text()
                     logger.warning(f"[Vision] Qwen-VL 状态码: {resp.status} {text[:100]}")
@@ -119,12 +120,13 @@ async def _try_ollama_vision(img_b64: str, prompt: str) -> Optional[str]:
         "stream": False,
     }
     try:
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
-                f"{OLLAMA_HOST}/api/generate",
-                json=payload,
-                timeout=aiohttp.ClientTimeout(total=30),
-            ) as resp:
+        from .api import get_http_session
+        session = await get_http_session()
+        async with session.post(
+            f"{OLLAMA_HOST}/api/generate",
+            json=payload,
+            timeout=aiohttp.ClientTimeout(total=30),
+        ) as resp:
                 if resp.status != 200:
                     return None
                 data = await resp.json()
@@ -157,10 +159,11 @@ def _read_file_as_b64(path: str) -> Optional[str]:
 
 async def _download_and_encode(url: str) -> Optional[str]:
     try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(
-                url, timeout=aiohttp.ClientTimeout(total=15)
-            ) as resp:
+        from .api import get_http_session
+        session = await get_http_session()
+        async with session.get(
+            url, timeout=aiohttp.ClientTimeout(total=15)
+        ) as resp:
                 if resp.status != 200:
                     return None
                 return base64.b64encode(await resp.read()).decode("utf-8")
