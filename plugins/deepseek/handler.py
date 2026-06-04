@@ -31,6 +31,16 @@ from .media import split_reply_and_links, extract_shareable_from_search, build_r
 from .sticker import parse_sticker_tag, select_sticker, should_send_sticker_fallback, filter_sticker_tag, select_sticker_with_search
 from .security import scan_input, get_blocked_reply
 
+
+# ============================================================
+# 辅助：构造引用回复消息
+# ============================================================
+
+def _reply(event: MessageEvent, msg: Message) -> Message:
+    """给消息加上引用回复 segment（仅第一条消息使用）。"""
+    return Message(MessageSegment.reply(event.message_id)) + msg
+
+
 # ============================================================
 # Pipeline 数据结构
 # ============================================================
@@ -94,7 +104,7 @@ async def _stage_security(ctx: ChatContext) -> Optional[str]:
     is_safe, reason = scan_input(ctx.raw_msg, ctx.user_id)
     if not is_safe:
         reply = get_blocked_reply(reason)
-        await ctx.bot.send(ctx.event, Message(reply))
+        await ctx.bot.send(ctx.event, _reply(ctx.event, Message(reply)))
         logger.warning(f"[安全] 拦截消息: user={ctx.user_id[:6]} reason={reason}")
         return _SKIP
     return None
@@ -112,7 +122,7 @@ async def _stage_voice(ctx: ChatContext) -> Optional[str]:
         else:
             logger.info("[STT] 语音识别失败或无内容")
             try:
-                await ctx.bot.send(ctx.event, Message("听不太清楚呢...能打字告诉我吗？"))
+                await ctx.bot.send(ctx.event, _reply(ctx.event, Message("听不太清楚呢...能打字告诉我吗？")))
             except Exception:
                 pass
             return _SKIP
@@ -181,7 +191,7 @@ async def _stage_xiaohaihe(ctx: ChatContext) -> Optional[str]:
             latest_share["restricted"] = False
             logger.info(f"[分享] 用户补充了小黑盒正文，长度: {len(ctx.raw_msg)}")
         elif any(kw in ctx.raw_msg for kw in ["讲了什么", "是什么", "内容", "说了什么", "这个呢", "怎么看", "分析一下", "评价"]):
-            await ctx.bot.send(ctx.event, Message("小黑盒的内容网页端看不了呢...你把正文复制粘贴给我，我帮你分析~"))
+            await ctx.bot.send(ctx.event, _reply(ctx.event, Message("小黑盒的内容网页端看不了呢...你把正文复制粘贴给我，我帮你分析~")))
             return _SKIP
     return None
 
@@ -250,11 +260,11 @@ async def _stage_reminder(ctx: ChatContext) -> Optional[str]:
     reminder_intent = is_reminder_request(ctx.raw_msg)
     if reminder_intent == "create":
         reply_text = await create_reminder(ctx.user_id, ctx.session_id, ctx.raw_msg)
-        await ctx.bot.send(ctx.event, Message(reply_text))
+        await ctx.bot.send(ctx.event, _reply(ctx.event, Message(reply_text)))
         return _SKIP
     elif reminder_intent == "list":
         reply_text = await list_reminders(ctx.user_id)
-        await ctx.bot.send(ctx.event, Message(reply_text))
+        await ctx.bot.send(ctx.event, _reply(ctx.event, Message(reply_text)))
         return _SKIP
     elif reminder_intent == "cancel":
         id_match = re.search(r'(\d+)', ctx.raw_msg)
@@ -262,7 +272,7 @@ async def _stage_reminder(ctx: ChatContext) -> Optional[str]:
             reply_text = await cancel_reminder_by_id(ctx.user_id, int(id_match.group(1)))
         else:
             reply_text = await _generate_reminder_reply("no_reminder")
-        await ctx.bot.send(ctx.event, Message(reply_text))
+        await ctx.bot.send(ctx.event, _reply(ctx.event, Message(reply_text)))
         return _SKIP
     return None
 
@@ -281,7 +291,7 @@ async def _stage_llm(ctx: ChatContext) -> Optional[str]:
     if is_asking_analysis:
         analysis_prompt = build_analysis_prompt(valid_shares, ctx.raw_msg)
         if analysis_prompt == "[小黑盒内容需要用户粘贴正文后才能分析]":
-            await ctx.bot.send(ctx.event, Message("小黑盒的内容网页端看不了呢...你把正文复制粘贴给我，我帮你分析~"))
+            await ctx.bot.send(ctx.event, _reply(ctx.event, Message("小黑盒的内容网页端看不了呢...你把正文复制粘贴给我，我帮你分析~")))
             return _SKIP
 
         length_info = {"target_lines": 4, "style": "专业分析+个性点评"}
@@ -339,7 +349,8 @@ async def _stage_post(ctx: ChatContext) -> Optional[str]:
     text_for_links, reply_urls = split_reply_and_links(clean_text)
     search_items = extract_shareable_from_search(ctx.search_result) if ctx.search_result else []
 
-    # 发送
+    # 发送（首条文字消息加引用回复）
+    first_sent = False
     send_as_voice = should_send_voice(ctx.raw_msg, clean_text, ctx.recent_memories)
     if send_as_voice:
         logger.warning(f"[决策] 上下文判断发语音，跳过文字: {clean_text[:30]}...")
@@ -348,7 +359,8 @@ async def _stage_post(ctx: ChatContext) -> Optional[str]:
             rich_msg = build_rich_message("", reply_urls, search_items, show_links=ctx.is_explicit_search)
             if rich_msg:
                 await asyncio.sleep(1.5)
-                await ctx.bot.send(ctx.event, rich_msg)
+                await ctx.bot.send(ctx.event, _reply(ctx.event, rich_msg))
+                first_sent = True
     else:
         logger.info(f"[决策] 上下文判断发文字: {clean_text[:30]}...")
         if reply_urls or search_items:
@@ -357,13 +369,21 @@ async def _stage_post(ctx: ChatContext) -> Optional[str]:
             for i, part in enumerate(parts):
                 if i > 0:
                     await asyncio.sleep(calc_message_delay(part))
-                await ctx.bot.send(ctx.event, Message(part))
+                if not first_sent:
+                    await ctx.bot.send(ctx.event, _reply(ctx.event, Message(part)))
+                    first_sent = True
+                else:
+                    await ctx.bot.send(ctx.event, Message(part))
         else:
             parts = split_long_reply(clean_text)
             for i, part in enumerate(parts):
                 if i > 0:
                     await asyncio.sleep(calc_message_delay(part))
-                await ctx.bot.send(ctx.event, Message(part))
+                if not first_sent:
+                    await ctx.bot.send(ctx.event, _reply(ctx.event, Message(part)))
+                    first_sent = True
+                else:
+                    await ctx.bot.send(ctx.event, Message(part))
 
     # 发送表情包
     if sticker_emotion:
@@ -411,7 +431,10 @@ async def _handle_emoji_share(ctx: ChatContext, last_share: dict):
         for i, part in enumerate(parts):
             if i > 0:
                 await asyncio.sleep(random.uniform(0.8, 1.5))
-            await ctx.bot.send(ctx.event, Message(part))
+            if i == 0:
+                await ctx.bot.send(ctx.event, _reply(ctx.event, Message(part)))
+            else:
+                await ctx.bot.send(ctx.event, Message(part))
     if sticker_emotion:
         sticker_path = await select_sticker_with_search(sticker_emotion, emoji_scene)
         if sticker_path:
@@ -436,11 +459,11 @@ async def _handle_link_share(ctx: ChatContext):
         share_reply = await call_deepseek_api(share_messages, temperature=1.0)
         share_reply = filter_novel_actions(share_reply).strip()
         if len(share_reply) > 3:
-            await ctx.bot.send(ctx.event, Message(share_reply))
+            await ctx.bot.send(ctx.event, _reply(ctx.event, Message(share_reply)))
         else:
             raise ValueError("回复太短")
     except Exception:
-        await ctx.bot.send(ctx.event, Message("喵？什么东西，让我看看~"))
+        await ctx.bot.send(ctx.event, _reply(ctx.event, Message("喵？什么东西，让我看看~")))
 
 
 # ============================================================
@@ -449,6 +472,7 @@ async def _handle_link_share(ctx: ChatContext):
 
 async def handle_chat(bot: Bot, event: MessageEvent):
     """主入口：构建上下文并执行 Pipeline。"""
+    typing_msg_id = None
     try:
         ctx = ChatContext(
             bot=bot,
@@ -459,6 +483,17 @@ async def handle_chat(bot: Bot, event: MessageEvent):
             is_group=isinstance(event, GroupMessageEvent),
         )
 
+        # Typing 指示器：发送临时消息
+        try:
+            resp = await bot.send(event, Message("⏳ ..."))
+            if isinstance(resp, dict):
+                typing_msg_id = resp.get("message_id")
+            elif hasattr(resp, "message_id"):
+                typing_msg_id = resp.message_id
+        except Exception:
+            pass
+
+        # 执行 Pipeline
         for stage_name, stage_func in _PIPELINE:
             result = await stage_func(ctx)
             if result is _SKIP:
@@ -469,6 +504,13 @@ async def handle_chat(bot: Bot, event: MessageEvent):
         logger.error(f"[handle_chat] 严重异常: {e}")
         traceback.print_exc()
         try:
-            await bot.send(event, Message("呜...脑袋有点乱，让我缓缓..."))
+            await bot.send(event, _reply(event, Message("呜...脑袋有点乱，让我缓缓...")))
         except Exception:
             pass
+    finally:
+        # 撤回 typing 消息
+        if typing_msg_id:
+            try:
+                await bot.delete_msg(message_id=typing_msg_id)
+            except Exception:
+                pass
