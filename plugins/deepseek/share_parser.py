@@ -439,7 +439,18 @@ async def extract_and_cache_shares(event, session_id: str) -> bool:
                 if not emoji_desc: emoji_desc = "一个表情"
                 shares.append({"type": "表情", "source": f"用户发了{emoji_desc}", "summary": f"[用户发送了QQ表情：{emoji_desc}]", "time": datetime.now().timestamp()})
             else:
-                shares.append({"type": "图片", "source": seg.data.get("url") or seg.data.get("file", "未知图片"), "summary": "[图片内容暂无法直接识别]", "time": datetime.now().timestamp()})
+                img_url = seg.data.get("url") or seg.data.get("file", "未知图片")
+                # 三层降级识别图片：视觉模型 → OCR → 占位
+                img_desc = "[图片内容暂无法直接识别]"
+                try:
+                    from .vision import analyze_image
+                    if img_url and img_url != "未知图片":
+                        vision_result = await analyze_image(img_url, "请用中文简洁描述这张图片的主要内容，2-3句话")
+                        if vision_result and vision_result != "[图片内容暂无法识别]" and vision_result != "[图片文件不存在]":
+                            img_desc = f"[图片内容: {vision_result}]"
+                except Exception as e:
+                    logger.warning(f"[图片识别] 异常: {e}")
+                shares.append({"type": "图片", "source": img_url, "summary": img_desc, "time": datetime.now().timestamp()})
         elif seg.type == "face":
             face_id = seg.data.get("id", "")
             face_text = _QQ_FACE_MAP.get(str(face_id), "表情")

@@ -3,16 +3,21 @@
 - 带指数退避重试（3次）
 - 用户级冷却限流
 - 轻量级响应清洗（不过度过滤括号）
+- 本地 Ollama 离线降级（自动，对调用方透明）
 """
 import asyncio
 import json
+import logging
 from typing import List, Dict, Any, Optional
 import aiohttp
 
 from .config import API_KEY, MODEL, BASE_URL, API_MAX_TOKENS
 from .utils import clean_api_response
 
+logger = logging.getLogger("deepseek.api")
+
 _http_session: Optional[aiohttp.ClientSession] = None
+
 
 async def get_http_session() -> aiohttp.ClientSession:
     """获取全局复用的 HTTP Session。异常后自动重建。"""
@@ -21,6 +26,7 @@ async def get_http_session() -> aiohttp.ClientSession:
         _http_session = aiohttp.ClientSession()
     return _http_session
 
+
 async def close_http_session():
     """关闭全局 HTTP Session。"""
     global _http_session
@@ -28,9 +34,12 @@ async def close_http_session():
         await _http_session.close()
         _http_session = None
 
-async def call_deepseek_api(messages: List[Dict[str, str]], temperature: float = 0.9) -> str:
+
+async def _call_deepseek_raw(messages: List[Dict[str, str]], temperature: float = 0.9) -> Optional[str]:
+    """调用 DeepSeek 远程 API。成功返回内容，失败返回 None。"""
     if not API_KEY:
-        return "API密钥没配置好喵..."
+        logger.warning("[API] API密钥未配置")
+        return None
 
     url = f"{BASE_URL}/chat/completions"
     headers = {
@@ -61,13 +70,13 @@ async def call_deepseek_api(messages: List[Dict[str, str]], temperature: float =
                     await asyncio.sleep(wait)
                     continue
                 if resp.status != 200:
-                    return f"API出错啦...状态码{resp.status}"
+                    logger.warning(f"[API] 状态码 {resp.status}，将降级到本地模型")
+                    return None
                 data = await resp.json()
                 content = data["choices"][0]["message"]["content"]
                 return clean_api_response(content)
         except (asyncio.TimeoutError, aiohttp.ClientError) as e:
             last_exception = str(e)
-            # 网络异常时重置 Session，下次自动重建
             global _http_session
             if _http_session:
                 try:
@@ -80,4 +89,42 @@ async def call_deepseek_api(messages: List[Dict[str, str]], temperature: float =
             last_exception = str(e)
             await asyncio.sleep(2 ** attempt)
 
-    return f"网络抽风了...{str(last_exception)[:50]}"
+    logger.warning(f"[API] 远程调用失败({last_exception})，将降级到本地模型")
+    return None
+
+
+async def _call_local_llm(messages: List[Dict[str, str]], temperature: float = 0.7) -> Optional[str]:
+    """降级方案：调用本地 Ollama 模型。"""
+    try:
+        from .local_llm import call_ollama_chat, check_ollama_available
+        if not await check_ollama_available():
+            logger.warning("[API] 本地 Ollama 服务也不可用")
+            return None
+        result = await call_ollama_chat(messages, temperature=temperature)
+        if result and "连接失败" not in result and "超时" not in result and "出错" not in result:
+            return result
+        return None
+    except Exception as e:
+        logger.warning(f"[API] 本地模型调用失败: {e}")
+        return None
+
+
+async def call_deepseek_api(messages: List[Dict[str, str]], temperature: float = 0.9) -> str:
+    """统一 API 入口 - 三层降级（对调用方完全透明）：
+    第1层: DeepSeek 远程 API
+    第2层: 本地 Ollama 模型
+    第3层: 返回错误提示
+    """
+    # ===== 第1层：DeepSeek 远程 API =====
+    result = await _call_deepseek_raw(messages, temperature)
+    if result is not None:
+        return result
+
+    # ===== 第2层：本地 Ollama 模型 =====
+    logger.info("[API] 降级到本地 Ollama 模型")
+    local_result = await _call_local_llm(messages, temperature)
+    if local_result is not None:
+        return local_result
+
+    # ===== 第3层：错误提示 =====
+    return "主人，我脑子暂时不好使了喵...远程和本地模型都连不上，请稍后再试~"
