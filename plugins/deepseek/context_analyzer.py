@@ -162,7 +162,7 @@ async def analyze_context_and_emotion(
             {"role": "system", "content": "你是一个对话分析助手，只输出JSON，不要有任何其他文字。"},
             {"role": "user", "content": prompt}
         ]
-        raw = await api.call_deepseek_api(messages, temperature=0.2)
+        raw = await api.call_deepseek_api(messages, temperature=0.2, task_type="analysis")
         data = _parse_analysis_response(raw)
 
         if not data:

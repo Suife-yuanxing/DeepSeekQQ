@@ -1,4 +1,10 @@
-"""插件启动/关闭与后台任务模块。"""
+"""插件启动/关闭与后台任务模块。
+
+ECC 风格改造：
+- LoopManager 统一管理所有后台任务
+- 数据库迁移机制
+- 会话状态持久化（启停时保存/恢复）
+"""
 import os
 import asyncio
 import shutil
@@ -9,7 +15,12 @@ from fastapi import FastAPI
 from fastapi.responses import FileResponse
 
 from .config import VOICE_DIR, SERVER_HOST, SERVER_PORT, REMINDER_CHECK_INTERVAL, VOICE_TOKEN
-from .database import init_db, close_db, checkpoint_db, decay_memory_tags, prune_memory_tags
+from .database import (
+    init_db, close_db, checkpoint_db, decay_memory_tags, prune_memory_tags,
+    save_session_state, get_active_sessions
+)
+from .migrations import run_migrations
+from .loop_manager import loop_manager
 from .api import close_http_session
 from .proactive import register_proactive_jobs, shutdown_proactive
 from .share_parser import global_cleanup_shares
@@ -26,13 +37,17 @@ async def on_start():
     os.makedirs(VOICE_DIR, exist_ok=True)
     await init_db()
 
+    # 执行数据库迁移
+    from .database import get_db
+    db = await get_db()
+    await run_migrations(db)
+
     # 挂载语音文件服务（安全路径检查 + token 鉴权）
     try:
         app = driver.server_app
         if app and isinstance(app, FastAPI):
             @app.get("/voice/{filename}")
             async def serve_voice(filename: str, token: str = ""):
-                # 简单 token 鉴权（防止未授权访问）
                 if VOICE_TOKEN and token != VOICE_TOKEN:
                     return {"error": "unauthorized"}
                 voice_path = Path(VOICE_DIR).resolve()
@@ -56,117 +71,88 @@ async def on_start():
     logger.info(f"语音开关: 私聊={VOICE_ENABLED_PRIVATE}, 群聊={VOICE_ENABLED_GROUP}")
     logger.info(f"群聊随机回复概率: {RANDOM_REPLY_CHANCE*100:.1f}%")
 
-    async def _wait_and_register():
+    # === 注册所有后台任务到 LoopManager ===
+
+    async def _register_proactive():
+        import nonebot
         await asyncio.sleep(15)
-        try:
-            import nonebot
-            bots = nonebot.get_bots()
-            if bots:
-                bot = list(bots.values())[0]
-                await register_proactive_jobs(bot)
-            else:
-                logger.warning("[主动消息] Bot未连接，跳过")
-        except Exception as e:
-            logger.error(f"[主动消息] 注册失败: {e}")
+        bots = nonebot.get_bots()
+        if bots:
+            bot = list(bots.values())[0]
+            await register_proactive_jobs(bot)
+        else:
+            logger.warning("[主动消息] Bot未连接，跳过")
 
-    asyncio.create_task(_protected_task("主动消息注册", _wait_and_register))
+    async def _share_cleanup():
+        await asyncio.sleep(60)
+        await global_cleanup_shares()
 
-    async def _periodic_share_cleanup():
-        while True:
-            try:
-                await asyncio.sleep(3600)
-                await global_cleanup_shares()
-            except Exception as e:
-                logger.error(f"[清理任务] 分享缓存清理异常: {e}")
+    async def _sticker_cleanup():
+        await asyncio.sleep(300)
+        await cleanup_old_downloads()
 
-    asyncio.create_task(_protected_task("分享缓存清理", _periodic_share_cleanup))
+    async def _db_checkpoint():
+        await checkpoint_db()
+        logger.info("[数据库] WAL checkpoint 完成")
 
-    # 表情包下载缓存清理（每天清理一次）
-    async def _periodic_sticker_cleanup():
-        while True:
-            try:
-                await asyncio.sleep(86400)
-                await cleanup_old_downloads()
-            except Exception as e:
-                logger.error(f"[清理任务] 表情包缓存清理异常: {e}")
-
-    asyncio.create_task(_protected_task("表情包缓存清理", _periodic_sticker_cleanup))
-
-    # 记忆标签维护：每天衰减 + 清理低置信度标签（ECC 风格）
-    async def _periodic_memory_maintenance():
-        await asyncio.sleep(300)  # 启动后5分钟再执行
-        while True:
-            try:
-                await decay_memory_tags(decay_rate=0.02)
-                pruned = await prune_memory_tags(min_confidence=0.15)
-                if pruned > 0:
-                    logger.info(f"[记忆] 每日维护完成：清理了 {pruned} 条低置信度标签")
-            except Exception as e:
-                logger.error(f"[记忆] 维护异常: {e}")
-            await asyncio.sleep(86400)  # 每24小时
-
-    asyncio.create_task(_protected_task("记忆维护", _periodic_memory_maintenance))
-
-    async def _periodic_checkpoint():
-        while True:
-            try:
-                await asyncio.sleep(7200)
-                await checkpoint_db()
-                logger.info("[数据库] WAL checkpoint 完成")
-            except Exception as e:
-                logger.error(f"[数据库] checkpoint 异常: {e}")
-
-    asyncio.create_task(_protected_task("WAL checkpoint", _periodic_checkpoint))
-
-    # Phase 4: 提醒检查定时任务
-    async def _periodic_reminder_check():
+    async def _reminder_check():
         import nonebot
-        await asyncio.sleep(20)  # 等待 bot 连接
-        while True:
-            try:
-                bots = nonebot.get_bots()
-                if bots:
-                    bot = list(bots.values())[0]
-                    await check_and_fire_reminders(bot)
-                await asyncio.sleep(REMINDER_CHECK_INTERVAL)
-            except Exception as e:
-                logger.error(f"[提醒] 检查异常: {e}")
-                await asyncio.sleep(REMINDER_CHECK_INTERVAL)
+        await asyncio.sleep(20)
+        bots = nonebot.get_bots()
+        if bots:
+            bot = list(bots.values())[0]
+            await check_and_fire_reminders(bot)
 
-    asyncio.create_task(_protected_task("提醒检查", _periodic_reminder_check))
-
-    # 热搜话题主动推送（每4小时检查一次）
-    async def _periodic_hot_topics():
+    async def _hot_topics():
         import nonebot
-        await asyncio.sleep(60)  # 等待 bot 连接 + 冷启动
-        while True:
-            try:
-                bots = nonebot.get_bots()
-                if bots:
-                    bot = list(bots.values())[0]
-                    await check_and_push_topics(bot)
-                await asyncio.sleep(14400)  # 4小时
-            except Exception as e:
-                logger.error(f"[热搜] 检查异常: {e}")
-                await asyncio.sleep(14400)
+        await asyncio.sleep(60)
+        bots = nonebot.get_bots()
+        if bots:
+            bot = list(bots.values())[0]
+            await check_and_push_topics(bot)
 
-    asyncio.create_task(_protected_task("热搜推送", _periodic_hot_topics))
+    async def _memory_maintenance():
+        await asyncio.sleep(300)
+        await decay_memory_tags(decay_rate=0.02)
+        pruned = await prune_memory_tags(min_confidence=0.15)
+        if pruned > 0:
+            logger.info(f"[记忆] 每日维护：清理了 {pruned} 条低置信度标签")
 
+    # 注册任务
+    loop_manager.register("主动消息注册", _register_proactive, 86400)
+    loop_manager.register("分享缓存清理", _share_cleanup, 3600)
+    loop_manager.register("表情包缓存清理", _sticker_cleanup, 86400)
+    loop_manager.register("WAL checkpoint", _db_checkpoint, 7200)
+    loop_manager.register("提醒检查", _reminder_check, REMINDER_CHECK_INTERVAL)
+    loop_manager.register("热搜推送", _hot_topics, 14400)
+    loop_manager.register("记忆维护", _memory_maintenance, 86400)
 
-async def _protected_task(name: str, coro_func):
-    """包装后台任务，异常后自动重启，防止静默死亡。"""
-    while True:
-        try:
-            await coro_func()
-        except asyncio.CancelledError:
-            break
-        except Exception as e:
-            logger.error(f"[{name}] 任务异常，5秒后重启: {e}")
-            await asyncio.sleep(5)
+    # 启动所有任务
+    await loop_manager.start_all()
+
+    # 注册会话状态保存端点
+    try:
+        app = driver.server_app
+        if app and isinstance(app, FastAPI):
+            @app.get("/loop/status")
+            async def loop_status():
+                return loop_manager.get_status()
+    except Exception:
+        pass
 
 
 @driver.on_shutdown
 async def _on_shutdown():
+    # 保存所有活跃会话的状态（记忆持久化）
+    try:
+        active = await get_active_sessions(hours=24)
+        for sid in active:
+            await save_session_state(sid, context_summary="[Bot 关闭前保存]")
+        if active:
+            logger.info(f"[记忆] 已保存 {len(active)} 个活跃会话状态")
+    except Exception as e:
+        logger.warning(f"[记忆] 会话状态保存失败: {e}")
+
     await shutdown_proactive()
     await close_http_session()
     await close_db()

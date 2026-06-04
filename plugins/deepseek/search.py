@@ -187,6 +187,31 @@ async def search(query: str, max_results: int = None) -> Optional[SearchResult]:
             oldest_key = min(_search_cache, key=lambda k: _search_cache[k][1])
             del _search_cache[oldest_key]
 
+        # 质量检查：结果太少或太短时用同义词重试一次
+        if len(results) < 2 or all(len(r.get("snippet", "")) < 30 for r in results):
+            logger.info(f"[搜索] 结果质量低，尝试同义词重搜")
+            alt_query = _get_synonym_query(query)
+            if alt_query != query:
+                alt_result = await _tavily_search(client, alt_query, max_results)
+                if alt_result and len(alt_result.get("results", [])) > len(results):
+                    results = [
+                        {"title": r.get("title", ""), "url": r.get("url", ""), "snippet": r.get("content", "")[:300]}
+                        for r in alt_result.get("results", [])
+                    ]
+                    answer = alt_result.get("answer", answer)
+
+        search_result = SearchResult(query=query, results=results, answer=answer)
+
+        # 写入缓存（用内容哈希做 key，避免相同内容不同 URL 重复存储）
+        import hashlib
+        content_hash = hashlib.sha256(str(results).encode()).hexdigest()[:16]
+        _search_cache[cache_key] = (search_result, time.time())
+        _search_cache[f"hash:{content_hash}"] = (search_result, time.time())
+        # 缓存上限
+        if len(_search_cache) > 200:
+            oldest_key = min(_search_cache, key=lambda k: _search_cache[k][1])
+            del _search_cache[oldest_key]
+
         logger.info(f"[搜索] 完成: {len(results)} 条结果")
         return search_result
 
@@ -196,6 +221,31 @@ async def search(query: str, max_results: int = None) -> Optional[SearchResult]:
     except Exception as e:
         logger.error(f"[搜索] Tavily 调用失败: {e}")
         return None
+
+
+async def _tavily_search(client, query: str, max_results: int) -> dict:
+    """封装 Tavily 搜索调用。"""
+    try:
+        return await client.search(
+            query=query, max_results=max_results,
+            search_depth="advanced", include_answer=True, days=3,
+        )
+    except Exception:
+        return {}
+
+
+def _get_synonym_query(query: str) -> str:
+    """生成同义词查询（简单策略：替换关键词）。"""
+    synonyms = {
+        "怎么": "如何", "如何": "怎么",
+        "什么": "啥", "啥": "什么",
+        "价格": "多少钱", "多少钱": "价格",
+        "在哪": "地址", "地址": "在哪",
+    }
+    for old, new in synonyms.items():
+        if old in query:
+            return query.replace(old, new, 1)
+    return query
 
 
 # ============================================================

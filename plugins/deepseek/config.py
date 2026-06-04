@@ -157,3 +157,7 @@ WEATHER_CACHE_TTL: int = int(getattr(cfg, "weather_cache_ttl", 1800))
 # === Qwen-VL 视觉识别 ===
 QWEN_VL_API_KEY: str = getattr(cfg, "qwen_vl_api_key", "") or ""
 QWEN_VL_MODEL: str = getattr(cfg, "qwen_vl_model", "qwen-vl-plus")
+
+# === 记忆压缩 ===
+COMPRESS_TOKEN_THRESHOLD: int = int(getattr(cfg, "compress_token_threshold", 3000))
+COMPRESS_MESSAGE_THRESHOLD: int = int(getattr(cfg, "compress_message_threshold", 20))

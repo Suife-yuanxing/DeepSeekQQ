@@ -195,11 +195,50 @@ async def _stage_affection(ctx: ChatContext) -> Optional[str]:
 
 @stage("context_analysis")
 async def _stage_context(ctx: ChatContext) -> Optional[str]:
-    """上下文 + 情绪分析（LLM 调用 #1）。"""
+    """上下文 + 情绪分析 + 搜索 + 天气（并行执行，节省 1-2 秒）。"""
+    # 先获取历史和好感度（后续步骤依赖）
     ctx.recent_memories, ctx.relevant_tags, ctx.affection, ctx.mood, history_for_analysis = \
         await save_and_get_context_with_history(ctx.session_id, ctx.user_id, ctx.raw_msg)
-    ctx.analysis = await analyze_context_and_emotion(ctx.raw_msg, history_for_analysis, ctx.user_id)
+
+    # 并行执行：情感分析 + 搜索判断 + 天气获取
+    async def _do_analysis():
+        return await analyze_context_and_emotion(ctx.raw_msg, history_for_analysis, ctx.user_id)
+
+    async def _do_search():
+        search_decision = should_search(ctx.raw_msg)
+        if search_decision.get("need_search"):
+            ctx.is_explicit_search = search_decision.get("is_explicit", False)
+            query = extract_search_query(ctx.raw_msg)
+            result = await search(query)
+            if result:
+                logger.info(f"[搜索] 找到 {len(result.results)} 条结果 | 显式={ctx.is_explicit_search}")
+            return result
+        return None
+
+    async def _do_weather():
+        ctx.reminder_context = await get_pending_reminders_context(ctx.user_id)
+        user_city = extract_city_from_message(ctx.raw_msg)
+        if not user_city:
+            for tag in ctx.relevant_tags:
+                tag_str = str(tag)
+                for city_name in ["上海", "北京", "广州", "深圳", "杭州", "成都", "武汉", "南京", "重庆", "西安", "苏州", "天津"]:
+                    if city_name in tag_str:
+                        user_city = city_name
+                        break
+                if user_city:
+                    break
+        return await build_world_context_prompt(user_city)
+
+    # 三个任务并行，取最慢的耗时而非总和
+    analysis, search_result, world_ctx = await asyncio.gather(
+        _do_analysis(), _do_search(), _do_weather()
+    )
+
+    ctx.analysis = analysis
+    ctx.search_result = search_result
+    ctx.world_context = world_ctx
     ctx.bot_mood_result = await update_bot_emotion(ctx.raw_msg, ctx.analysis.emotion)
+
     if ctx.analysis.context.referenced_entity:
         logger.info(f"[指代消解] 检测到指代: {ctx.analysis.context.referenced_entity}")
     return None
@@ -225,37 +264,6 @@ async def _stage_reminder(ctx: ChatContext) -> Optional[str]:
             reply_text = await _generate_reminder_reply("no_reminder")
         await ctx.bot.send(ctx.event, Message(reply_text))
         return _SKIP
-    return None
-
-
-@stage("search")
-async def _stage_search(ctx: ChatContext) -> Optional[str]:
-    """联网搜索。"""
-    search_decision = should_search(ctx.raw_msg)
-    if search_decision.get("need_search"):
-        ctx.is_explicit_search = search_decision.get("is_explicit", False)
-        query = extract_search_query(ctx.raw_msg)
-        ctx.search_result = await search(query)
-        if ctx.search_result:
-            logger.info(f"[搜索] 找到 {len(ctx.search_result.results)} 条结果 | 显式={ctx.is_explicit_search}")
-    return None
-
-
-@stage("world_context")
-async def _stage_world(ctx: ChatContext) -> Optional[str]:
-    """世界上下文（天气）。"""
-    ctx.reminder_context = await get_pending_reminders_context(ctx.user_id)
-    user_city = extract_city_from_message(ctx.raw_msg)
-    if not user_city:
-        for tag in ctx.relevant_tags:
-            tag_str = str(tag)
-            for city_name in ["上海", "北京", "广州", "深圳", "杭州", "成都", "武汉", "南京", "重庆", "西安", "苏州", "天津"]:
-                if city_name in tag_str:
-                    user_city = city_name
-                    break
-            if user_city:
-                break
-    ctx.world_context = await build_world_context_prompt(user_city)
     return None
 
 

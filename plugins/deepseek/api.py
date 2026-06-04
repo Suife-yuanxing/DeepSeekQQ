@@ -35,7 +35,8 @@ async def close_http_session():
         _http_session = None
 
 
-async def _call_deepseek_raw(messages: List[Dict[str, str]], temperature: float = 0.9) -> Optional[str]:
+async def _call_deepseek_raw(messages: List[Dict[str, str]], temperature: float = 0.9,
+                             max_tokens: int = None) -> Optional[str]:
     """调用 DeepSeek 远程 API。成功返回内容，失败返回 None。"""
     if not API_KEY:
         logger.warning("[API] API密钥未配置")
@@ -50,7 +51,7 @@ async def _call_deepseek_raw(messages: List[Dict[str, str]], temperature: float 
         "model": MODEL,
         "messages": messages,
         "temperature": temperature,
-        "max_tokens": API_MAX_TOKENS,
+        "max_tokens": max_tokens or API_MAX_TOKENS,
         "stream": False
     }
 
@@ -109,14 +110,27 @@ async def _call_local_llm(messages: List[Dict[str, str]], temperature: float = 0
         return None
 
 
-async def call_deepseek_api(messages: List[Dict[str, str]], temperature: float = 0.9) -> str:
-    """统一 API 入口 - 三层降级（对调用方完全透明）：
-    第1层: DeepSeek 远程 API
-    第2层: 本地 Ollama 模型
-    第3层: 返回错误提示
+async def call_deepseek_api(messages: List[Dict[str, str]], temperature: float = 0.9,
+                           task_type: str = "chat") -> str:
+    """统一 API 入口 - 三层降级 + 任务分级路由（对调用方完全透明）。
+
+    task_type 控制模型选择和 max_tokens：
+    - "chat": 主聊天回复（默认，用配置模型，max_tokens=1500）
+    - "analysis": 情感/上下文分析（短输出，max_tokens=300）
+    - "extract": 标签/信息提取（短输出，max_tokens=500）
+    - "summary": 摘要生成（中等输出，max_tokens=400）
     """
+    # 任务分级：不同任务用不同的 max_tokens，节省成本
+    token_map = {
+        "chat": API_MAX_TOKENS,
+        "analysis": 300,
+        "extract": 500,
+        "summary": 400,
+    }
+    max_tokens = token_map.get(task_type, API_MAX_TOKENS)
+
     # ===== 第1层：DeepSeek 远程 API =====
-    result = await _call_deepseek_raw(messages, temperature)
+    result = await _call_deepseek_raw(messages, temperature, max_tokens=max_tokens)
     if result is not None:
         return result
 

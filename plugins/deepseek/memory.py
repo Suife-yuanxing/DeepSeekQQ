@@ -13,7 +13,7 @@ from datetime import datetime
 from typing import List, Dict, Any, Optional
 
 from . import api
-from .config import MAX_MEMORY, AFFECTION_LEVELS
+from .config import MAX_MEMORY, AFFECTION_LEVELS, COMPRESS_MESSAGE_THRESHOLD, COMPRESS_TOKEN_THRESHOLD
 from nonebot import logger
 from .database import (
     save_message, get_recent_memories, trim_memories,
@@ -81,8 +81,16 @@ async def save_reply(session_id: str, user_id: str, raw_msg: str, reply_text: st
     await save_message(session_id, "assistant", reply_text)
     await trim_memories(session_id, MAX_MEMORY)
     asyncio.create_task(_extract_memory_tags(user_id, session_id, raw_msg, reply_text))
-    if await count_memories(session_id) > 20:
+    # 策略性压缩：基于消息数或估算 token 数触发
+    msg_count = await count_memories(session_id)
+    if msg_count >= COMPRESS_MESSAGE_THRESHOLD:
         asyncio.create_task(_summarize_and_compress(session_id))
+    elif msg_count >= 15:
+        # 估算 token 数：粗略按字符数 / 1.5
+        recent = await get_recent_memories(session_id, 15)
+        est_tokens = sum(len(m["content"]) for m in recent) // 1.5
+        if est_tokens > COMPRESS_TOKEN_THRESHOLD:
+            asyncio.create_task(_summarize_and_compress(session_id))
 
 
 def _is_memory_relevant(memory_content: str, user_msg: str) -> bool:
@@ -169,17 +177,33 @@ async def _summarize_and_compress(session_id: str):
         return
 
     dialog = "\n".join([f"{r['role']}：{r['content'][:100]}" for r in old_rows])
-    prompt = f"""请用一两句话总结以下对话的核心内容（用户关心什么、你们聊了什么重点），不要细节，只留框架：
+    prompt = f"""请用结构化方式总结以下对话。输出JSON格式，包含3个字段：
+- topic: 当前话题（10字内）
+- summary: 核心内容摘要（50字内）
+- key_info: 用户提到的关键信息（列表，最多3条）
 
+对话内容：
 {dialog}
 
-摘要："""
+只输出JSON，不要其他文字。"""
     messages = [
         {"role": "system", "content": "你是一个对话摘要助手，只输出摘要文本，不要任何其他内容。"},
         {"role": "user", "content": prompt}
     ]
-    summary = await api.call_deepseek_api(messages, temperature=0.5)
+    summary = await api.call_deepseek_api(messages, temperature=0.5, task_type="summary")
     summary = summary.strip()[:300]
+    # 尝试解析结构化摘要，失败则用原文
+    try:
+        import json as _json
+        clean = re.sub(r"```json\s*|\s*```", "", summary).strip()
+        parsed = _json.loads(clean)
+        if isinstance(parsed, dict):
+            structured = f"话题:{parsed.get('topic','')}; {parsed.get('summary','')}"
+            if parsed.get("key_info"):
+                structured += f" [关键:{','.join(parsed['key_info'][:3])}]"
+            summary = structured[:300]
+    except Exception:
+        pass  # 用原文
     await append_memory_summary(session_id, summary)
 
     keep_ids = await get_keep_ids(session_id, 20)
@@ -210,7 +234,7 @@ async def _extract_memory_tags(user_id: str, session_id: str, user_msg: str, rep
             {"role": "system", "content": "你是一个对话记忆提取助手，只输出JSON数组。"},
             {"role": "user", "content": prompt}
         ]
-        raw = await api.call_deepseek_api(messages, temperature=0.3)
+        raw = await api.call_deepseek_api(messages, temperature=0.3, task_type="extract")
         clean = re.sub(r"```json\s*|\s*```", "", raw).strip()
         tags = json.loads(clean)
         if not isinstance(tags, list):

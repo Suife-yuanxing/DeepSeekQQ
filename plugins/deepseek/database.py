@@ -668,3 +668,51 @@ async def find_reminder_by_content(user_id: str, keyword: str) -> List[Dict[str,
     ) as cursor:
         rows = await cursor.fetchall()
         return [dict(r) for r in rows]
+
+
+# ---------- session state (记忆持久化) ----------
+async def save_session_state(session_id: str, topic: str = "", emotion: str = "",
+                             context_summary: str = "", bot_mood: str = "{}"):
+    """保存会话状态（启停时持久化）。"""
+    db = await get_db()
+    now = datetime.now().timestamp()
+    await db.execute(
+        """INSERT INTO session_state (session_id, last_topic, last_emotion, last_interaction, context_summary, bot_mood_snapshot)
+           VALUES (?, ?, ?, ?, ?, ?)
+           ON CONFLICT(session_id) DO UPDATE SET
+           last_topic = ?, last_emotion = ?, last_interaction = ?, context_summary = ?, bot_mood_snapshot = ?""",
+        (session_id, topic, emotion, now, context_summary, bot_mood,
+         topic, emotion, now, context_summary, bot_mood)
+    )
+    await db.commit()
+
+
+async def get_session_state(session_id: str) -> Optional[Dict[str, Any]]:
+    """获取会话状态。"""
+    db = await get_db()
+    async with db.execute(
+        "SELECT last_topic, last_emotion, last_interaction, context_summary, bot_mood_snapshot FROM session_state WHERE session_id = ?",
+        (session_id,)
+    ) as cursor:
+        row = await cursor.fetchone()
+        if not row:
+            return None
+        return {
+            "last_topic": row["last_topic"],
+            "last_emotion": row["last_emotion"],
+            "last_interaction": row["last_interaction"],
+            "context_summary": row["context_summary"],
+            "bot_mood_snapshot": row["bot_mood_snapshot"],
+        }
+
+
+async def get_active_sessions(hours: float = 24.0) -> List[str]:
+    """获取最近 N 小时内有交互的会话 ID。"""
+    db = await get_db()
+    threshold = datetime.now().timestamp() - hours * 3600
+    async with db.execute(
+        "SELECT session_id FROM session_state WHERE last_interaction > ?",
+        (threshold,)
+    ) as cursor:
+        rows = await cursor.fetchall()
+        return [r["session_id"] for r in rows]
