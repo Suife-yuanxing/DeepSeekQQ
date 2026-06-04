@@ -18,12 +18,9 @@ import aiohttp
 from .config import SHARE_TTL, VOICE_DIR, URL_FETCH_COOLDOWN
 from .database import get_article_cache, save_article_cache
 from .api import get_http_session
-from .vision import recognize_sticker
 from nonebot import logger
 
 _recent_shares: Dict[str, List[Dict[str, Any]]] = {}
-_QQ_FACE_MAP={"0":"微笑","1":"撇嘴","2":"色","3":"发呆","4":"得意","5":"流泪","6":"害羞","7":"闭嘴","8":"睡","9":"大哭","10":"尴尬","11":"发怒","12":"调皮","13":"呲牙","14":"惊讶","15":"难过","16":"酷","17":"冷汗","18":"抓狂","19":"吐","20":"偷笑","21":"愉快","22":"白眼","23":"傲慢","24":"饥饿","25":"困","26":"惊恐","27":"流汗","28":"憨笑","29":"悠闲","30":"奋斗","31":"咒骂","32":"疑问","33":"嘘","34":"晕","35":"折磨","36":"衰","37":"骷髅","38":"敲打","39":"再见","40":"发抖","41":"爱情","42":"跳跳","43":"猪头","44":"拥抱","45":"蛋糕","46":"闪电","47":"炸弹","48":"刀","49":"足球","50":"便便","51":"咖啡","52":"饭","53":"玫瑰","54":"凋谢","55":"爱心","56":"心碎","57":"礼物","58":"太阳","59":"月亮","60":"赞","61":"踩","62":"握手","63":"胜利","64":"飞吻","65":"怄火","66":"西瓜","67":"冷酷","68":"色眯眯","69":"好怕怕","73":"裂开","75":"叹气","76":"戳一戳","77":"托腮","78":"歪嘴笑","79":"左看看","80":"右看看","81":"委屈","82":"裂开","96":"抱拳","97":"勾引","98":"拳头","99":"差劲","100":"爱你","101":"NO","102":"OK","103":"转圈","104":"挥手","105":"飞奔","106":"偷看","107":"吓","108":"委屈"}
-
 
 # 使用 OrderedDict 实现 LRU，限制最大容量防止无限增长
 class LRUCooldownDict(OrderedDict):
@@ -147,53 +144,6 @@ def _parse_by_platform(html: str, url: str) -> Optional[Dict[str, str]]:
         "needs_paste": False,
         "url": url
     }
-
-    if "douyin.com" in url or "v.douyin.com" in url:
-        title = re.search(r'<meta[^>]*property="og:title"[^>]*content="([^"]*)"', html)
-        if not title:
-            title = re.search(r'"desc"\s*:\s*"([^"]{4,})"', html)
-        if not title:
-            title = re.search(r'<title[^>]*>(.*?)</title>', html, re.DOTALL)
-        title = re.sub(r'<[^>]+>', '', title.group(1)).strip() if title else "抖音视频"
-
-        desc = re.search(r'<meta[^>]*property="og:description"[^>]*content="([^"]*)"', html)
-        if not desc:
-            desc = re.search(r'"desc"\s*:\s*"([^"]{4,})"', html)
-        desc_text = desc.group(1).strip() if desc else ""
-
-        author = re.search(r'"nickname"\s*:\s*"([^"]+)"', html)
-        if not author:
-            author = re.search(r'<meta[^>]*name="author"[^>]*content="([^"]*)"', html)
-        author = author.group(1).strip() if author else "抖音用户"
-
-        # 提取封面图
-        image = re.search(r'<meta[^>]*property="og:image"[^>]*content="([^"]*)"', html)
-        image_url = image.group(1) if image else ""
-
-        # 提取视频时长
-        duration = re.search(r'"duration"\s*:\s*(\d+)', html)
-        duration_text = ""
-        if duration:
-            secs = int(duration.group(1))
-            if secs > 60:
-                duration_text = f"({secs // 60}分{secs % 60}秒)"
-            else:
-                duration_text = f"({secs}秒)"
-
-        summary_parts = []
-        if desc_text and desc_text != title:
-            summary_parts.append(desc_text[:500])
-        summary = " ".join(summary_parts) if summary_parts else title
-
-        return {
-            **base_fields,
-            "title": title[:100],
-            "author": author,
-            "summary": f"[抖音视频{duration_text}] {summary}"[:800],
-            "platform": "douyin",
-            "image_url": image_url,
-            "restricted": True,  # 视频内容无法文字提取
-        }
 
     if "xiaoheike" in url or "xiaoheihe" in url or "xiaoheih" in url:
         title = re.search(r'<meta[^>]*property="og:title"[^>]*content="([^"]*)"', html)
@@ -433,52 +383,12 @@ async def extract_and_cache_shares(event, session_id: str) -> bool:
                     logger.warning(f"[分享] 链接内容无效或无法读取，跳过缓存: {url[:60]}")
 
         elif seg.type == "image":
-            sub_type = seg.data.get("sub_type", 0)
-            summary = seg.data.get("summary", "")
-            if sub_type == 1 or "动画表情" in summary or sub_type == 13:
-                img_url = seg.data.get("url", "") or seg.data.get("file", "")
-                emoji_desc = summary.replace("[动画表情]", "").strip()
-                if not emoji_desc or emoji_desc == "[图片]": emoji_desc = ""
-                if emoji_desc:
-                    shares.append({"type": "表情", "source": f"用户发了表情[{emoji_desc}]", "summary": f"[用户发送了QQ表情：{emoji_desc}]", "image_url": img_url, "time": datetime.now().timestamp()})
-                else:
-                    # 尝试用 Qwen-VL 视觉识别
-                    emotion = await recognize_sticker(img_url) if img_url else None
-                    if emotion:
-                        shares.append({"type": "表情", "source": f"用户发了一个表情[{emotion}]", "summary": f"[用户发送了QQ表情：{emotion}]", "image_url": img_url, "time": datetime.now().timestamp()})
-                    else:
-                        shares.append({"type": "表情", "source": "用户发了一个表情", "summary": "[用户发送了一个QQ表情图片，无法确定具体内容]", "image_url": img_url, "time": datetime.now().timestamp()})
-            else:
-                img_url = seg.data.get("url") or seg.data.get("file", "未知图片")
-                # 三层降级识别图片：视觉模型 → OCR → 占位
-                img_desc = "[图片内容暂无法直接识别]"
-                try:
-                    from .vision import analyze_image
-                    if img_url and img_url != "未知图片":
-                        vision_result = await analyze_image(img_url, "请用中文简洁描述这张图片的主要内容，2-3句话")
-                        if vision_result and vision_result != "[图片内容暂无法识别]" and vision_result != "[图片文件不存在]":
-                            img_desc = f"[图片内容: {vision_result}]"
-                except Exception as e:
-                    logger.warning(f"[图片识别] 异常: {e}")
-                shares.append({"type": "图片", "source": img_url, "summary": img_desc, "time": datetime.now().timestamp()})
-        elif seg.type == "face":
-            face_id = str(seg.data.get("id", seg.data.get("faceIndex", "")))
-            face_text = seg.data.get("text", "") or seg.data.get("faceText", "")
-            if not face_text:
-                raw = seg.data.get("raw", {})
-                if isinstance(raw, dict):
-                    face_text = raw.get("faceText", "")
-            if face_text:
-                face_text = face_text.strip().lstrip("/")
-            if not face_text:
-                face_text = _QQ_FACE_MAP.get(face_id, "")
-            if not face_text:
-                face_text = "表情"
-            shares.append({"type": "表情", "source": f"用户发了QQ表情[{face_text}]", "summary": f"[用户发送了QQ表情：{face_text}]", "time": datetime.now().timestamp()})
-        elif seg.type == "mface":
-            ed = seg.data.get("summary", "") or seg.data.get("desc", "") or "表情"
-            shares.append({"type": "表情", "source": f"用户发了商城表情[{ed}]", "summary": f"[用户发送了QQ商城表情：{ed}]", "time": datetime.now().timestamp()})
-
+            shares.append({
+                "type": "图片",
+                "source": seg.data.get("url") or seg.data.get("file", "未知图片"),
+                "summary": "[图片内容暂无法直接识别]",
+                "time": datetime.now().timestamp()
+            })
 
         elif seg.type == "json":
             try:

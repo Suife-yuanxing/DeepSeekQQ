@@ -21,13 +21,10 @@ VOICE_DIR: str = getattr(cfg, "deepseek_voice_dir", "./data/voice")
 # === 语音开关 ===
 VOICE_ENABLED_PRIVATE: bool = str(getattr(cfg, "voice_enabled_private", "true")).lower() == "true"
 VOICE_ENABLED_GROUP: bool = str(getattr(cfg, "voice_enabled_group", "true")).lower() == "true"
-VOICE_CHANCE: float = float(getattr(cfg, "voice_chance", 0.03))
+VOICE_CHANCE: float = float(getattr(cfg, "voice_chance", 0.25))
 VOICE_MAX_LENGTH: int = int(getattr(cfg, "voice_max_length", 120))
 VOICE_TRY_CONVERT: bool = True
 VOICE_NAME: str = "zh-CN-XiaomengNeural"
-
-# === 语音识别 (STT) ===
-STT_ENABLED: bool = str(getattr(cfg, "stt_enabled", "true")).lower() == "true"
 
 # === 回复策略 ===
 RANDOM_REPLY_CHANCE: float = float(getattr(cfg, "random_reply_chance", 0.05))
@@ -126,27 +123,3 @@ BAIDU_TTS_PER: int = int(getattr(cfg, "baidu_tts_per", 5118))
 BAIDU_TTS_SPD: int = int(getattr(cfg, "baidu_tts_spd", 5))
 BAIDU_TTS_PIT: int = int(getattr(cfg, "baidu_tts_pit", 5))
 BAIDU_TTS_VOL: int = int(getattr(cfg, "baidu_tts_vol", 5))
-
-# === Phase 3: 联网搜索 (Tavily) ===
-TAVILY_API_KEY: str = getattr(cfg, "tavily_api_key", "") or ""
-SEARCH_ENABLED: bool = str(getattr(cfg, "search_enabled", "true")).lower() == "true"
-SEARCH_MAX_RESULTS: int = int(getattr(cfg, "search_max_results", 3))
-SEARCH_CACHE_TTL: int = int(getattr(cfg, "search_cache_ttl", 1800))
-
-# === Phase 4: 备忘录/提醒 ===
-REMINDER_ENABLED: bool = str(getattr(cfg, "reminder_enabled", "true")).lower() == "true"
-REMINDER_CHECK_INTERVAL: int = int(getattr(cfg, "reminder_check_interval", 30))
-
-# === Phase 5: 表情包 ===
-STICKER_ENABLED: bool = str(getattr(cfg, "sticker_enabled", "true")).lower() == "true"
-STICKER_DIR: str = getattr(cfg, "sticker_dir", "./data/stickers")
-
-# === Phase 6: 天气 (和风天气) ===
-WEATHER_ENABLED: bool = str(getattr(cfg, "weather_enabled", "true")).lower() == "true"
-WEATHER_API_KEY: str = getattr(cfg, "weather_api_key", "") or ""
-WEATHER_CITY: str = getattr(cfg, "weather_city", "上海")
-WEATHER_CACHE_TTL: int = int(getattr(cfg, "weather_cache_ttl", 1800))
-
-# === Qwen-VL 视觉识别 ===
-QWEN_VL_API_KEY: str = getattr(cfg, "qwen_vl_api_key", "") or ""
-QWEN_VL_MODEL: str = getattr(cfg, "qwen_vl_model", "qwen-vl-plus")
