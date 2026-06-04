@@ -1,7 +1,8 @@
 """图片视觉识别模块 - 三层降级方案。
-- 第1层: Ollama 视觉模型（moondream）→ 完整图片理解
-- 第2层: OCR 文字提取（RapidOCR）→ 提取图中文字
-- 第3层: 返回占位信息
+- 第1层: 通义千问 VL API（远程）→ 完整图片理解
+- 第2层: Ollama 视觉模型（本地）→ 完整图片理解
+- 第3层: OCR 文字提取（RapidOCR）→ 提取图中文字
+- 第4层: 返回占位信息
 - 全局可调用：from .vision import analyze_image
 """
 import base64
@@ -21,8 +22,6 @@ VISION_MODEL = "moondream"
 async def analyze_image(
     source: str,
     prompt: str = "请详细描述这张图片的内容",
-    model: str = VISION_MODEL,
-    host: str = OLLAMA_HOST,
 ) -> str:
     """分析图片，三层降级：视觉模型 → OCR → 占位信息。
 
@@ -46,19 +45,44 @@ async def analyze_image(
         if img_b64 is None:
             return "[图片文件不存在]"
 
-    # ===== 第1层：Ollama 视觉模型 =====
+    # ===== 第1层：通义千问 VL API =====
+    if img_b64:
+        result = await _try_qwen_vl(img_b64, prompt)
+        if result:
+            return result
+    # ===== 第2层：Ollama 本地视觉模型 =====
     if img_b64:
         result = await _try_vision_model(img_b64, prompt, model, host)
         if result:
             return result
 
-    # ===== 第2层：OCR 文字提取 =====
+    # ===== 第3层：OCR 文字提取 =====
     ocr_text = _fallback_ocr(source)
     if ocr_text:
         return f"[图片中的文字内容]: {ocr_text}"
 
-    # ===== 第3层：占位信息 =====
+    # ===== 第4层：占位信息 =====
     return "[图片内容暂无法识别]"
+
+
+async def _try_qwen_vl(img_b64, prompt):
+    from .config import QWEN_VL_API_KEY, QWEN_VL_MODEL
+    if not QWEN_VL_API_KEY:
+        return None
+    url = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"
+    h = {"Authorization": "Bearer " + QWEN_VL_API_KEY, "Content-Type": "application/json"}
+    p = {"model": QWEN_VL_MODEL, "messages": [{"role": "user", "content": [
+        {"type": "image_url", "image_url": {"url": "data:image/jpeg;base64," + img_b64}},
+        {"type": "text", "text": prompt}],}], "max_tokens": 500}
+    try:
+        async with aiohttp.ClientSession() as s:
+            async with s.post(url, json=p, headers=h, timeout=aiohttp.ClientTimeout(total=30)) as r:
+                if r.status != 200:
+                    return None
+                d = await r.json()
+                return d.get("choices",[{}])[0].get("message",{}).get("content","").strip() or None
+    except:
+        return None
 
 
 async def _try_vision_model(
