@@ -99,11 +99,22 @@ async def init_db():
             tag_type TEXT NOT NULL,
             content TEXT NOT NULL,
             weight REAL DEFAULT 1.0,
+            confidence REAL DEFAULT 0.5,
+            hit_count INTEGER DEFAULT 0,
             created_at REAL,
             last_used REAL,
             UNIQUE(user_id, tag_type, content)
         )
     """)
+    # 升级旧表：添加 confidence 和 hit_count 列（如果不存在）
+    try:
+        await db.execute("ALTER TABLE memory_tags ADD COLUMN confidence REAL DEFAULT 0.5")
+    except Exception:
+        pass  # 列已存在
+    try:
+        await db.execute("ALTER TABLE memory_tags ADD COLUMN hit_count INTEGER DEFAULT 0")
+    except Exception:
+        pass
     await db.execute("""
         CREATE TABLE IF NOT EXISTS memory_summaries (
             session_id TEXT PRIMARY KEY,
@@ -372,6 +383,10 @@ async def append_memory_summary(session_id: str, summary: str):
 
 # ---------- memory tags ----------
 async def save_memory_tags(user_id: str, tags: List[Dict[str, str]]):
+    """保存记忆标签，使用置信度评分系统。
+
+    新标签初始置信度 0.5，重复提取时 +0.1（上限 0.95）。
+    """
     db = await get_db()
     now = datetime.now().timestamp()
     for tag in tags:
@@ -380,25 +395,82 @@ async def save_memory_tags(user_id: str, tags: List[Dict[str, str]]):
         if not content_text or len(content_text) > 200:
             continue
         await db.execute(
-            """INSERT INTO memory_tags (user_id, tag_type, content, weight, created_at, last_used)
-               VALUES (?, ?, ?, 1.0, ?, ?)
+            """INSERT INTO memory_tags (user_id, tag_type, content, weight, confidence, hit_count, created_at, last_used)
+               VALUES (?, ?, ?, 1.0, 0.5, 0, ?, ?)
                ON CONFLICT(user_id, tag_type, content)
-               DO UPDATE SET weight = weight + 0.2, last_used = ?""",
+               DO UPDATE SET weight = weight + 0.2,
+                             confidence = MIN(0.95, confidence + 0.1),
+                             hit_count = hit_count + 1,
+                             last_used = ?""",
             (str(user_id), t_type, content_text, now, now, now)
         )
     await db.commit()
 
 
-async def get_relevant_memory_tags(user_id: str, limit: int = 5) -> List[aiosqlite.Row]:
+async def decay_memory_tags(user_id: str = None, decay_rate: float = 0.02):
+    """对记忆标签做时间衰减。未使用的标签置信度逐渐降低。
+
+    调度方式：每天运行一次。
+    - decay_rate: 每次衰减的置信度减少量（默认 0.02，即 50 天未使用降到 0）
+    """
     db = await get_db()
     now = datetime.now().timestamp()
+    if user_id:
+        await db.execute(
+            """UPDATE memory_tags SET confidence = MAX(0.0, confidence - ?)
+               WHERE user_id = ? AND last_used < ? - 86400""",
+            (decay_rate, str(user_id), now)
+        )
+    else:
+        await db.execute(
+            """UPDATE memory_tags SET confidence = MAX(0.0, confidence - ?)
+               WHERE last_used < ? - 86400""",
+            (decay_rate, now)
+        )
+    await db.commit()
+
+
+async def prune_memory_tags(min_confidence: float = 0.15):
+    """清理置信度过低的记忆标签。
+
+    调度方式：每天运行一次（在 decay_memory_tags 之后）。
+    """
+    db = await get_db()
+    cursor = await db.execute(
+        "DELETE FROM memory_tags WHERE confidence < ?", (min_confidence,)
+    )
+    await db.commit()
+    deleted = cursor.rowcount
+    if deleted > 0:
+        logger.info(f"[记忆] 清理了 {deleted} 条低置信度标签")
+    return deleted
+
+
+async def get_relevant_memory_tags(user_id: str, limit: int = 5) -> List[aiosqlite.Row]:
+    """获取相关记忆标签，按 置信度×权重 综合排序。"""
+    db = await get_db()
     async with db.execute(
-        """SELECT tag_type, content, weight, last_used FROM memory_tags
-           WHERE user_id = ? AND (tag_type IN ('preference', 'fact', 'taboo') OR weight > 1.2)
-           ORDER BY weight DESC, last_used DESC LIMIT ?""",
+        """SELECT tag_type, content, weight, confidence, hit_count, last_used
+           FROM memory_tags
+           WHERE user_id = ? AND confidence >= 0.15
+             AND (tag_type IN ('preference', 'fact', 'taboo') OR weight > 1.2)
+           ORDER BY (confidence * weight) DESC, last_used DESC LIMIT ?""",
         (str(user_id), limit)
     ) as cursor:
         return await cursor.fetchall()
+
+
+async def boost_memory_tag(user_id: str, content: str, boost: float = 0.1):
+    """当记忆被成功引用时，提升其置信度和权重。"""
+    db = await get_db()
+    now = datetime.now().timestamp()
+    await db.execute(
+        """UPDATE memory_tags SET confidence = MIN(0.95, confidence + ?),
+               weight = weight + 0.05, last_used = ?
+           WHERE user_id = ? AND content = ?""",
+        (boost, now, str(user_id), content)
+    )
+    await db.commit()
 
 
 # ---------- article cache ----------

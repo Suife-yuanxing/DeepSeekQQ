@@ -1,4 +1,10 @@
-"""记忆系统：情感、心情、标签提取、对话压缩。"""
+"""记忆系统：情感、心情、标签提取、对话压缩。
+
+ECC 风格改造：
+- 置信度评分：新标签 0.5，被引用时 +0.1，未引用时每日 -0.02
+- 自动清理：置信度 < 0.15 的标签自动删除
+- 缓存上限：防止内存泄漏
+"""
 import asyncio
 import re
 import json
@@ -15,24 +21,15 @@ from .database import (
     get_affection, update_affection,
     get_catgirl_mood, update_catgirl_mood,
     get_memory_summary, append_memory_summary,
-    save_memory_tags, get_relevant_memory_tags,
+    save_memory_tags, get_relevant_memory_tags, boost_memory_tag,
     get_user_mood
 )
 from .context_analyzer import analyze_context_and_emotion, AnalysisResult
 
 # ---------- 记忆冷却控制 ----------
 _recently_used_memories: Dict[str, List[str]] = {}  # user_id -> [最近用过的记忆内容]
-_MEMORY_CACHE_MAX_USERS = 200
-
-
-def _cleanup_memory_cache():
-    """清理记忆缓存，防止内存泄漏。当用户数超过阈值时清理一半。"""
-    if len(_recently_used_memories) > _MEMORY_CACHE_MAX_USERS:
-        keys = list(_recently_used_memories.keys())
-        for k in keys[:len(keys)//2]:
-            del _recently_used_memories[k]
-MEMORY_COOLDOWN_ROUNDS = 3  # 同一记忆至少间隔3轮才再次使用
-MAX_MEMORY_PER_REPLY = 1   # 每次回复最多插入1条记忆
+MEMORY_COOLDOWN_ROUNDS = 3   # 同一记忆至少间隔3轮才再次使用
+MAX_MEMORY_PER_REPLY = 1     # 每次回复最多插入1条记忆
 _MEMORY_CACHE_MAX_USERS = 200  # 最大缓存用户数，超过时清理最旧的
 
 
@@ -40,7 +37,6 @@ def _cleanup_memory_cache():
     """清理不活跃用户的记忆冷却缓存，防止内存泄漏。"""
     if len(_recently_used_memories) <= _MEMORY_CACHE_MAX_USERS:
         return
-    # 超过上限时，清空一半（简单策略）
     keys = list(_recently_used_memories.keys())
     for k in keys[:len(keys) // 2]:
         del _recently_used_memories[k]
@@ -48,46 +44,34 @@ def _cleanup_memory_cache():
 
 async def save_and_get_context(session_id: str, user_id: str, raw_msg: str,
                                analysis: AnalysisResult = None) -> tuple:
-    """保存用户消息，返回最近记忆 + 相关标签 + 情感信息。
-
-    如果传入了 analysis（来自 context_analyzer），则使用 VA 情绪模型；
-    否则回退到旧的关键词匹配。
-    """
+    """保存用户消息，返回最近记忆 + 相关标签 + 情感信息。"""
     await save_message(session_id, "user", raw_msg)
     recent = await get_recent_memories(session_id, MAX_MEMORY)
     tags = await _get_relevant_memories(user_id, session_id, raw_msg)
     affection = await get_affection(user_id)
 
     if analysis and analysis.emotion.confidence >= 0.4:
-        # 使用新的 VA 情绪模型（已经通过 analyze_context_and_emotion 持久化了）
         from .context_analyzer import emotion_to_mood_label
         mood = emotion_to_mood_label(analysis.emotion)
-        # 同时更新旧的全局 mood 表保持兼容
         await update_catgirl_mood(raw_msg)
     else:
-        # 回退到旧的关键词匹配
         mood = await update_catgirl_mood(raw_msg)
 
     return recent, tags, affection, mood
 
 
 async def save_and_get_context_with_history(session_id: str, user_id: str, raw_msg: str) -> tuple:
-    """保存用户消息并返回历史（用于分析器）。
-
-    与 save_and_get_context 类似，但额外返回最近历史供 context_analyzer 使用。
-    返回: (recent, tags, affection, mood, history_for_analysis)
-    """
+    """保存用户消息并返回历史（用于分析器）。"""
     await save_message(session_id, "user", raw_msg)
     recent = await get_recent_memories(session_id, MAX_MEMORY)
     tags = await _get_relevant_memories(user_id, session_id, raw_msg)
     affection = await get_affection(user_id)
     mood = await update_catgirl_mood(raw_msg)
 
-    # 提取最近历史给分析器（不包含刚保存的用户消息本身）
     history_for_analysis = [
         {"role": m["role"], "content": m["content"][:200]}
-        for m in recent[:-1]  # 排除最后一条（刚保存的用户消息）
-    ][-6:]  # 最多6条
+        for m in recent[:-1]
+    ][-6:]
 
     return recent, tags, affection, mood, history_for_analysis
 
@@ -96,25 +80,20 @@ async def save_reply(session_id: str, user_id: str, raw_msg: str, reply_text: st
     """保存助手回复，并异步提取记忆标签。"""
     await save_message(session_id, "assistant", reply_text)
     await trim_memories(session_id, MAX_MEMORY)
-    # 异步提取标签，不阻塞发送
     asyncio.create_task(_extract_memory_tags(user_id, session_id, raw_msg, reply_text))
-    # 检查是否需要压缩
     if await count_memories(session_id) > 20:
         asyncio.create_task(_summarize_and_compress(session_id))
 
 
 def _is_memory_relevant(memory_content: str, user_msg: str) -> bool:
     """判断记忆是否与当前用户消息相关。"""
-    # 提取用户消息关键词（2字以上）
-    user_keywords = set(re.findall(r'[\u4e00-\u9fa5]{2,6}', user_msg))
+    user_keywords = set(re.findall(r'[一-龥]{2,6}', user_msg))
     if not user_keywords:
         return False
-    # 记忆内容中是否包含用户消息的关键词
     for kw in user_keywords:
         if kw in memory_content:
             return True
-    # 或者用户消息中是否包含记忆的关键词
-    mem_keywords = set(re.findall(r'[\u4e00-\u9fa5]{2,6}', memory_content))
+    mem_keywords = set(re.findall(r'[一-龥]{2,6}', memory_content))
     for kw in mem_keywords:
         if kw in user_msg:
             return True
@@ -122,43 +101,50 @@ def _is_memory_relevant(memory_content: str, user_msg: str) -> bool:
 
 
 async def _get_relevant_memories(user_id: str, session_id: str, current_msg: str, limit: int = 5) -> List[str]:
-    """获取相关记忆提示语。增加冷却和相关性过滤。"""
+    """获取相关记忆提示语。置信度 + 冷却 + 相关性过滤。"""
     _cleanup_memory_cache()
     try:
-        _cleanup_memory_cache()
         now = datetime.now().timestamp()
         rows = await get_relevant_memory_tags(user_id, limit)
 
-        # 冷却列表
         cooldown_list = _recently_used_memories.get(user_id, [])
-        
+
         candidates = []
         for row in rows:
             content = row["content"]
-            # 1. 冷却检查：最近用过的不重复
+            # 冷却检查
             if content in cooldown_list:
                 continue
-            # 2. 时间衰减：超过7天且权重低的不使用
+            # 时间衰减：超过14天且置信度低的不使用
             days_ago = (now - row["last_used"]) / 86400
-            if days_ago > 7 and row["weight"] < 2.0:
+            if days_ago > 14 and row.get("confidence", 0.5) < 0.3:
                 continue
-            # 3. 相关性检查：必须和当前话题有关
+            # 相关性检查
             if not _is_memory_relevant(content, current_msg):
                 continue
-            candidates.append(content)
-        
-        # 随机选最多1条，避免过度输出
+            candidates.append((content, row.get("confidence", 0.5)))
+
+        # 按置信度加权随机选择
         if candidates:
-            selected = random.sample(candidates, min(MAX_MEMORY_PER_REPLY, len(candidates)))
-            # 加入冷却记录
+            # 置信度高的更容易被选中
+            weights = [max(0.1, c) for _, c in candidates]
+            total = sum(weights)
+            probs = [w / total for w in weights]
+            idx = random.choices(range(len(candidates)), weights=probs, k=1)[0]
+            selected_content = candidates[idx][0]
+
+            # 记录冷却
             if user_id not in _recently_used_memories:
                 _recently_used_memories[user_id] = []
-            _recently_used_memories[user_id].extend(selected)
-            # 只保留最近 N 轮
-            _recently_used_memories[user_id] = _recently_used_memories[user_id][-MEMORY_COOLDOWN_ROUNDS * MAX_MEMORY_PER_REPLY:]
-            return [f"[{s}]" for s in selected]
-        
-        # 摘要记忆：用户提到过往话题时始终带，否则80%概率
+            _recently_used_memories[user_id].append(selected_content)
+            _recently_used_memories[user_id] = _recently_used_memories[user_id][-MEMORY_COOLDOWN_ROUNDS:]
+
+            # 提升被引用标签的置信度
+            asyncio.create_task(boost_memory_tag(user_id, selected_content))
+
+            return [f"[{selected_content}]"]
+
+        # 摘要记忆 fallback
         summary = await get_memory_summary(session_id)
         if summary:
             summary_keywords = set(re.findall(r'[一-龥]{2,}', summary))
@@ -166,7 +152,7 @@ async def _get_relevant_memories(user_id: str, session_id: str, current_msg: str
             has_overlap = bool(summary_keywords & user_keywords)
             if has_overlap or random.random() < 0.8:
                 return [f"[之前聊过的：{summary[:150]}]"]
-        
+
         return []
     except Exception as e:
         logger.error(f"[记忆] 检索失败: {e}")
@@ -202,7 +188,7 @@ async def _summarize_and_compress(session_id: str):
 
 
 async def _extract_memory_tags(user_id: str, session_id: str, user_msg: str, reply_text: str):
-    """从对话中提取用户标签。"""
+    """从对话中提取用户标签。新标签初始置信度 0.5。"""
     if not isinstance(session_id, str) or not session_id.startswith("private_"):
         if not any(k in user_msg + reply_text for k in ["喜欢", "讨厌", "怕", "不吃", "名字", "生日", "住", "工作", "专业"]):
             return

@@ -9,7 +9,7 @@ from fastapi import FastAPI
 from fastapi.responses import FileResponse
 
 from .config import VOICE_DIR, SERVER_HOST, SERVER_PORT, REMINDER_CHECK_INTERVAL, VOICE_TOKEN
-from .database import init_db, close_db, checkpoint_db
+from .database import init_db, close_db, checkpoint_db, decay_memory_tags, prune_memory_tags
 from .api import close_http_session
 from .proactive import register_proactive_jobs, shutdown_proactive
 from .share_parser import global_cleanup_shares
@@ -91,6 +91,21 @@ async def on_start():
                 logger.error(f"[清理任务] 表情包缓存清理异常: {e}")
 
     asyncio.create_task(_protected_task("表情包缓存清理", _periodic_sticker_cleanup))
+
+    # 记忆标签维护：每天衰减 + 清理低置信度标签（ECC 风格）
+    async def _periodic_memory_maintenance():
+        await asyncio.sleep(300)  # 启动后5分钟再执行
+        while True:
+            try:
+                await decay_memory_tags(decay_rate=0.02)
+                pruned = await prune_memory_tags(min_confidence=0.15)
+                if pruned > 0:
+                    logger.info(f"[记忆] 每日维护完成：清理了 {pruned} 条低置信度标签")
+            except Exception as e:
+                logger.error(f"[记忆] 维护异常: {e}")
+            await asyncio.sleep(86400)  # 每24小时
+
+    asyncio.create_task(_protected_task("记忆维护", _periodic_memory_maintenance))
 
     async def _periodic_checkpoint():
         while True:
