@@ -20,10 +20,10 @@ from nonebot.adapters.onebot.v11 import MessageSegment, Message
 from .config import STICKER_DIR, STICKER_ENABLED
 
 # ============================================================
-# 标签库
+# 标签库（支持 v1 单标签 + v2 多标签+场景）
 # ============================================================
 
-_tags: dict = {}  # filename -> emotion_tag
+_tags: dict = {}  # filename -> {"tags": [...], "scenes": [...]} (v2)
 _loaded: bool = False
 
 # 情绪标签 → 可接受的备选标签（主标签没图时 fallback）
@@ -41,8 +41,25 @@ _EMOTION_FALLBACK = {
 }
 
 
+def _normalize_tag_entry(entry) -> dict:
+    """将 v1 单标签格式统一转换为 v2 格式。"""
+    if isinstance(entry, dict):
+        # v2 格式：{"tags": [...], "scenes": [...]}
+        return {
+            "tags": entry.get("tags", ["default"]),
+            "scenes": entry.get("scenes", ["日常"]),
+        }
+    elif isinstance(entry, str):
+        # v1 格式："cute" -> 自动转换
+        return {
+            "tags": [entry],
+            "scenes": ["日常"],
+        }
+    return {"tags": ["default"], "scenes": ["日常"]}
+
+
 def _load_tags():
-    """加载标签库。"""
+    """加载标签库（兼容 v1/v2 格式）。"""
     global _tags, _loaded
     if _loaded:
         return
@@ -51,32 +68,54 @@ def _load_tags():
     if os.path.exists(tag_file):
         try:
             with open(tag_file, 'r', encoding='utf-8') as f:
-                _tags = json.load(f)
-            logger.info(f"[表情包] 加载了 {len(_tags)} 个标签")
+                raw = json.load(f)
+            # 统一转换为 v2 格式
+            _tags = {fn: _normalize_tag_entry(entry) for fn, entry in raw.items()}
+            logger.info(f"[表情包] 加载了 {len(_tags)} 个标签 (v2格式)")
         except Exception as e:
             logger.error(f"[表情包] 标签加载失败: {e}")
 
     _loaded = True
 
 
-def select_sticker(emotion: str) -> Optional[str]:
-    """根据情绪从对应池中随机选一张表情包路径。"""
+def select_sticker(emotion: str, scene: str = "") -> Optional[str]:
+    """根据情绪和场景从对应池中随机选一张表情包路径。
+
+    匹配优先级：
+    1. scene 精确匹配（如果提供了 scene）
+    2. emotion 标签匹配（走 fallback chain）
+    3. 随机 fallback
+    """
     _load_tags()
     if not _tags:
         return None
 
-    # 尝试主标签 → fallback 标签
-    fallbacks = _EMOTION_FALLBACK.get(emotion, [emotion, "default"])
+    # 优先级1：scene 精确匹配
+    if scene:
+        scene_candidates = [
+            fn for fn, entry in _tags.items()
+            if scene in entry.get("scenes", [])
+        ]
+        if scene_candidates:
+            chosen = random.choice(scene_candidates)
+            path = os.path.join(STICKER_DIR, chosen)
+            if os.path.exists(path):
+                return path
 
+    # 优先级2：emotion 标签匹配（fallback chain）
+    fallbacks = _EMOTION_FALLBACK.get(emotion, [emotion, "default"])
     for tag in fallbacks:
-        candidates = [fn for fn, t in _tags.items() if t == tag]
+        candidates = [
+            fn for fn, entry in _tags.items()
+            if tag in entry.get("tags", [])
+        ]
         if candidates:
             chosen = random.choice(candidates)
             path = os.path.join(STICKER_DIR, chosen)
             if os.path.exists(path):
                 return path
 
-    # 最终 fallback：从所有图中随机选
+    # 优先级3：随机 fallback
     all_files = list(_tags.keys())
     if all_files:
         chosen = random.choice(all_files)
@@ -87,51 +126,75 @@ def select_sticker(emotion: str) -> Optional[str]:
     return None
 
 
-async def select_sticker_with_search(emotion: str) -> Optional[str]:
-    """先尝试本地选图，找不到合适的则联网搜索。"""
-    # 先尝试本地
-    local_path = select_sticker(emotion)
-    if local_path:
-        # 检查是否只是 fallback 到了 default（说明没有精确匹配）
-        fallbacks = _EMOTION_FALLBACK.get(emotion, [emotion, "default"])
-        _load_tags()
-        # 如果主标签有图，直接用本地的
-        primary_candidates = [fn for fn, t in _tags.items() if t == emotion]
-        if primary_candidates:
+async def select_sticker_with_search(emotion: str, scene: str = "") -> Optional[str]:
+    """先尝试本地选图（scene优先），找不到合适的则联网搜索。"""
+    _load_tags()
+
+    # 本地优先：按 scene 精确匹配
+    if scene:
+        local_path = select_sticker(emotion, scene)
+        # 检查是否真的匹配到了 scene
+        scene_candidates = [
+            fn for fn, entry in _tags.items()
+            if scene in entry.get("scenes", [])
+        ]
+        if scene_candidates:
             return local_path
 
-    # 本地没有精确匹配，尝试联网搜索
+    # 本地次优：按 emotion 匹配
+    local_path = select_sticker(emotion)
+    primary_candidates = [
+        fn for fn, entry in _tags.items()
+        if emotion in entry.get("tags", [])
+    ]
+    if primary_candidates:
+        return local_path
+
+    # 联网兜底：用 scene+emotion 搜索
     try:
         from .sticker_search import search_sticker_online
-        web_path = await search_sticker_online(emotion)
+        search_keyword = f"{scene} {emotion}" if scene else emotion
+        web_path = await search_sticker_online(search_keyword)
         if web_path:
-            logger.info(f"[表情包] 联网检索成功: {emotion} -> {os.path.basename(web_path)}")
+            logger.info(f"[表情包] 联网检索成功: {search_keyword} -> {os.path.basename(web_path)}")
             return web_path
     except Exception as e:
         logger.warning(f"[表情包] 联网检索失败: {e}")
 
-    # 联网也失败，用本地的 fallback
+    # 最终 fallback
     return local_path
 
 
-def parse_sticker_tag(text: str) -> Tuple[str, Optional[str]]:
+def parse_sticker_tag(text: str) -> Tuple[str, Optional[str], str]:
     """从回复中解析表情包标签。
 
+    支持格式：
+    - [sticker:emotion|scene]  — 情绪+场景
+    - [sticker:emotion]        — 仅情绪
+    - [sticker]                — 默认
+
     Returns:
-        (clean_text, emotion_or_None)
+        (clean_text, emotion_or_None, scene_or_empty)
     """
-    # 匹配 [sticker:emotion] 或 [sticker]
+    # 匹配 [sticker:emotion|scene]
+    match = re.search(r'\[sticker:(\w+)\|([^\]]+)\]', text)
+    if match:
+        clean = re.sub(r'\[sticker:\w+\|[^\]]+\]', '', text).strip()
+        return clean, match.group(1), match.group(2).strip()
+
+    # 匹配 [sticker:emotion]
     match = re.search(r'\[sticker:(\w+)\]', text)
     if match:
         clean = re.sub(r'\[sticker:\w+\]', '', text).strip()
-        return clean, match.group(1)
+        return clean, match.group(1), ""
 
+    # 匹配 [sticker]
     match = re.search(r'\[sticker\]', text)
     if match:
         clean = re.sub(r'\[sticker\]', '', text).strip()
-        return clean, "default"
+        return clean, "default", ""
 
-    return text, None
+    return text, None, ""
 
 
 # ---------- 连续表情包追踪 ----------
@@ -147,7 +210,7 @@ def filter_sticker_tag(reply_text: str, session_id: str = "") -> Tuple[str, bool
     Returns:
         (text, should_send_sticker)
     """
-    clean_text, emotion = parse_sticker_tag(reply_text)
+    clean_text, emotion, scene = parse_sticker_tag(reply_text)
     if not emotion:
         # LLM 没加标签，不需要过滤
         return reply_text, False

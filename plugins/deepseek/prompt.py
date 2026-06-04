@@ -6,6 +6,7 @@ from typing import List, Dict, Any, Optional
 
 from .share_prompt import format_shares_for_prompt
 from .context_analyzer import ContextAnalysis, EmotionState, emotion_to_prompt_hint
+from .meme_lexicon import pick_meme
 
 
 def _get_time_context() -> str:
@@ -64,9 +65,13 @@ def _build_system_prompt(
 
 重要：用户提到城市/地点时，不要自动推荐旅游攻略、美食、景点、百科信息。除非用户明确问"XX有什么好玩的"/"XX旅游攻略"之类的，否则不要主动提供这些。用户说"我在北京"就是陈述事实，正常聊天回应就行。
 
-发表情包：想发表情包时，在回复末尾加 [sticker:情绪]。情绪可选：happy, angry, shy, sad, tsundere, cute, funny, love, speechless, excited。
+发表情包：想发表情包时，在回复末尾加 [sticker:情绪|场景]。
+情绪可选：happy, angry, shy, sad, tsundere, cute, funny, love, speechless, excited。
+场景用2-4个字描述具体语境，如：卖萌、撒娇、傲娇、吐槽、震惊、无语、害羞、生气、开心、日常、委屈、得意。
+示例：[sticker:happy|撒娇]、[sticker:tsundere|嘴硬]、[sticker:funny|吐槽]、[sticker:angry|发火]
+如果不想加场景，可以只写情绪：[sticker:happy]
 重要：不要每次都加表情包！只有你觉得特别需要表达情绪的时候才加，大约每5-6条回复加一次就够了。短句回复、简单问答、信息类回复不要加。不想发就不加，宁可不加也不要乱加。
-绝对不要输出 [doge]、[微笑]、[撇嘴]、[偷笑] 等QQ内置表情标签！这些不是表情包标签，会直接显示在聊天里很尴尬。想发表情包只用 [sticker:情绪] 格式。'''
+绝对不要输出 [doge]、[微笑]、[撇嘴]、[偷笑] 等QQ内置表情标签！这些不是表情包标签，会直接显示在聊天里很尴尬。想发表情包只用 [sticker:情绪|场景] 格式。'''
 
     # 状态信息（语气提示，不超过2句）
     state_hints = []
@@ -103,6 +108,11 @@ def _build_system_prompt(
             state_hints.append(f"你有点害羞{('，因为' + reason) if reason else ''}，说话扭捏")
         elif dominant == "开心":
             state_hints.append(f"你心情很好{('，因为' + reason) if reason else ''}，话多一点，语气轻快")
+
+    # 网络梗注入（低概率，自然融入）
+    meme = pick_meme(user_msg, emotion_state, bot_mood, affection.get("score", 0))
+    if meme:
+        state_hints.append(f'你可以说"{meme["word"]}"（{meme["meaning"]}），自然融入不要刻意')
 
     # 上下文提示（自然融入，不单独列区块）
     if context_analysis:

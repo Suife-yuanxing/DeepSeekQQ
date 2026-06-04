@@ -105,8 +105,11 @@ async def search_sticker_online(emotion: str) -> Optional[str]:
     local_path = await _download_image(url, emotion)
     if local_path:
         _daily_downloads += 1
-        # 自动添加标签
-        _add_tag(os.path.basename(local_path), emotion)
+        # 自动添加标签（从 emotion 中提取 scene 如果有的话）
+        parts = emotion.split()
+        tag_emotion = parts[0] if parts else emotion
+        tag_scene = parts[1] if len(parts) > 1 else ""
+        _add_tag(os.path.basename(local_path), tag_emotion, tag_scene)
         logger.info(f"[表情包搜索] 下载成功: {emotion} -> {os.path.basename(local_path)}")
 
     return local_path
@@ -187,8 +190,8 @@ async def _download_image(url: str, emotion: str) -> Optional[str]:
         return None
 
 
-def _add_tag(filename: str, emotion: str):
-    """自动添加标签到 sticker_tags.json。"""
+def _add_tag(filename: str, emotion: str, scene: str = ""):
+    """自动添加标签到 sticker_tags.json（v2 格式）。"""
     tag_file = os.path.join(STICKER_DIR, "sticker_tags.json")
     try:
         tags = {}
@@ -200,12 +203,14 @@ def _add_tag(filename: str, emotion: str):
         if filename in tags:
             return
 
-        tags[filename] = emotion
+        # v2 格式
+        scenes = [scene] if scene else ["日常"]
+        tags[filename] = {"tags": [emotion], "scenes": scenes}
 
         with open(tag_file, 'w', encoding='utf-8') as f:
             json.dump(tags, f, ensure_ascii=False, indent=2)
 
-        logger.info(f"[表情包搜索] 添加标签: {filename} -> {emotion}")
+        logger.info(f"[表情包搜索] 添加标签: {filename} -> {emotion}|{scene}")
     except Exception as e:
         logger.error(f"[表情包搜索] 添加标签失败: {e}")
 

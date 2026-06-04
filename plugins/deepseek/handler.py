@@ -95,8 +95,9 @@ async def _handle_chat_inner(bot: Bot, event: MessageEvent):
                 reply_text = filter_novel_actions(reply_text)
                 # 解析表情包标签并发送
                 clean_reply, sticker_kept = filter_sticker_tag(reply_text, session_id)
+                emoji_scene = ""
                 if sticker_kept:
-                    send_text, sticker_emotion = parse_sticker_tag(clean_reply)
+                    send_text, sticker_emotion, emoji_scene = parse_sticker_tag(clean_reply)
                 else:
                     send_text = clean_reply
                     sticker_emotion = should_send_sticker_fallback(reply_text)
@@ -107,7 +108,7 @@ async def _handle_chat_inner(bot: Bot, event: MessageEvent):
                             await asyncio.sleep(random.uniform(0.8, 1.5))
                         await bot.send(event, Message(part))
                 if sticker_emotion:
-                    sticker_path = await select_sticker_with_search(sticker_emotion)
+                    sticker_path = await select_sticker_with_search(sticker_emotion, emoji_scene)
                     if sticker_path:
                         await asyncio.sleep(0.8)
                         await bot.send(event, MessageSegment.image(file=Path(sticker_path)))
@@ -280,13 +281,15 @@ async def _handle_chat_inner(bot: Bot, event: MessageEvent):
 
     # 解析表情包标签 + 概率后置过滤
     reply_text_filtered, sticker_kept = filter_sticker_tag(reply_text, session_id)
+    sticker_scene = ""
     if sticker_kept:
         # LLM 加了标签且被保留
-        clean_text, sticker_emotion = parse_sticker_tag(reply_text_filtered)
+        clean_text, sticker_emotion, sticker_scene = parse_sticker_tag(reply_text_filtered)
     else:
         # LLM 没加标签，或被过滤掉了
         clean_text = reply_text_filtered
         sticker_emotion = None
+        sticker_scene = ""
         # fallback：LLM 没加标签时，低概率补发
         sticker_emotion = should_send_sticker_fallback(reply_text, analysis.emotion.dominant if analysis.emotion.confidence >= 0.4 else None)
 
@@ -322,8 +325,8 @@ async def _handle_chat_inner(bot: Bot, event: MessageEvent):
 
     # 发送表情包
     if sticker_emotion:
-        sticker_path = await select_sticker_with_search(sticker_emotion)
+        sticker_path = await select_sticker_with_search(sticker_emotion, sticker_scene)
         if sticker_path:
             await asyncio.sleep(0.8)
             await bot.send(event, MessageSegment.image(file=Path(sticker_path)))
-            logger.info(f"[表情包] 发送: {sticker_emotion} -> {os.path.basename(sticker_path)}")
+            logger.info(f"[表情包] 发送: {sticker_emotion}|{sticker_scene} -> {os.path.basename(sticker_path)}")
