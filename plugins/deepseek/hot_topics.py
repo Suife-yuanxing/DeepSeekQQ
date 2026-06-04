@@ -349,7 +349,7 @@ async def check_and_push_topics(bot) -> None:
                 rich_msg += MessageSegment.text(f"\n🔗 {topic.url}")
 
             await bot.send_private_msg(user_id=int(user_id), message=rich_msg)
-            # 存入对话记忆，让 bot 理解用户回复的上下文
+            # 存入对话记忆
             session_id = f"private_{user_id}"
             memory_text = f"[热搜推送:{topic.category}] {topic.title}"
             if topic.url:

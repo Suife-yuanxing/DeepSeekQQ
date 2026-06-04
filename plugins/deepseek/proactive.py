@@ -22,7 +22,7 @@ async def _send_proactive_message(bot, target_type: str, target_id: str, message
     try:
         if target_type == "private":
             await bot.send_private_msg(user_id=int(target_id), message=OBMessage(message))
-            # 存入对话记忆，让 bot 理解用户回复的上下文
+            # 存入对话记忆
             session_id = f"private_{target_id}"
             await save_reply(session_id, target_id, "[主动消息]", message)
             logger.info(f"[主动消息] 私聊 {target_id}: {message[:50]}...")
