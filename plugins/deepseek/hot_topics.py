@@ -1,7 +1,7 @@
 """热点话题主动推送模块。
 
 功能：
-- 定期抓取热搜/热点话题
+- 定期抓取热搜/热点话题（抖音/B站/小黑盒）
 - 筛选有趣、非敏感的话题
 - 以猫娘口吻主动挑起话题
 - 附带话题链接和配图
@@ -34,13 +34,13 @@ class HotTopic:
 
 
 # ============================================================
-# 热搜抓取
+# 热搜抓取 - 抖音/B站/小黑盒
 # ============================================================
 
-# 微博热搜 RSS（第三方）
-_WEIBO_RSS_URL = "https://rsshub.app/weibo/search/hot"
-# 备用：tophub.today
-_TOPHUB_URL = "https://api.vvhan.com/api/hotlist/wbHot"
+# 抖音热搜 API
+_DOUYIN_API = "https://www.iesdouyin.com/web/api/v2/hotsearch/billboard/word/"
+# B站热搜 API
+_BILIBILI_API = "https://api.bilibili.com/x/web-interface/wbi/search/square?limit=20"
 
 # 敏感词过滤
 _SENSITIVE_KEYWORDS = [
@@ -50,44 +50,98 @@ _SENSITIVE_KEYWORDS = [
 ]
 
 
-async def fetch_trending() -> List[HotTopic]:
-    """获取热搜话题列表。"""
+async def _fetch_douyin(session) -> List[HotTopic]:
+    """获取抖音热搜。"""
     topics = []
-
-    # 方案1: 韩小韩API（微博热搜）
     try:
-        session = await get_http_session()
-        async with session.get(_TOPHUB_URL, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+        async with session.get(_DOUYIN_API, timeout=aiohttp.ClientTimeout(total=10)) as resp:
             if resp.status == 200:
                 data = await resp.json()
-                if data.get("success") and data.get("data"):
-                    for item in data["data"][:30]:
-                        title = item.get("title", "").strip()
-                        hot = item.get("hot", "")
-                        url = item.get("url", "")
-                        if title and len(title) > 2:
-                            topics.append(HotTopic(title=title, hot=str(hot), url=url, category="微博"))
-                    if topics:
-                        logger.info(f"[热搜] 韩小韩API获取 {len(topics)} 条")
-                        return topics
+                for item in data.get("word_list", [])[:15]:
+                    title = item.get("word", "").strip()
+                    hot = item.get("hot_value", 0)
+                    if title and len(title) > 2:
+                        topics.append(HotTopic(title=title, hot=f"{hot:,}", category="抖音"))
+                logger.info(f"[热搜] 抖音获取 {len(topics)} 条")
     except Exception as e:
-        logger.warning(f"[热搜] 韩小韩API失败: {e}")
+        logger.warning(f"[热搜] 抖音API失败: {e}")
+    return topics
 
-    # 方案2: 直接搜索今日热点
+
+async def _fetch_bilibili(session) -> List[HotTopic]:
+    """获取B站热搜。"""
+    topics = []
     try:
-        from .search import search
-        result = await search("今天微博热搜 最新新闻", max_results=5)
-        if result and result.results:
-            for item in result.results[:10]:
-                title = item.get("title", "").strip()
-                if title and len(title) > 3:
-                    topics.append(HotTopic(title=title, url=item.get("url", ""), category="搜索"))
-            if topics:
-                logger.info(f"[热搜] 搜索获取 {len(topics)} 条")
-                return topics
+        async with session.get(_BILIBILI_API, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+            if resp.status == 200:
+                data = await resp.json()
+                trending = data.get("data", {}).get("trending", {})
+                for item in trending.get("list", [])[:15]:
+                    title = item.get("keyword", "").strip()
+                    hot = item.get("heat_score", 0)
+                    icon = item.get("icon", "")
+                    if title and len(title) > 2:
+                        topics.append(HotTopic(title=title, hot=f"{hot:,}", category="B站"))
+                logger.info(f"[热搜] B站获取 {len(topics)} 条")
     except Exception as e:
-        logger.warning(f"[热搜] 搜索获取失败: {e}")
+        logger.warning(f"[热搜] B站API失败: {e}")
+    return topics
 
+
+async def _fetch_xiaoheihe() -> List[HotTopic]:
+    """通过 Tavily 搜索获取小黑盒热门游戏话题。"""
+    topics = []
+    try:
+        from .config import TAVILY_API_KEY
+        if not TAVILY_API_KEY:
+            return topics
+
+        from tavily import AsyncTavilyClient
+        client = AsyncTavilyClient(api_key=TAVILY_API_KEY)
+
+        response = await client.search(
+            query="小黑盒 今日热门游戏资讯",
+            max_results=8,
+            search_depth="basic",
+        )
+
+        for item in response.get("results", []):
+            title = item.get("title", "").strip()
+            url = item.get("url", "")
+            if title and len(title) > 4:
+                topics.append(HotTopic(title=title, url=url, category="小黑盒"))
+
+        logger.info(f"[热搜] 小黑盒搜索获取 {len(topics)} 条")
+    except ImportError:
+        logger.debug("[热搜] tavily-python 未安装，跳过小黑盒")
+    except Exception as e:
+        logger.warning(f"[热搜] 小黑盒搜索失败: {e}")
+    return topics
+
+
+async def fetch_trending() -> List[HotTopic]:
+    """获取热搜话题列表 - 抖音/B站/小黑盒三源聚合。"""
+    topics = []
+    session = await get_http_session()
+
+    # 三个源并行获取
+    import asyncio
+    douyin, bilibili, xiaoheihe = await asyncio.gather(
+        _fetch_douyin(session),
+        _fetch_bilibili(session),
+        _fetch_xiaoheihe(),
+        return_exceptions=True,
+    )
+
+    if isinstance(douyin, list):
+        topics.extend(douyin)
+    if isinstance(bilibili, list):
+        topics.extend(bilibili)
+    if isinstance(xiaoheihe, list):
+        topics.extend(xiaoheihe)
+
+    random.shuffle(topics)
+    logger.info(f"[热搜] 共获取 {len(topics)} 条（抖音/B站/小黑盒）")
     return topics
 
 
