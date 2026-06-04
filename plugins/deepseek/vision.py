@@ -129,3 +129,14 @@ async def _download_and_encode(url: str) -> Optional[str]:
                 return base64.b64encode(await resp.read()).decode("utf-8")
     except Exception:
         return None
+
+
+async def recognize_sticker(source: str) -> Optional[str]:
+    """识别表情包的情绪，返回情绪关键词（如 happy/sad/angry）或 None。"""
+    result = await analyze_image(source, "这个表情包表达什么情绪？只回答一个英文单词，如 happy/sad/angry/shy/cute/funny/love/tsundere")
+    if result and result != "[图片内容暂无法识别]" and result != "[图片文件不存在]" and "文字内容" not in result:
+        # 提取情绪关键词
+        emotion = result.strip().lower().split()[0] if result.strip() else None
+        valid = {"happy", "sad", "angry", "shy", "cute", "funny", "love", "tsundere", "excited", "speechless", "surprised", "smug"}
+        return emotion if emotion in valid else None
+    return None
