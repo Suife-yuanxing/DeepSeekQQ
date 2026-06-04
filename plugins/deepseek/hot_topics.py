@@ -39,8 +39,8 @@ class HotTopic:
 
 # 抖音热搜 API
 _DOUYIN_API = "https://www.iesdouyin.com/web/api/v2/hotsearch/billboard/word/"
-# B站热搜 API
-_BILIBILI_API = "https://api.bilibili.com/x/web-interface/wbi/search/square?limit=20"
+# B站热搜 API（不带 wbi 签名）
+_BILIBILI_API = "https://api.bilibili.com/x/web-interface/search/square?limit=20"
 
 # 敏感词过滤
 _SENSITIVE_KEYWORDS = [
@@ -74,12 +74,16 @@ async def _fetch_bilibili(session) -> List[HotTopic]:
     try:
         async with session.get(_BILIBILI_API, timeout=aiohttp.ClientTimeout(total=10)) as resp:
             if resp.status == 200:
-                data = await resp.json()
+                text = await resp.text()
+                if not text.startswith("{"):
+                    logger.warning("[热搜] B站返回非JSON，跳过")
+                    return topics
+                import json
+                data = json.loads(text)
                 trending = data.get("data", {}).get("trending", {})
                 for item in trending.get("list", [])[:15]:
                     title = item.get("keyword", "").strip()
                     hot = item.get("heat_score", 0)
-                    icon = item.get("icon", "")
                     if title and len(title) > 2:
                         topics.append(HotTopic(title=title, hot=f"{hot:,}", category="B站"))
                 logger.info(f"[热搜] B站获取 {len(topics)} 条")
