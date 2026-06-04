@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Optional
 
 import aiohttp
+from .api import get_http_session
 
 logger = logging.getLogger("deepseek.vision")
 
@@ -75,12 +76,12 @@ async def _try_qwen_vl(img_b64, prompt):
         {"type": "image_url", "image_url": {"url": "data:image/jpeg;base64," + img_b64}},
         {"type": "text", "text": prompt}],}], "max_tokens": 500}
     try:
-        async with aiohttp.ClientSession() as s:
-            async with s.post(url, json=p, headers=h, timeout=aiohttp.ClientTimeout(total=30)) as r:
-                if r.status != 200:
-                    return None
-                d = await r.json()
-                return d.get("choices",[{}])[0].get("message",{}).get("content","").strip() or None
+        s = await get_http_session()
+        async with s.post(url, json=p, headers=h, timeout=aiohttp.ClientTimeout(total=30)) as r:
+            if r.status != 200:
+                return None
+            d = await r.json()
+            return d.get("choices",[{}])[0].get("message",{}).get("content","").strip() or None
     except:
         return None
 
@@ -96,18 +97,18 @@ async def _try_vision_model(
         "stream": False,
     }
     try:
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
-                f"{host}/api/generate",
-                json=payload,
-                timeout=aiohttp.ClientTimeout(total=30),
-            ) as resp:
-                if resp.status != 200:
-                    logger.warning(f"[Vision] Ollama 状态码: {resp.status}")
-                    return None
-                data = await resp.json()
-                text = data.get("response", "").strip()
-                return text if text else None
+        session = await get_http_session()
+        async with session.post(
+            f"{host}/api/generate",
+            json=payload,
+            timeout=aiohttp.ClientTimeout(total=30),
+        ) as resp:
+            if resp.status != 200:
+                logger.warning(f"[Vision] Ollama 状态码: {resp.status}")
+                return None
+            data = await resp.json()
+            text = data.get("response", "").strip()
+            return text if text else None
     except asyncio.TimeoutError:
         logger.warning("[Vision] Ollama 响应超时，降级到 OCR")
         return None
@@ -144,13 +145,13 @@ def _read_file_as_b64(path: str) -> Optional[str]:
 async def _download_and_encode(url: str) -> Optional[str]:
     """下载远程图片并返回 base64 编码。"""
     try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(
-                url, timeout=aiohttp.ClientTimeout(total=15)
-            ) as resp:
-                if resp.status != 200:
-                    return None
-                return base64.b64encode(await resp.read()).decode("utf-8")
+        session = await get_http_session()
+        async with session.get(
+            url, timeout=aiohttp.ClientTimeout(total=15)
+        ) as resp:
+            if resp.status != 200:
+                return None
+            return base64.b64encode(await resp.read()).decode("utf-8")
     except Exception:
         return None
 

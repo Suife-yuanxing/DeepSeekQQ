@@ -7,6 +7,7 @@
 - 天气相关生活建议
 """
 import time
+import re
 from typing import Optional, Dict, Any
 from dataclasses import dataclass
 
@@ -97,7 +98,6 @@ async def _lookup_city(city_name: str) -> Optional[str]:
 
 def extract_city_from_message(msg: str) -> Optional[str]:
     """从用户消息中提取城市名。"""
-    import re
     # 匹配 "我在XX" / "XX天气" / "XX今天" 等模式
     patterns = [
         r'我在([一-龥]{2,4})',
@@ -188,9 +188,8 @@ async def get_weather(city: str = None) -> Optional[WeatherInfo]:
 
 def get_time_of_day() -> str:
     """获取当前时间段描述。"""
-    import pytz
-    from datetime import datetime
-    hour = datetime.now(pytz.timezone('Asia/Shanghai')).hour
+    from datetime import datetime, timezone, timedelta
+    hour = datetime.now(timezone(timedelta(hours=8))).hour
     if 5 <= hour < 9:
         return "清晨"
     elif 9 <= hour < 12:
@@ -211,9 +210,8 @@ def get_time_of_day() -> str:
 
 def get_season() -> str:
     """获取当前季节。"""
-    import pytz
-    from datetime import datetime
-    month = datetime.now(pytz.timezone('Asia/Shanghai')).month
+    from datetime import datetime, timezone, timedelta
+    month = datetime.now(timezone(timedelta(hours=8))).month
     if month in (3, 4, 5):
         return "春天"
     elif month in (6, 7, 8):

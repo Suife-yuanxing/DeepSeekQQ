@@ -18,6 +18,8 @@ from pathlib import Path
 
 import aiohttp
 import aiofiles
+
+_sticker_write_lock = asyncio.Lock()
 from nonebot import logger
 
 from .config import STICKER_DIR, TAVILY_API_KEY
@@ -109,7 +111,7 @@ async def search_sticker_online(emotion: str) -> Optional[str]:
         parts = emotion.split()
         tag_emotion = parts[0] if parts else emotion
         tag_scene = parts[1] if len(parts) > 1 else ""
-        _add_tag(os.path.basename(local_path), tag_emotion, tag_scene)
+        await _add_tag(os.path.basename(local_path), tag_emotion, tag_scene)
         logger.info(f"[表情包搜索] 下载成功: {emotion} -> {os.path.basename(local_path)}")
 
     return local_path
@@ -190,27 +192,28 @@ async def _download_image(url: str, emotion: str) -> Optional[str]:
         return None
 
 
-def _add_tag(filename: str, emotion: str, scene: str = ""):
+async def _add_tag(filename: str, emotion: str, scene: str = ""):
     """自动添加标签到 sticker_tags.json（v2 格式）。"""
     tag_file = os.path.join(STICKER_DIR, "sticker_tags.json")
     try:
-        tags = {}
-        if os.path.exists(tag_file):
-            with open(tag_file, 'r', encoding='utf-8') as f:
-                tags = json.load(f)
+        async with _sticker_write_lock:
+            tags = {}
+            if os.path.exists(tag_file):
+                with open(tag_file, 'r', encoding='utf-8') as f:
+                    tags = json.load(f)
 
-        # 如果已存在，不覆盖
-        if filename in tags:
-            return
+            # 如果已存在，不覆盖
+            if filename in tags:
+                return
 
-        # v2 格式
-        scenes = [scene] if scene else ["日常"]
-        tags[filename] = {"tags": [emotion], "scenes": scenes}
+            # v2 格式
+            scenes = [scene] if scene else ["日常"]
+            tags[filename] = {"tags": [emotion], "scenes": scenes}
 
-        with open(tag_file, 'w', encoding='utf-8') as f:
-            json.dump(tags, f, ensure_ascii=False, indent=2)
+            with open(tag_file, 'w', encoding='utf-8') as f:
+                json.dump(tags, f, ensure_ascii=False, indent=2)
 
-        logger.info(f"[表情包搜索] 添加标签: {filename} -> {emotion}|{scene}")
+            logger.info(f"[表情包搜索] 添加标签: {filename} -> {emotion}|{scene}")
     except Exception as e:
         logger.error(f"[表情包搜索] 添加标签失败: {e}")
 
