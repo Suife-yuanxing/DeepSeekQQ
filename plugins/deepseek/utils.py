@@ -1,40 +1,75 @@
 """通用工具函数。"""
 import re
-from typing import List, Dict, Any
+import random
+from typing import List, Dict, Any, Tuple
+
 
 def split_long_reply(text: str) -> List[str]:
-    paragraphs = []
-    current = []
+    """按语义分句拆分回复，每句独立为一条消息。
+
+    规则：
+    1. 按换行拆行，每行独立一条消息
+    2. 过短的行（< 5字）合并到上一条，避免碎片
+    3. 超长行（> 80字）按句号/问号/感叹号再拆
+    4. 清理尾部空格
+    """
+    if not text or not text.strip():
+        return [text.strip()]
+
+    # 第一步：按换行拆行，清理空行和尾部空格
+    lines = []
     for line in text.split('\n'):
         stripped = line.strip()
         if stripped:
-            current.append(stripped)
-        else:
-            if current:
-                paragraphs.append('\n'.join(current))
-                current = []
-    if current:
-        paragraphs.append('\n'.join(current))
-    if len(paragraphs) <= 1:
+            lines.append(stripped)
+
+    if not lines:
         return [text.strip()]
+
+    # 第二步：合并过短的行（< 5字）到上一条
+    merged = []
+    for line in lines:
+        if merged and len(line) < 5:
+            merged[-1] += line
+        else:
+            merged.append(line)
+
+    # 第三步：超长行按句号/问号/感叹号再拆
     result = []
-    for p in paragraphs:
-        if len(p) > 120:
-            parts = re.split(r'(。|\?|？|!|！)', p)
+    for line in merged:
+        if len(line) <= 80:
+            result.append(line)
+        else:
+            parts = re.split(r'([。？！!?])', line)
             temp = ""
             for part in parts:
                 if not part:
                     continue
-                if len(temp) + len(part) > 120 and temp:
+                if len(temp) + len(part) > 80 and temp:
                     result.append(temp.strip())
                     temp = part
                 else:
                     temp += part
-            if temp:
+            if temp and temp.strip():
                 result.append(temp.strip())
-        else:
-            result.append(p)
-    return result
+
+    return result if result else [text.strip()]
+
+
+def calc_message_delay(text: str) -> float:
+    """根据消息长度计算发送延迟（模拟打字时间）。
+
+    短消息: 0.8~1.5秒
+    中等消息(10-30字): 1.5~3秒
+    长消息(30字+): 2.5~4.5秒
+    """
+    length = len(text)
+    if length < 10:
+        return random.uniform(0.8, 1.5)
+    elif length < 30:
+        return random.uniform(1.5, 3.0)
+    else:
+        return random.uniform(2.5, 4.5)
 
 
 

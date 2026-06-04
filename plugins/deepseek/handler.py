@@ -10,7 +10,7 @@ from nonebot.adapters.onebot.v11 import Bot, MessageEvent, GroupMessageEvent, Me
 
 from .config import REPLY_LENGTH_CONFIG, RANDOM_REPLY_CHANCE, ANALYSIS_HISTORY_LIMIT, CHAT_HISTORY_MULTIPLIER
 from .prompt import _build_system_prompt, estimate_reply_length
-from .utils import split_long_reply, get_session_id, check_rate_limit, filter_novel_actions
+from .utils import split_long_reply, calc_message_delay, get_session_id, check_rate_limit, filter_novel_actions
 from .memory import save_and_get_context, save_reply, apply_affection_delta, save_and_get_context_with_history
 from .share_parser import extract_and_cache_shares, get_recent_shares
 from .share_prompt import build_analysis_prompt
@@ -314,13 +314,13 @@ async def _handle_chat_inner(bot: Bot, event: MessageEvent):
             parts = split_long_reply(str(rich_msg))
             for i, part in enumerate(parts):
                 if i > 0:
-                    await asyncio.sleep(random.uniform(1.0, 2.5))
+                    await asyncio.sleep(calc_message_delay(part))
                 await bot.send(event, Message(part))
         else:
             parts = split_long_reply(final_text)
             for i, part in enumerate(parts):
                 if i > 0:
-                    await asyncio.sleep(random.uniform(1.0, 2.5))
+                    await asyncio.sleep(calc_message_delay(part))
                 await bot.send(event, Message(part))
 
     # 发送表情包
