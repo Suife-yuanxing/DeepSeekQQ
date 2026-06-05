@@ -26,6 +26,28 @@ from .config import STICKER_DIR, STICKER_ENABLED, STICKER_KEEP_PROBABILITY, MAX_
 _tags: dict = {}  # filename -> {"tags": [...], "scenes": [...]} (v2)
 _loaded: bool = False
 
+# 中文情绪 → 英文情绪映射（兜底，防止 LLM 输出中文标签）
+_CN_EMOTION_MAP = {
+    "开心": "happy", "高兴": "happy", "快乐": "happy",
+    "生气": "angry", "愤怒": "angry", "发火": "angry",
+    "害羞": "shy", "不好意思": "shy", "脸红": "shy",
+    "难过": "sad", "伤心": "sad", "哭": "sad", "委屈": "sad",
+    "傲娇": "tsundere", "嘴硬": "tsundere",
+    "可爱": "cute", "萌": "cute", "卖萌": "cute",
+    "搞笑": "funny", "好笑": "funny", "吐槽": "funny",
+    "喜欢": "love", "爱你": "love", "撒娇": "love", "心动": "love",
+    "无语": "speechless", "震惊": "speechless", "懵": "speechless",
+    "兴奋": "excited", "激动": "excited", "期待": "excited",
+}
+
+
+def _normalize_emotion(emotion: str) -> str:
+    """将中文情绪标签转为英文，英文原样返回。"""
+    if not emotion:
+        return emotion
+    return _CN_EMOTION_MAP.get(emotion, emotion)
+
+
 # 情绪标签 → 可接受的备选标签（主标签没图时 fallback）
 _EMOTION_FALLBACK = {
     "happy": ["happy", "cute", "excited", "default"],
@@ -180,13 +202,13 @@ def parse_sticker_tag(text: str) -> Tuple[str, Optional[str], str]:
     match = re.search(r'\[sticker:(\w+)\|([^\]]+)\]', text)
     if match:
         clean = re.sub(r'\[sticker:\w+\|[^\]]+\]', '', text).strip()
-        return clean, match.group(1), match.group(2).strip()
+        return clean, _normalize_emotion(match.group(1)), match.group(2).strip()
 
     # 匹配 [sticker:emotion]
     match = re.search(r'\[sticker:(\w+)\]', text)
     if match:
         clean = re.sub(r'\[sticker:\w+\]', '', text).strip()
-        return clean, match.group(1), ""
+        return clean, _normalize_emotion(match.group(1)), ""
 
     # 匹配 [sticker]
     match = re.search(r'\[sticker\]', text)

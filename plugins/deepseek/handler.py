@@ -82,6 +82,29 @@ def _reply(event: MessageEvent, msg: Message) -> Message:
     return Message(MessageSegment.reply(event.message_id)) + msg
 
 
+def _should_quote(ctx: ChatContext) -> bool:
+    """判断是否需要引用回复。
+
+    引用场景：群聊（需要区分回复谁）、提问、分享内容回复、提醒回复。
+    不引用：私聊普通闲聊（连续对话不需要每条都引用）。
+    """
+    # 群聊始终引用（需要让用户知道在回复谁）
+    if ctx.is_group:
+        return True
+    # 搜索结果回复（引用原问题更清晰）
+    if ctx.is_explicit_search:
+        return True
+    # 分析类请求（引用原问题）
+    analysis_keywords = ["怎么看", "分析", "评价", "观点", "说说", "讲讲", "详细介绍"]
+    if any(kw in ctx.raw_msg for kw in analysis_keywords):
+        return True
+    # 用户提问（引用原问题）
+    if ctx.analysis and ctx.analysis.context.user_intent == "提问":
+        return True
+    # 私聊普通闲聊不引用
+    return False
+
+
 # ============================================================
 # Pipeline 数据结构
 # ============================================================
@@ -472,7 +495,8 @@ async def _stage_post(ctx: ChatContext) -> Optional[str]:
     text_for_links, reply_urls = split_reply_and_links(clean_text)
     search_items = extract_shareable_from_search(ctx.search_result) if ctx.search_result else []
 
-    # 发送（首条文字消息加引用回复）
+    # 发送（根据场景决定是否引用回复）
+    should_quote = _should_quote(ctx)
     first_sent = False
     send_as_voice = should_send_voice(ctx.raw_msg, clean_text, ctx.recent_memories)
     if send_as_voice:
@@ -482,7 +506,10 @@ async def _stage_post(ctx: ChatContext) -> Optional[str]:
             rich_msg = build_rich_message("", reply_urls, search_items, show_links=ctx.is_explicit_search)
             if rich_msg:
                 await asyncio.sleep(1.5)
-                await ctx.bot.send(ctx.event, _reply(ctx.event, rich_msg))
+                if should_quote:
+                    await ctx.bot.send(ctx.event, _reply(ctx.event, rich_msg))
+                else:
+                    await ctx.bot.send(ctx.event, rich_msg)
                 first_sent = True
     else:
         logger.info(f"[决策] 上下文判断发文字: {clean_text[:30]}...")
@@ -492,21 +519,23 @@ async def _stage_post(ctx: ChatContext) -> Optional[str]:
             for i, part in enumerate(parts):
                 if i > 0:
                     await asyncio.sleep(calc_message_delay(part))
-                if not first_sent:
+                if not first_sent and should_quote:
                     await ctx.bot.send(ctx.event, _reply(ctx.event, Message(part)))
                     first_sent = True
                 else:
                     await ctx.bot.send(ctx.event, Message(part))
+                    first_sent = True
         else:
             parts = split_long_reply(clean_text)
             for i, part in enumerate(parts):
                 if i > 0:
                     await asyncio.sleep(calc_message_delay(part))
-                if not first_sent:
+                if not first_sent and should_quote:
                     await ctx.bot.send(ctx.event, _reply(ctx.event, Message(part)))
                     first_sent = True
                 else:
                     await ctx.bot.send(ctx.event, Message(part))
+                    first_sent = True
 
     # 发送表情包
     if sticker_emotion:
@@ -601,7 +630,6 @@ async def _handle_link_share(ctx: ChatContext):
 
 async def handle_chat(bot: Bot, event: MessageEvent):
     """主入口：构建上下文并执行 Pipeline。"""
-    typing_msg_id = None
     try:
         ctx = ChatContext(
             bot=bot,
@@ -611,16 +639,6 @@ async def handle_chat(bot: Bot, event: MessageEvent):
             user_id=str(event.user_id),
             is_group=isinstance(event, GroupMessageEvent),
         )
-
-        # Typing 指示器：发送临时消息
-        try:
-            resp = await bot.send(event, Message("⏳ ..."))
-            if isinstance(resp, dict):
-                typing_msg_id = resp.get("message_id")
-            elif hasattr(resp, "message_id"):
-                typing_msg_id = resp.message_id
-        except Exception:
-            pass
 
         # 执行 Pipeline
         for stage_name, stage_func in _PIPELINE:
@@ -636,10 +654,3 @@ async def handle_chat(bot: Bot, event: MessageEvent):
             await bot.send(event, _reply(event, Message("呜...脑袋有点乱，让我缓缓...")))
         except Exception:
             pass
-    finally:
-        # 撤回 typing 消息
-        if typing_msg_id:
-            try:
-                await bot.delete_msg(message_id=typing_msg_id)
-            except Exception:
-                pass

@@ -72,8 +72,8 @@ async def _generate_proactive_message(scene: str, user_id: str = "") -> str:
         "4. 每次语气都不一样，不要重复\n"
         "5. 根据你们的关系远近调整语气（熟人更软更暧昧，生人更懒）\n"
         "6. 可以适当加一些猫娘特色的口癖（喵~、哼、呜）但不要每句都加\n"
-        "7. 如果适合，在末尾加 [sticker:情绪]，大约20%概率\n"
-        "8. 绝对不要输出 [doge]、[微笑] 等QQ内置表情标签"
+        "7. 如果适合，在末尾加 [sticker:情绪]，大约20%概率。情绪必须用英文：happy/angry/shy/sad/tsundere/cute/funny/love/speechless/excited\n"
+        "8. 绝对不要输出 [doge]、[微笑] 等QQ内置表情标签，绝对不要用中文情绪如[sticker:开心]"
     )
 
     try:

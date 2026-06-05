@@ -1,10 +1,10 @@
-"""表情包模块测试 — 覆盖标签解析 + 动态概率（功能⑤）。"""
+"""表情包模块测试 — 覆盖标签解析 + 动态概率（功能⑤）+ 中文情绪映射。"""
 import sys
 import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import pytest
-from plugins.deepseek.sticker import parse_sticker_tag, should_send_sticker_fallback, filter_sticker_tag
+from plugins.deepseek.sticker import parse_sticker_tag, should_send_sticker_fallback, filter_sticker_tag, _normalize_emotion
 
 
 class TestParseStickerTag:
@@ -70,6 +70,62 @@ class TestFilterStickerDynamicProb:
         """没有标签时始终返回 False。"""
         clean, kept = filter_sticker_tag("普通消息", "test_sess4")
         assert kept is False
+
+
+class TestChineseEmotionNormalization:
+    """中文情绪标签 → 英文映射测试。"""
+
+    def test_chinese_happy(self):
+        assert _normalize_emotion("开心") == "happy"
+
+    def test_chinese_angry(self):
+        assert _normalize_emotion("生气") == "angry"
+
+    def test_chinese_shy(self):
+        assert _normalize_emotion("害羞") == "shy"
+
+    def test_chinese_sad(self):
+        assert _normalize_emotion("难过") == "sad"
+
+    def test_chinese_tsundere(self):
+        assert _normalize_emotion("傲娇") == "tsundere"
+
+    def test_chinese_cute(self):
+        assert _normalize_emotion("可爱") == "cute"
+
+    def test_chinese_funny(self):
+        assert _normalize_emotion("搞笑") == "funny"
+
+    def test_chinese_love(self):
+        assert _normalize_emotion("撒娇") == "love"
+
+    def test_chinese_excited(self):
+        assert _normalize_emotion("兴奋") == "excited"
+
+    def test_english_passthrough(self):
+        """英文情绪原样返回。"""
+        assert _normalize_emotion("happy") == "happy"
+        assert _normalize_emotion("angry") == "angry"
+
+    def test_parse_chinese_sticker_tag(self):
+        """解析中文标签时自动转为英文。"""
+        text = "早上好~ [sticker:开心]"
+        clean, emotion, scene = parse_sticker_tag(text)
+        assert clean == "早上好~"
+        assert emotion == "happy"
+        assert scene == ""
+
+    def test_parse_chinese_sticker_with_scene(self):
+        """中文情绪+中文场景。"""
+        text = "哼 [sticker:傲娇|嘴硬]"
+        clean, emotion, scene = parse_sticker_tag(text)
+        assert clean == "哼"
+        assert emotion == "tsundere"
+        assert scene == "嘴硬"
+
+    def test_empty_emotion(self):
+        assert _normalize_emotion("") == ""
+        assert _normalize_emotion(None) is None
 
 
 if __name__ == "__main__":
