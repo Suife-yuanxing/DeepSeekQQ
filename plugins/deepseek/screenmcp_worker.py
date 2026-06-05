@@ -79,8 +79,10 @@ state = WorkerState()
 
 async def handle_ws(request: web.Request) -> web.WebSocketResponse:
     """处理 WebSocket 连接。"""
+    logger.info(f"[Worker] 新连接来自: {request.remote}")
     ws = web.WebSocketResponse(heartbeat=HEARTBEAT_INTERVAL)
     await ws.prepare(request)
+    logger.info(f"[Worker] WebSocket 握手成功: {request.remote}")
 
     conn: Optional[Connection] = None
 
@@ -88,7 +90,9 @@ async def handle_ws(request: web.Request) -> web.WebSocketResponse:
         # Step 1: 等待认证消息（10 秒内）
         try:
             auth_msg = await asyncio.wait_for(ws.receive_json(), timeout=AUTH_TIMEOUT)
+            logger.info(f"[Worker] 收到认证消息: {auth_msg}")
         except asyncio.TimeoutError:
+            logger.warning(f"[Worker] 认证超时: {request.remote}")
             await ws.send_json({"type": "auth_fail", "error": "auth timeout"})
             await ws.close()
             return ws
