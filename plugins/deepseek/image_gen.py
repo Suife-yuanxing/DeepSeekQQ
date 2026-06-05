@@ -120,9 +120,7 @@ async def generate_image(prompt: str) -> Optional[str]:
     payload = {
         "model": IMAGE_GEN_MODEL,
         "prompt": prompt,
-        "image_size": "512x512",
-        "batch_size": 1,
-        "num_inference_steps": 20,
+        "size": "1024x768",
     }
 
     try:
