@@ -7,8 +7,11 @@
 - 附带话题链接和配图
 """
 import re
+import os
+import ssl
 import time
 import random
+import hashlib
 from typing import List, Dict, Any, Optional
 from dataclasses import dataclass, field
 
@@ -269,6 +272,54 @@ async def generate_push_message(topic: HotTopic) -> str:
 
 
 # ============================================================
+# 图片下载（避免 NapCat TLS 证书验证失败）
+# ============================================================
+
+_CACHE_DIR = os.path.join("data", "images", "hot_topics")
+os.makedirs(_CACHE_DIR, exist_ok=True)
+
+# 跳过 SSL 验证的 context（部分图片源证书不可靠）
+_ssl_ctx = ssl.create_default_context()
+_ssl_ctx.check_hostname = False
+_ssl_ctx.verify_mode = ssl.CERT_NONE
+
+
+async def _download_image(url: str) -> Optional[str]:
+    """下载远程图片到本地缓存目录，返回本地路径。"""
+    try:
+        # 用 URL hash 做文件名，避免重复下载
+        ext = ".jpg"
+        if ".png" in url.lower():
+            ext = ".png"
+        elif ".gif" in url.lower():
+            ext = ".gif"
+        elif ".webp" in url.lower():
+            ext = ".webp"
+        fname = hashlib.md5(url.encode()).hexdigest()[:12] + ext
+        local_path = os.path.join(_CACHE_DIR, fname)
+
+        # 已缓存则直接返回
+        if os.path.exists(local_path) and os.path.getsize(local_path) > 0:
+            return local_path
+
+        session = await get_http_session()
+        connector = aiohttp.TCPConnector(ssl=_ssl_ctx)
+        async with aiohttp.ClientSession(connector=connector) as s:
+            async with s.get(url, timeout=aiohttp.ClientTimeout(total=15)) as resp:
+                if resp.status == 200:
+                    data = await resp.read()
+                    if len(data) > 500:  # 过小的可能是错误页
+                        with open(local_path, "wb") as f:
+                            f.write(data)
+                        logger.debug(f"[热搜] 图片已缓存: {fname} ({len(data)}B)")
+                        return local_path
+        return None
+    except Exception as e:
+        logger.debug(f"[热搜] 图片下载异常: {e}")
+        return None
+
+
+# ============================================================
 # 推送调度
 # ============================================================
 
@@ -332,11 +383,15 @@ async def check_and_push_topics(bot) -> None:
             rich_msg = Message()
             rich_msg += MessageSegment.text(msg)
 
-            # 附带配图
+            # 附带配图（先下载到本地，避免 NapCat TLS 证书验证失败）
             if topic.image_url:
                 try:
-                    rich_msg += MessageSegment.text("\n")
-                    rich_msg += MessageSegment.image(topic.image_url)
+                    local_path = await _download_image(topic.image_url)
+                    if local_path:
+                        rich_msg += MessageSegment.text("\n")
+                        rich_msg += MessageSegment.image(local_path)
+                    else:
+                        logger.debug("[热搜] 图片下载失败，跳过配图")
                 except Exception as e:
                     logger.debug(f"[热搜] 图片发送失败: {e}")
 

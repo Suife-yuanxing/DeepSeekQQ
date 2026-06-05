@@ -10,7 +10,6 @@ __pycache__/
 
 # 数据文件（太大且频繁变化）
 data/
-!data/stickers/sticker_tags.json
 *.db
 *.sqlite
 *.sqlite3
