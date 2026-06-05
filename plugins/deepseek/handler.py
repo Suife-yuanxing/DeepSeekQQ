@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from nonebot.adapters.onebot.v11 import Bot, MessageEvent, GroupMessageEvent, Message, MessageSegment
 from nonebot import logger
 
-from .config import REPLY_LENGTH_CONFIG, RANDOM_REPLY_CHANCE, ANALYSIS_HISTORY_LIMIT, CHAT_HISTORY_MULTIPLIER
+from .config import REPLY_LENGTH_CONFIG, RANDOM_REPLY_CHANCE, ANALYSIS_HISTORY_LIMIT, CHAT_HISTORY_MULTIPLIER, PHONE_CONTROL_ENABLED
 from .prompt import _build_system_prompt, estimate_reply_length
 from .utils import split_long_reply, calc_message_delay, get_session_id, check_rate_limit, filter_novel_actions
 from .memory import save_and_get_context, save_reply, apply_affection_delta, save_and_get_context_with_history, get_user_pref_hints
@@ -125,23 +125,48 @@ class ChatContext:
 def _should_quote(ctx: ChatContext) -> bool:
     """判断是否需要引用回复。
 
-    引用场景：群聊（需要区分回复谁）、提问、分享内容回复、提醒回复。
-    不引用：私聊普通闲聊（连续对话不需要每条都引用）。
+    群聊条件引用：被@、话题切换、消息间隔>5min、提问/搜索/分析。
+    私聊：话题切换时引用，普通延续不引用。
     """
-    # 群聊始终引用（需要让用户知道在回复谁）
-    if ctx.is_group:
-        return True
-    # 搜索结果回复（引用原问题更清晰）
+    import time
+
+    # 搜索结果 / 分析类请求 → 始终引用
     if ctx.is_explicit_search:
         return True
-    # 分析类请求（引用原问题）
     analysis_keywords = ["怎么看", "分析", "评价", "观点", "说说", "讲讲", "详细介绍"]
     if any(kw in ctx.raw_msg for kw in analysis_keywords):
         return True
-    # 用户提问（引用原问题）
     if ctx.analysis and ctx.analysis.context.user_intent == "提问":
         return True
-    # 私聊普通闲聊不引用
+
+    # 群聊：条件引用
+    if ctx.is_group:
+        # 被 @ 了 → 引用（让对方知道在回复谁）
+        try:
+            for seg in ctx.event.message:
+                if seg.type == "at" and str(seg.data.get("qq", "")) == str(ctx.bot.self_id):
+                    return True
+        except Exception:
+            pass
+        # 话题切换（topic_shift_score > 0.6）→ 引用
+        if ctx.analysis and ctx.analysis.context.topic_shift_score > 0.6:
+            return True
+        # 消息间隔 > 5 分钟 → 引用（上下文已断）
+        if ctx.recent_memories:
+            last = ctx.recent_memories[-1]
+            if isinstance(last, dict) and last.get("timestamp"):
+                try:
+                    gap = time.time() - float(last["timestamp"])
+                    if gap > 300:
+                        return True
+                except (ValueError, TypeError):
+                    pass
+        # 其他群聊延续对话 → 不引用
+        return False
+
+    # 私聊：话题切换时引用
+    if ctx.analysis and ctx.analysis.context.topic_shift_score > 0.6:
+        return True
     return False
 
 
@@ -247,6 +272,24 @@ async def _stage_share_only(ctx: ChatContext) -> Optional[str]:
             else:
                 await _handle_link_share(ctx)
         return _SKIP
+    return None
+
+
+@stage("phone_control")
+async def _stage_phone(ctx: ChatContext) -> Optional[str]:
+    """手机控制指令处理（仅 MY_QQ 可用）。"""
+    if not PHONE_CONTROL_ENABLED:
+        return None
+    try:
+        from .phone_control import execute_phone_command, is_phone_command
+        if not is_phone_command(ctx.raw_msg):
+            return None
+        result = await execute_phone_command(ctx.raw_msg)
+        if result:
+            ctx.reply_text = result
+            return _SKIP  # 短路：跳过 LLM 等后续阶段
+    except Exception as e:
+        logger.warning(f"[手机] 控制模块异常: {e}")
     return None
 
 
@@ -501,7 +544,8 @@ async def _stage_post(ctx: ChatContext) -> Optional[str]:
     send_as_voice = should_send_voice(ctx.raw_msg, clean_text, ctx.recent_memories)
     if send_as_voice:
         logger.warning(f"[决策] 上下文判断发语音，跳过文字: {clean_text[:30]}...")
-        await send_voice(ctx.bot, ctx.event, clean_text)
+        voice_emotion = ctx.analysis.emotion.dominant if ctx.analysis and ctx.analysis.emotion.confidence >= 0.4 else None
+        await send_voice(ctx.bot, ctx.event, clean_text, emotion=voice_emotion)
         if reply_urls or search_items:
             rich_msg = build_rich_message("", reply_urls, search_items, show_links=ctx.is_explicit_search)
             if rich_msg:
