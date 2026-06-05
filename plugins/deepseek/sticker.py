@@ -201,8 +201,12 @@ def parse_sticker_tag(text: str) -> Tuple[str, Optional[str], str]:
 _last_sticker_session: Dict[str, int] = {}  # session_id -> 连续发送次数
 
 
-def filter_sticker_tag(reply_text: str, session_id: str = "") -> Tuple[str, bool]:
+def filter_sticker_tag(reply_text: str, session_id: str = "",
+                       keep_probability: float = None) -> Tuple[str, bool]:
     """后置过滤：LLM 返回带 [sticker:xxx] 的回复后，概率性剥掉标签。
+
+    Args:
+        keep_probability: 动态保留概率（功能⑤情绪驱动），None 时用配置默认值。
 
     Returns:
         (text, should_send_sticker)
@@ -220,9 +224,9 @@ def filter_sticker_tag(reply_text: str, session_id: str = "") -> Tuple[str, bool
             logger.info(f"[表情包] 连续{consecutive}张已达上限，本次跳过")
             return clean_text, False
 
-    # 概率过滤：35% 保留，65% 剥掉
-    import random
-    if random.random() < STICKER_KEEP_PROBABILITY:
+    # 概率过滤（功能⑤：使用情绪驱动的动态概率）
+    prob = keep_probability if keep_probability is not None else STICKER_KEEP_PROBABILITY
+    if random.random() < prob:
         # 保留，更新连续计数
         if session_id:
             _last_sticker_session[session_id] = _last_sticker_session.get(session_id, 0) + 1
@@ -231,12 +235,16 @@ def filter_sticker_tag(reply_text: str, session_id: str = "") -> Tuple[str, bool
         # 剥掉标签，重置连续计数
         if session_id:
             _last_sticker_session[session_id] = 0
-        logger.info(f"[表情包] 概率过滤：剥掉 {emotion} 标签")
+        logger.info(f"[表情包] 概率过滤：剥掉 {emotion} 标签 (prob={prob:.2f})")
         return clean_text, False
 
 
-def should_send_sticker_fallback(reply_text: str, emotion_hint: str = None) -> Optional[str]:
+def should_send_sticker_fallback(reply_text: str, emotion_hint: str = None,
+                                  fallback_chance: float = None) -> Optional[str]:
     """如果 LLM 没有嵌入标签，根据概率和情绪决定是否发送。
+
+    Args:
+        fallback_chance: 动态 fallback 概率（功能⑤情绪驱动），None 时用默认 15%。
 
     Returns:
         emotion tag 或 None
@@ -244,8 +252,9 @@ def should_send_sticker_fallback(reply_text: str, emotion_hint: str = None) -> O
     if not STICKER_ENABLED:
         return None
 
-    # 15% 概率 fallback
-    if random.random() > 0.15:
+    # 动态 fallback 概率（功能⑤：情绪越积极越容易发表情包）
+    base_chance = fallback_chance if fallback_chance is not None else 0.15
+    if random.random() > base_chance:
         return None
 
     # 根据回复内容推断情绪

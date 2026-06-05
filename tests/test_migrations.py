@@ -30,10 +30,11 @@ class TestMigrations:
         await db.close()
 
     def test_migrations_registered(self):
-        assert len(MIGRATIONS) >= 2
+        assert len(MIGRATIONS) >= 3
         versions = [v for v, _ in MIGRATIONS]
         assert 1 in versions
         assert 2 in versions
+        assert 3 in versions
 
     @pytest.mark.asyncio
     async def test_run_migrations(self):
@@ -48,8 +49,15 @@ class TestMigrations:
         await db.commit()
         await run_migrations(db)
         version = await get_current_version(db)
-        assert version >= 2
+        assert version >= 3
         async with db.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='session_state'") as cur:
+            row = await cur.fetchone()
+            assert row is not None
+        # v3: user_preferences 和 reply_quality 表
+        async with db.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='user_preferences'") as cur:
+            row = await cur.fetchone()
+            assert row is not None
+        async with db.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='reply_quality'") as cur:
             row = await cur.fetchone()
             assert row is not None
         await db.close()

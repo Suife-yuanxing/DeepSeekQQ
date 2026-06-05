@@ -62,6 +62,7 @@ def _build_system_prompt(
     reminder_context: str = "",
     world_context: str = "",
     bot_mood: Dict[str, Any] = None,
+    user_prefs: Dict[str, str] = None,
 ) -> str:
     time_context = _get_time_context()
 
@@ -85,6 +86,20 @@ def _build_system_prompt(
     state_hints = _build_state_hints(affection, mood, emotion_state, bot_mood, user_msg, context_analysis)
     if state_hints:
         parts.append("当前状态：" + "，".join(state_hints) + "。")
+
+    # === 用户偏好提示（功能③）===
+    if user_prefs:
+        pref_hints = []
+        if user_prefs.get("reply_length") == "long":
+            pref_hints.append("这个用户喜欢详细回复，多说一些")
+        elif user_prefs.get("reply_length") == "short":
+            pref_hints.append("这个用户喜欢简短回复，言简意赅")
+        if user_prefs.get("sticker_freq") == "high":
+            pref_hints.append("多发表情包，大约40%概率加sticker标签")
+        if user_prefs.get("topic_interest"):
+            pref_hints.append(f"他对{user_prefs['topic_interest']}话题感兴趣")
+        if pref_hints:
+            parts.append("用户偏好：" + "；".join(pref_hints) + "。")
 
     # === 回复长度指示 ===
     parts.append(f"回{length['target_lines']}句左右，{length['style']}。")

@@ -17,7 +17,7 @@ from nonebot import logger
 from .config import REPLY_LENGTH_CONFIG, RANDOM_REPLY_CHANCE, ANALYSIS_HISTORY_LIMIT, CHAT_HISTORY_MULTIPLIER
 from .prompt import _build_system_prompt, estimate_reply_length
 from .utils import split_long_reply, calc_message_delay, get_session_id, check_rate_limit, filter_novel_actions
-from .memory import save_and_get_context, save_reply, apply_affection_delta, save_and_get_context_with_history
+from .memory import save_and_get_context, save_reply, apply_affection_delta, save_and_get_context_with_history, get_user_pref_hints
 from .share_parser import extract_and_cache_shares, get_recent_shares
 from .share_prompt import build_analysis_prompt
 from .api import call_deepseek_api
@@ -30,6 +30,47 @@ from .world_context import build_world_context_prompt, extract_city_from_message
 from .media import split_reply_and_links, extract_shareable_from_search, build_rich_message
 from .sticker import parse_sticker_tag, select_sticker, should_send_sticker_fallback, filter_sticker_tag, select_sticker_with_search
 from .security import scan_input, get_blocked_reply
+from .plugin_manager import get_enabled_plugins, load_plugins_from_dir
+from .image_gen import should_generate_image, generate_image
+
+
+# ============================================================
+# 情绪驱动参数映射（功能⑤）
+# ============================================================
+
+def get_emotion_params(emotion) -> dict:
+    """根据 EmotionState 的 VA 值返回行为参数。
+
+    映射规则：
+    | 情绪状态     | max_tokens | temperature | sticker_chance | target_lines |
+    |-------------|-----------|-------------|---------------|-------------|
+    | 兴奋 V>0.5,A>0.7 | 1800 | 1.1 | 0.50 | 4-5 |
+    | 开心 V>0.3,A>0.5 | 1500 | 1.0 | 0.40 | 3-4 |
+    | 生气 V<-0.5,A>0.5 |  600 | 0.6 | 0.05 | 1   |
+    | 难过 V<-0.3       |  800 | 0.7 | 0.10 | 1-2 |
+    | 平静 A<0.3        | 1200 | 0.8 | 0.20 | 2-3 |
+    | 害羞 V>0,A>0.5    | 1000 | 0.9 | 0.30 | 2   |
+    | 默认              | 1500 | 0.9 | 0.25 | 2-4 |
+    """
+    if emotion is None or emotion.confidence < 0.4:
+        return {"max_tokens": 1500, "temperature": 0.9, "sticker_chance": 0.25, "target_lines": "2-4"}
+
+    v, a = emotion.valence, emotion.arousal
+
+    if v > 0.5 and a > 0.7:    # 兴奋
+        return {"max_tokens": 1800, "temperature": 1.1, "sticker_chance": 0.50, "target_lines": "4-5"}
+    elif v > 0.3 and a > 0.5:  # 开心
+        return {"max_tokens": 1500, "temperature": 1.0, "sticker_chance": 0.40, "target_lines": "3-4"}
+    elif v < -0.5 and a > 0.5: # 生气
+        return {"max_tokens": 600, "temperature": 0.6, "sticker_chance": 0.05, "target_lines": "1"}
+    elif v < -0.3:             # 难过
+        return {"max_tokens": 800, "temperature": 0.7, "sticker_chance": 0.10, "target_lines": "1-2"}
+    elif a < 0.3:              # 平静
+        return {"max_tokens": 1200, "temperature": 0.8, "sticker_chance": 0.20, "target_lines": "2-3"}
+    elif v > 0 and a > 0.5:    # 害羞
+        return {"max_tokens": 1000, "temperature": 0.9, "sticker_chance": 0.30, "target_lines": "2"}
+    else:                      # 默认
+        return {"max_tokens": 1500, "temperature": 0.9, "sticker_chance": 0.25, "target_lines": "2-4"}
 
 
 # ============================================================
@@ -73,6 +114,30 @@ class ChatContext:
     world_context: str = ""
     # 回复
     reply_text: str = ""
+    # 情绪驱动参数（功能⑤）
+    emotion_params: dict = field(default_factory=lambda: {"max_tokens": 1500, "temperature": 0.9, "sticker_chance": 0.25, "target_lines": "2-4"})
+    # 用户偏好（功能③）
+    user_prefs: dict = field(default_factory=dict)
+    # 图片生成（功能④）
+    image_path: str = ""
+
+
+# ============================================================
+# 辅助：解析 target_lines 范围字符串
+# ============================================================
+
+def _parse_target_lines(expr: str) -> int:
+    """将 '4-5' / '1' / '2-4' 等字符串解析为随机整数。"""
+    if "-" in expr:
+        parts = expr.split("-", 1)
+        try:
+            return random.randint(int(parts[0]), int(parts[1]))
+        except (ValueError, IndexError):
+            return 3
+    try:
+        return int(expr)
+    except ValueError:
+        return 3
 
 
 # ============================================================
@@ -248,6 +313,10 @@ async def _stage_context(ctx: ChatContext) -> Optional[str]:
     ctx.search_result = search_result
     ctx.world_context = world_ctx
     ctx.bot_mood_result = await update_bot_emotion(ctx.raw_msg, ctx.analysis.emotion)
+    # 功能⑤：根据情绪计算驱动参数
+    ctx.emotion_params = get_emotion_params(ctx.analysis.emotion)
+    # 功能③：获取用户偏好
+    ctx.user_prefs = await get_user_pref_hints(ctx.user_id)
 
     if ctx.analysis.context.referenced_entity:
         logger.info(f"[指代消解] 检测到指代: {ctx.analysis.context.referenced_entity}")
@@ -301,6 +370,7 @@ async def _stage_llm(ctx: ChatContext) -> Optional[str]:
             context_analysis=ctx.analysis.context, emotion_state=ctx.analysis.emotion,
             search_context=search_ctx, reminder_context=ctx.reminder_context,
             world_context=ctx.world_context, bot_mood=ctx.bot_mood_result,
+            user_prefs=ctx.user_prefs,
         )
         sys_prompt += "\n回复风格：专业分析+个性点评。分析部分结构化、有深度，点评部分保持你的猫娘语气。绝对禁止括号动作描写。"
         messages = [{"role": "system", "content": sys_prompt}]
@@ -309,12 +379,22 @@ async def _stage_llm(ctx: ChatContext) -> Optional[str]:
         messages.append({"role": "user", "content": analysis_prompt})
     else:
         length_info = estimate_reply_length(ctx.raw_msg, ctx.recent_memories, ctx.bot_mood_result)
+        # 功能⑤：情绪驱动覆盖回复长度和风格
+        length_info["target_lines"] = _parse_target_lines(ctx.emotion_params["target_lines"])
+        ep = ctx.emotion_params
+        if ep["temperature"] >= 1.0:
+            length_info["style"] = "活泼轻快"
+        elif ep["temperature"] <= 0.6:
+            length_info["style"] = "冷淡简短"
+        elif ep["temperature"] <= 0.7:
+            length_info["style"] = "温柔低落"
         search_ctx = format_search_for_prompt(ctx.search_result) if ctx.search_result else ""
         sys_prompt = _build_system_prompt(
             ctx.affection, ctx.mood, length_info, ctx.relevant_tags, shares_now, ctx.raw_msg,
             context_analysis=ctx.analysis.context, emotion_state=ctx.analysis.emotion,
             search_context=search_ctx, reminder_context=ctx.reminder_context,
             world_context=ctx.world_context, bot_mood=ctx.bot_mood_result,
+            user_prefs=ctx.user_prefs,
         )
         messages = [{"role": "system", "content": sys_prompt}]
         history_limit = REPLY_LENGTH_CONFIG["context_depth"] * CHAT_HISTORY_MULTIPLIER
@@ -323,8 +403,48 @@ async def _stage_llm(ctx: ChatContext) -> Optional[str]:
         if not messages or messages[-1]["role"] != "user":
             messages.append({"role": "user", "content": ctx.raw_msg})
 
-    ctx.reply_text = await call_deepseek_api(messages)
+    # 功能⑤：使用情绪驱动的 temperature 和 max_tokens
+    ctx.reply_text = await call_deepseek_api(
+        messages,
+        temperature=ctx.emotion_params["temperature"],
+        task_type="chat",
+        max_tokens=ctx.emotion_params["max_tokens"],
+    )
     ctx.reply_text = filter_novel_actions(ctx.reply_text)
+    return None
+
+
+@stage("image_gen")
+async def _stage_image_gen(ctx: ChatContext) -> Optional[str]:
+    """功能④：图片生成阶段。检测触发词并生成图片。"""
+    img_config = should_generate_image(ctx.raw_msg)
+    if not img_config:
+        return None
+
+    # "画"类触发：从用户消息提取描述
+    if img_config["id"] == "draw":
+        from .image_gen import _extract_draw_prompt
+        prompt = _extract_draw_prompt(ctx.raw_msg)
+    else:
+        prompt = img_config["prompt"]
+
+    # 异步生成图片（不阻塞主流程，结果在 post_process 中使用）
+    ctx.image_path = await generate_image(prompt)
+    if ctx.image_path:
+        logger.info(f"[图片] 准备发送: {ctx.image_path}")
+    return None
+
+
+@stage("plugins")
+async def _stage_plugins(ctx: ChatContext) -> Optional[str]:
+    """功能⑥：执行所有启用的插件。"""
+    for plugin in get_enabled_plugins():
+        try:
+            result = await plugin.on_message(ctx)
+            if result is _SKIP:
+                return _SKIP
+        except Exception as e:
+            logger.error(f"[插件] {plugin.meta.name} 执行失败: {e}")
     return None
 
 
@@ -333,16 +453,20 @@ async def _stage_post(ctx: ChatContext) -> Optional[str]:
     """后处理：保存回复、表情包、发送。"""
     await save_reply(ctx.session_id, ctx.user_id, ctx.raw_msg, ctx.reply_text)
 
-    # 表情包标签处理
-    reply_filtered, sticker_kept = filter_sticker_tag(ctx.reply_text, ctx.session_id)
+    # 表情包标签处理（功能⑤：情绪驱动表情包概率）
+    sticker_chance = ctx.emotion_params.get("sticker_chance", 0.25)
+    reply_filtered, sticker_kept = filter_sticker_tag(ctx.reply_text, ctx.session_id, keep_probability=sticker_chance)
     sticker_scene = ""
     if sticker_kept:
         clean_text, sticker_emotion, sticker_scene = parse_sticker_tag(reply_filtered)
     else:
         clean_text = reply_filtered
+        # 功能⑤：情绪驱动 fallback 概率（sticker_chance 的 60% 作为 fallback）
+        fallback_chance = sticker_chance * 0.6
         sticker_emotion = should_send_sticker_fallback(
             ctx.reply_text,
-            ctx.analysis.emotion.dominant if ctx.analysis.emotion.confidence >= 0.4 else None
+            ctx.analysis.emotion.dominant if ctx.analysis.emotion.confidence >= 0.4 else None,
+            fallback_chance=fallback_chance,
         )
 
     # 提取链接
@@ -392,6 +516,12 @@ async def _stage_post(ctx: ChatContext) -> Optional[str]:
             await asyncio.sleep(0.8)
             await ctx.bot.send(ctx.event, MessageSegment.image(file=Path(sticker_path)))
             logger.info(f"[表情包] 发送: {sticker_emotion}|{sticker_scene} -> {os.path.basename(sticker_path)}")
+
+    # 功能④：发送生成的图片
+    if ctx.image_path and os.path.exists(ctx.image_path):
+        await asyncio.sleep(1.0)
+        await ctx.bot.send(ctx.event, MessageSegment.image(file=Path(ctx.image_path)))
+        logger.info(f"[图片] 发送: {os.path.basename(ctx.image_path)}")
 
     return None
 

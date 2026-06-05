@@ -111,7 +111,7 @@ async def _call_local_llm(messages: List[Dict[str, str]], temperature: float = 0
 
 
 async def call_deepseek_api(messages: List[Dict[str, str]], temperature: float = 0.9,
-                           task_type: str = "chat") -> str:
+                           task_type: str = "chat", max_tokens: int = None) -> str:
     """统一 API 入口 - 三层降级 + 任务分级路由（对调用方完全透明）。
 
     task_type 控制模型选择和 max_tokens：
@@ -119,15 +119,18 @@ async def call_deepseek_api(messages: List[Dict[str, str]], temperature: float =
     - "analysis": 情感/上下文分析（短输出，max_tokens=300）
     - "extract": 标签/信息提取（短输出，max_tokens=500）
     - "summary": 摘要生成（中等输出，max_tokens=400）
+
+    max_tokens 参数可覆盖 task_type 的默认值（功能⑤情绪驱动）。
     """
     # 任务分级：不同任务用不同的 max_tokens，节省成本
-    token_map = {
-        "chat": API_MAX_TOKENS,
-        "analysis": 300,
-        "extract": 500,
-        "summary": 400,
-    }
-    max_tokens = token_map.get(task_type, API_MAX_TOKENS)
+    if max_tokens is None:
+        token_map = {
+            "chat": API_MAX_TOKENS,
+            "analysis": 300,
+            "extract": 500,
+            "summary": 400,
+        }
+        max_tokens = token_map.get(task_type, API_MAX_TOKENS)
 
     # ===== 第1层：DeepSeek 远程 API =====
     result = await _call_deepseek_raw(messages, temperature, max_tokens=max_tokens)

@@ -27,6 +27,8 @@ from .share_parser import global_cleanup_shares
 from .reminder import check_and_fire_reminders
 from .hot_topics import check_and_push_topics
 from .sticker_search import cleanup_old_downloads
+from .plugin_manager import load_plugins_from_dir, startup_all_plugins, shutdown_all_plugins
+from .image_gen import cleanup_old_images
 
 
 driver = get_driver()
@@ -41,6 +43,10 @@ async def on_start():
     from .database import get_db
     db = await get_db()
     await run_migrations(db)
+
+    # 功能⑥：加载插件
+    load_plugins_from_dir()
+    await startup_all_plugins()
 
     # 挂载语音文件服务（安全路径检查 + token 鉴权）
     try:
@@ -118,6 +124,10 @@ async def on_start():
         if pruned > 0:
             logger.info(f"[记忆] 每日维护：清理了 {pruned} 条低置信度标签")
 
+    async def _image_cleanup():
+        await asyncio.sleep(600)
+        await cleanup_old_images(max_age_hours=24)
+
     # 注册任务
     loop_manager.register("主动消息注册", _register_proactive, 86400)
     loop_manager.register("分享缓存清理", _share_cleanup, 3600)
@@ -126,17 +136,23 @@ async def on_start():
     loop_manager.register("提醒检查", _reminder_check, REMINDER_CHECK_INTERVAL)
     loop_manager.register("热搜推送", _hot_topics, 14400)
     loop_manager.register("记忆维护", _memory_maintenance, 86400)
+    loop_manager.register("图片缓存清理", _image_cleanup, 3600)
 
     # 启动所有任务
     await loop_manager.start_all()
 
-    # 注册会话状态保存端点
+    # 注册状态端点
     try:
         app = driver.server_app
         if app and isinstance(app, FastAPI):
             @app.get("/loop/status")
             async def loop_status():
                 return loop_manager.get_status()
+
+            @app.get("/plugins/status")
+            async def plugin_status():
+                from .plugin_manager import list_plugins
+                return {"plugins": list_plugins()}
     except Exception:
         pass
 
@@ -153,6 +169,7 @@ async def _on_shutdown():
     except Exception as e:
         logger.warning(f"[记忆] 会话状态保存失败: {e}")
 
+    await shutdown_all_plugins()
     await shutdown_proactive()
     await close_http_session()
     await close_db()

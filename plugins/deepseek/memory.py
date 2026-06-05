@@ -22,7 +22,8 @@ from .database import (
     get_catgirl_mood, update_catgirl_mood,
     get_memory_summary, append_memory_summary,
     save_memory_tags, get_relevant_memory_tags, boost_memory_tag,
-    get_user_mood
+    get_user_mood, update_user_preference, get_top_preference,
+    save_reply_quality, get_quality_stats,
 )
 from .context_analyzer import analyze_context_and_emotion, AnalysisResult
 
@@ -81,6 +82,10 @@ async def save_reply(session_id: str, user_id: str, raw_msg: str, reply_text: st
     await save_message(session_id, "assistant", reply_text)
     await trim_memories(session_id, MAX_MEMORY)
     asyncio.create_task(_extract_memory_tags(user_id, session_id, raw_msg, reply_text))
+    # 功能③：异步学习用户偏好
+    asyncio.create_task(_learn_preferences(user_id, raw_msg, reply_text, session_id))
+    # 功能⑦：异步评估回复质量
+    asyncio.create_task(_evaluate_reply_quality(user_id, session_id, raw_msg, reply_text))
     # 策略性压缩：基于消息数或估算 token 数触发
     msg_count = await count_memories(session_id)
     if msg_count >= COMPRESS_MESSAGE_THRESHOLD:
@@ -256,3 +261,154 @@ async def apply_affection_delta(user_id: str, raw_msg: str):
     else:
         delta = random.uniform(0.5, 1.5)
     await update_affection(user_id, delta=delta)
+
+
+# ---------- 用户偏好自学习（功能③）----------
+
+async def _learn_preferences(user_id: str, raw_msg: str, reply_text: str, session_id: str):
+    """从对话行为中异步学习用户偏好。"""
+    try:
+        # 1. 回复长度偏好：用户追问 = 想要更长回复
+        if len(reply_text) < 30 and any(kw in raw_msg for kw in ["然后呢", "继续", "详细说", "说清楚", "没说完"]):
+            await update_user_preference(user_id, "reply_length", "long", 0.1)
+        # 回复后用户简短回应 = 想要更短回复
+        elif len(reply_text) > 100 and len(raw_msg.strip()) <= 3:
+            await update_user_preference(user_id, "reply_length", "short", 0.05)
+
+        # 2. 表情包偏好：用户发表情 = 喜欢表情包
+        from nonebot.adapters.onebot.v11 import MessageEvent
+        try:
+            # 检查用户消息中是否有 face/表情 segment
+            if any(kw in raw_msg for kw in ["[表情]", "😂", "🤣", "😍", "😘", "😋", "😜"]):
+                await update_user_preference(user_id, "sticker_freq", "high", 0.05)
+        except Exception:
+            pass
+
+        # 3. 活跃时段
+        from datetime import datetime
+        hour = datetime.now().hour
+        if 6 <= hour < 12:
+            period = "morning"
+        elif 12 <= hour < 18:
+            period = "afternoon"
+        elif 18 <= hour < 22:
+            period = "evening"
+        else:
+            period = "night"
+        await update_user_preference(user_id, "active_hours", period, 0.1)
+
+        # 4. 话题兴趣：关键词提取
+        topic_keywords = {
+            "游戏": ["游戏", "打", "玩", "排位", "段位", "王者", "原神", "LOL", "吃鸡"],
+            "音乐": ["歌", "音乐", "听", "唱", "专辑", "演唱会"],
+            "美食": ["吃", "饭", "美食", "好饿", "外卖", "做饭"],
+            "学习": ["作业", "考试", "学习", "课", "大学", "论文"],
+            "工作": ["上班", "加班", "工作", "老板", "同事", "工资"],
+            "感情": ["喜欢", "恋爱", "对象", "单身", "表白", "分手"],
+        }
+        for topic, keywords in topic_keywords.items():
+            if any(kw in raw_msg for kw in keywords):
+                await update_user_preference(user_id, "topic_interest", topic, 0.1)
+                break
+
+        logger.debug(f"[偏好] 用户 {user_id[:6]} 偏好学习完成")
+    except Exception as e:
+        logger.info(f"[偏好] 学习失败（非关键）: {e}")
+
+
+async def get_user_pref_hints(user_id: str) -> Dict[str, str]:
+    """获取用户偏好的摘要字典，用于注入 prompt。"""
+    try:
+        result: Dict[str, str] = {}
+        top_length = await get_top_preference(user_id, "reply_length")
+        if top_length:
+            result["reply_length"] = top_length
+        top_sticker = await get_top_preference(user_id, "sticker_freq")
+        if top_sticker:
+            result["sticker_freq"] = top_sticker
+        top_topic = await get_top_preference(user_id, "topic_interest")
+        if top_topic:
+            result["topic_interest"] = top_topic
+        return result
+    except Exception:
+        return {}
+
+
+# ---------- 回复质量评估（功能⑦）----------
+
+# 正面/负面反应关键词
+_POSITIVE_REACTIONS = ["哈哈", "笑死", "😂", "🤣", "有意思", "好玩", "lol", "牛", "厉害", "太强了", "666"]
+_NEGATIVE_REACTIONS = ["？", "什么意思", "没听懂", "啥意思", "说人话", "听不懂"]
+_REJECTION_REACTIONS = ["滚", "烦", "不想聊", "闭嘴", "别说了", "无聊"]
+_NEUTRAL_REACTIONS = ["哦", "嗯", "好", "行", "知道了", "ok"]
+
+
+async def _evaluate_reply_quality(user_id: str, session_id: str, raw_msg: str, reply_text: str):
+    """评估回复质量：根据用户当前消息判断对上一条回复的反应。"""
+    try:
+        recent = await get_recent_memories(session_id, 4)
+        if len(recent) < 3:
+            return
+
+        score = 0.0
+        feedback_type = "neutral"
+
+        # 正面反应
+        if any(kw in raw_msg for kw in _POSITIVE_REACTIONS):
+            score = 1.0
+            feedback_type = "emoji_reaction"
+        # 困惑反应
+        elif any(kw in raw_msg for kw in _NEGATIVE_REACTIONS):
+            score = -1.0
+            feedback_type = "confusion"
+        # 拒绝反应
+        elif any(kw in raw_msg for kw in _REJECTION_REACTIONS):
+            score = -2.0
+            feedback_type = "rejection"
+        # 话题延续（用户在继续聊 = 回复引发了兴趣）
+        elif len(raw_msg) > 10:
+            score = 0.5
+            feedback_type = "topic_continuation"
+        # 简短中性回应
+        elif any(kw in raw_msg for kw in _NEUTRAL_REACTIONS):
+            score = 0.0
+            feedback_type = "neutral"
+
+        if feedback_type != "neutral":
+            await save_reply_quality(
+                user_id, session_id, reply_text, score, feedback_type
+            )
+            logger.debug(f"[质量] user={user_id[:6]} score={score} type={feedback_type}")
+
+        # 每 10 条回复调整一次策略
+        stats = await get_quality_stats(user_id, days=7)
+        if stats["total"] >= 10 and stats["total"] % 10 == 0:
+            await _adjust_reply_strategy(user_id, stats)
+
+    except Exception as e:
+        logger.info(f"[质量] 评估失败（非关键）: {e}")
+
+
+async def _adjust_reply_strategy(user_id: str, stats: Dict[str, Any]):
+    """根据历史质量数据调整回复策略。"""
+    try:
+        avg = stats["avg_score"]
+        confusion_rate = stats["confusion_rate"]
+        rejection_rate = stats["rejection_rate"]
+
+        # 回复质量差 → 偏好短回复、降低温度
+        if avg < -0.3 or rejection_rate > 0.2:
+            await update_user_preference(user_id, "reply_length", "short", 0.15)
+            logger.info(f"[策略] user={user_id[:6]} 质量差(avg={avg:.2f})，偏好短回复")
+
+        # 回复质量好 → 可以尝试更长回复
+        elif avg > 0.5 and stats["positive_rate"] > 0.3:
+            await update_user_preference(user_id, "reply_length", "long", 0.1)
+            logger.info(f"[策略] user={user_id[:6]} 质量好(avg={avg:.2f})，偏好长回复")
+
+        # 困惑率高 → 偏好更确定的回复（短回复更清晰）
+        if confusion_rate > 0.3:
+            await update_user_preference(user_id, "reply_length", "short", 0.1)
+
+    except Exception as e:
+        logger.info(f"[策略] 调整失败（非关键）: {e}")

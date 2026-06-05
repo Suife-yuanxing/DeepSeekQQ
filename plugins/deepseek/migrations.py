@@ -96,3 +96,35 @@ async def migrate_v2_add_session_state(db: aiosqlite.Connection):
         )
     """)
     await db.commit()
+
+
+@migration(3)
+async def migrate_v3_add_preferences_and_quality(db: aiosqlite.Connection):
+    """添加用户偏好表和回复质量评估表（功能③⑦）。"""
+    await db.execute("""
+        CREATE TABLE IF NOT EXISTS user_preferences (
+            user_id TEXT NOT NULL,
+            pref_type TEXT NOT NULL,
+            pref_key TEXT NOT NULL,
+            pref_value REAL DEFAULT 0,
+            sample_count INTEGER DEFAULT 0,
+            last_updated REAL,
+            UNIQUE(user_id, pref_type, pref_key)
+        )
+    """)
+    await db.execute("CREATE INDEX IF NOT EXISTS idx_user_pref ON user_preferences(user_id, pref_type)")
+    await db.execute("""
+        CREATE TABLE IF NOT EXISTS reply_quality (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id TEXT NOT NULL,
+            session_id TEXT NOT NULL,
+            reply_text TEXT NOT NULL,
+            quality_score REAL DEFAULT 0,
+            feedback_type TEXT,
+            created_at REAL,
+            emotion_at_reply TEXT,
+            params_used TEXT
+        )
+    """)
+    await db.execute("CREATE INDEX IF NOT EXISTS idx_reply_quality_user ON reply_quality(user_id, created_at)")
+    await db.commit()
