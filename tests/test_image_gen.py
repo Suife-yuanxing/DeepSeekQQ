@@ -16,8 +16,18 @@ class TestShouldGenerateImage:
 
     def test_draw_trigger_high_prob(self):
         """画的触发概率 80%，多次测试应该大多触发。"""
-        hits = sum(1 for _ in range(50) if should_generate_image("帮我画一只猫"))
-        assert hits > 20  # 80% 概率，50次应该至少20次
+        hits = sum(1 for _ in range(100) if should_generate_image("帮我画一只猫"))
+        assert hits > 40  # 80% 概率，100次应该至少40次
+
+    def test_generate_image_trigger(self):
+        """"生成图片"也应该触发。"""
+        hits = sum(1 for _ in range(100) if should_generate_image("帮我生成一张图片"))
+        assert hits > 40  # 80% 概率
+
+    def test_selfie_trigger_30_percent(self):
+        """自拍触发概率 30%，多次测试统计验证。"""
+        hits = sum(1 for _ in range(200) if should_generate_image("我想看你的自拍"))
+        assert 15 < hits < 120  # 30% 概率，允许统计波动
 
     def test_no_trigger(self):
         """普通消息不触发。"""

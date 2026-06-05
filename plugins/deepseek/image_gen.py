@@ -29,35 +29,38 @@ from .config import IMAGE_CACHE_DIR
 # 图片缓存目录
 os.makedirs(IMAGE_CACHE_DIR, exist_ok=True)
 
-# 触发词配置
+# 触发词配置（三类场景）
 _IMAGE_TRIGGERS = {
-    "selfie": {
-        "keywords": ["自拍", "照片", "长什么样", "你的样子", "看看你"],
-        "prob": 0.15,
-        "prompt": "anime catgirl taking a selfie with phone, cute expression, cat ears, pink hair, QQ chat style",
-        "scene": "selfie",
-    },
-    "eating": {
-        "keywords": ["吃饭", "美食", "饿了", "吃东西", "干饭", "午饭", "晚饭", "早饭"],
-        "prob": 0.10,
-        "prompt": "anime catgirl eating delicious food happily, cat ears, cute table setting, warm lighting",
-        "scene": "eating",
-    },
+    # 直接请求：用户明确要求生成图片（80%）
     "draw": {
-        "keywords": ["画", "画一个", "帮我画", "画个", "画张"],
+        "keywords": ["画", "画一个", "帮我画", "画个", "画张", "生成图片", "生成一张", "出图", "画一幅"],
         "prob": 0.80,
         "prompt": "",  # 从用户消息提取
         "scene": "draw",
     },
+    # Bot 自拍场景：用户想看 bot 的样子（30%）
+    "selfie": {
+        "keywords": ["自拍", "照片", "看看你", "你的样子", "长什么样", "发一张", "来一张"],
+        "prob": 0.30,
+        "prompt": "anime catgirl taking a selfie with phone, cute expression, cat ears, pink hair, QQ chat style",
+        "scene": "selfie",
+    },
+    # 生活场景：用户描述场景，bot 配图（25%）
+    "eating": {
+        "keywords": ["吃饭", "美食", "饿了", "吃东西", "干饭", "午饭", "晚饭", "早饭", "做饭", "好吃的"],
+        "prob": 0.25,
+        "prompt": "anime catgirl eating delicious food happily, cat ears, cute table setting, warm lighting",
+        "scene": "eating",
+    },
     "sleep": {
         "keywords": ["睡觉", "晚安", "困了", "要睡了", "睡了", "好困"],
-        "prob": 0.10,
+        "prob": 0.25,
         "prompt": "anime catgirl sleeping peacefully in bed, cat ears, soft blanket, moonlight, cozy bedroom",
         "scene": "sleep",
     },
     "celebrate": {
         "keywords": ["生日", "蛋糕", "庆祝", "节日", "快乐", "纪念"],
-        "prob": 0.20,
+        "prob": 0.25,
         "prompt": "anime catgirl celebrating with cake and confetti, happy expression, cat ears, party decorations",
         "scene": "celebrate",
     },
@@ -112,7 +115,7 @@ async def generate_image(prompt: str) -> Optional[str]:
     # 构造 URL（需要 URL encode）
     from urllib.parse import quote
     encoded_prompt = quote(prompt)
-    url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=512&height=512&nologo=true&seed={random.randint(1, 99999)}"
+    url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=512&height=512&nologo=true&model=turbo&seed={random.randint(1, 99999)}"
 
     try:
         logger.info(f"[图片] 正在生成: {prompt[:50]}...")
