@@ -145,6 +145,11 @@ STICKER_DIR: str = getattr(cfg, "sticker_dir", "./data/stickers")
 STICKER_KEEP_PROBABILITY: float = float(getattr(cfg, "sticker_keep_probability", 0.25))
 MAX_CONSECUTIVE_STICKERS: int = int(getattr(cfg, "max_consecutive_stickers", 1))
 
+# === 图片生成 (SiliconFlow) ===
+IMAGE_GEN_API_KEY: str = getattr(cfg, "image_gen_api_key", "") or ""
+IMAGE_GEN_MODEL: str = getattr(cfg, "image_gen_model", "black-forest-labs/FLUX.1-schnell")
+IMAGE_GEN_BASE_URL: str = getattr(cfg, "image_gen_base_url", "https://api.siliconflow.cn/v1")
+
 # === 热搜推送 ===
 MAX_DAILY_PUSH: int = int(getattr(cfg, "max_daily_push", 3))
 PUSH_COOLDOWN_HOURS: int = int(getattr(cfg, "push_cooldown_hours", 4))

@@ -1,6 +1,6 @@
 """图片生成功能（功能④）。
 
-使用 Pollinations.ai 免费 API 生成图片。
+使用 SiliconFlow API 生成图片。
 用户提到特定场景时，概率性生成图片回复。
 
 触发条件：
@@ -24,7 +24,7 @@ from datetime import datetime
 
 from nonebot import logger
 
-from .config import IMAGE_CACHE_DIR
+from .config import IMAGE_CACHE_DIR, IMAGE_GEN_API_KEY, IMAGE_GEN_MODEL, IMAGE_GEN_BASE_URL
 
 # 图片缓存目录
 os.makedirs(IMAGE_CACHE_DIR, exist_ok=True)
@@ -84,59 +84,86 @@ def should_generate_image(user_msg: str) -> Optional[Dict[str, Any]]:
 
 def _extract_draw_prompt(user_msg: str) -> str:
     """从用户消息中提取绘画描述。"""
-    # 去掉触发词，保留描述部分
     cleaned = user_msg
     for kw in ["帮我画", "画一个", "画个", "画张", "画"]:
         cleaned = cleaned.replace(kw, "").strip()
-    # 清理标点
     cleaned = re.sub(r'^[，。！？,\s]+|[，。！？,\s]+$', '', cleaned)
 
     if len(cleaned) < 2:
         return "anime catgirl in a cute pose, cat ears, kawaii style"
-    # 翻译增强：加一些质量词
     return f"{cleaned}, anime style, high quality, detailed, cute"
 
 
 async def generate_image(prompt: str) -> Optional[str]:
-    """调用 Pollinations.ai 生成图片，返回本地缓存路径。
+    """调用 SiliconFlow API 生成图片，返回本地缓存路径。
 
-    API: https://image.pollinations.ai/prompt/{prompt}?width=512&height=512&nologo=true
+    API: POST {base_url}/images/generations
     """
-    # 生成缓存文件名（基于 prompt hash）
+    if not IMAGE_GEN_API_KEY:
+        logger.warning("[图片] 未配置 IMAGE_GEN_API_KEY，跳过生成")
+        return None
+
+    # 缓存文件名
     prompt_hash = hashlib.md5(prompt.encode()).hexdigest()[:12]
     timestamp = datetime.now().strftime("%H%M%S")
     filename = f"img_{timestamp}_{prompt_hash}.jpg"
     cache_path = os.path.join(IMAGE_CACHE_DIR, filename)
 
-    # 如果已缓存，直接返回
     if os.path.exists(cache_path):
         return cache_path
 
-    # 构造 URL（需要 URL encode）
-    from urllib.parse import quote
-    encoded_prompt = quote(prompt)
-    url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=512&height=512&nologo=true&model=turbo&seed={random.randint(1, 99999)}"
+    url = f"{IMAGE_GEN_BASE_URL.rstrip('/')}/images/generations"
+    headers = {
+        "Authorization": f"Bearer {IMAGE_GEN_API_KEY}",
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "model": IMAGE_GEN_MODEL,
+        "prompt": prompt,
+        "image_size": "512x512",
+        "batch_size": 1,
+        "num_inference_steps": 20,
+    }
 
     try:
         logger.info(f"[图片] 正在生成: {prompt[:50]}...")
-        timeout = aiohttp.ClientTimeout(total=30)
+        timeout = aiohttp.ClientTimeout(total=60)
         async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.get(url) as resp:
-                if resp.status == 200:
-                    data = await resp.read()
-                    if len(data) > 1000:  # 有效图片至少 1KB
-                        with open(cache_path, "wb") as f:
-                            f.write(data)
-                        logger.info(f"[图片] 生成成功: {filename} ({len(data)} bytes)")
-                        return cache_path
-                    else:
-                        logger.warning(f"[图片] 返回数据太小: {len(data)} bytes")
-                        return None
-                else:
-                    logger.warning(f"[图片] API 返回状态码: {resp.status}")
+            async with session.post(url, json=payload, headers=headers) as resp:
+                if resp.status != 200:
+                    error_text = await resp.text()
+                    logger.error(f"[图片] API 错误 {resp.status}: {error_text[:200]}")
                     return None
+
+                data = await resp.json()
+                # SiliconFlow 响应格式: {"data": [{"url": "..."}]}
+                images = data.get("data", [])
+                if not images:
+                    logger.error(f"[图片] 响应中无图片数据: {str(data)[:200]}")
+                    return None
+
+                image_url = images[0].get("url", "")
+                if not image_url:
+                    logger.error(f"[图片] 响应中无 URL: {str(data)[:200]}")
+                    return None
+
+                # 下载图片
+                async with session.get(image_url) as img_resp:
+                    if img_resp.status != 200:
+                        logger.error(f"[图片] 下载失败: {img_resp.status}")
+                        return None
+                    img_data = await img_resp.read()
+                    if len(img_data) < 1000:
+                        logger.warning(f"[图片] 下载数据太小: {len(img_data)} bytes")
+                        return None
+
+                    with open(cache_path, "wb") as f:
+                        f.write(img_data)
+                    logger.info(f"[图片] 生成成功: {filename} ({len(img_data)} bytes)")
+                    return cache_path
+
     except asyncio.TimeoutError:
-        logger.warning("[图片] 生成超时 (30s)")
+        logger.warning("[图片] 生成超时 (60s)")
         return None
     except Exception as e:
         logger.error(f"[图片] 生成失败: {e}")
