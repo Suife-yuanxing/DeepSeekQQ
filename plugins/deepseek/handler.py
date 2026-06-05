@@ -281,13 +281,21 @@ async def _stage_phone(ctx: ChatContext) -> Optional[str]:
     if not PHONE_CONTROL_ENABLED:
         return None
     try:
+        # 优先使用 ADB 直连（更稳定）
+        from .phone_adb import execute_adb_command, check_device
+        if check_device():
+            result = execute_adb_command(ctx.raw_msg)
+            if result:
+                ctx.reply_text = result
+                return _SKIP  # 短路：跳过 LLM 等后续阶段
+
+        # ADB 不可用时回退到 ScreenMCP
         from .phone_control import execute_phone_command, is_phone_command
-        if not is_phone_command(ctx.raw_msg):
-            return None
-        result = await execute_phone_command(ctx.raw_msg)
-        if result:
-            ctx.reply_text = result
-            return _SKIP  # 短路：跳过 LLM 等后续阶段
+        if is_phone_command(ctx.raw_msg):
+            result = await execute_phone_command(ctx.raw_msg)
+            if result:
+                ctx.reply_text = result
+                return _SKIP
     except Exception as e:
         logger.warning(f"[手机] 控制模块异常: {e}")
     return None
