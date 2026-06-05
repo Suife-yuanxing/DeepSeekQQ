@@ -145,6 +145,29 @@ class ChatContext:
     image_path: str = ""
 
 
+def _should_quote(ctx: ChatContext) -> bool:
+    """判断是否需要引用回复。
+
+    引用场景：群聊（需要区分回复谁）、提问、分享内容回复、提醒回复。
+    不引用：私聊普通闲聊（连续对话不需要每条都引用）。
+    """
+    # 群聊始终引用（需要让用户知道在回复谁）
+    if ctx.is_group:
+        return True
+    # 搜索结果回复（引用原问题更清晰）
+    if ctx.is_explicit_search:
+        return True
+    # 分析类请求（引用原问题）
+    analysis_keywords = ["怎么看", "分析", "评价", "观点", "说说", "讲讲", "详细介绍"]
+    if any(kw in ctx.raw_msg for kw in analysis_keywords):
+        return True
+    # 用户提问（引用原问题）
+    if ctx.analysis and ctx.analysis.context.user_intent == "提问":
+        return True
+    # 私聊普通闲聊不引用
+    return False
+
+
 # ============================================================
 # 辅助：解析 target_lines 范围字符串
 # ============================================================
