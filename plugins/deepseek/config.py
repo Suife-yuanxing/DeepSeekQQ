@@ -17,6 +17,7 @@ BAIDU_TTS_SK: str = getattr(cfg, "baidu_tts_sk", "") or ""
 # === 路径 ===
 DB_PATH: str = getattr(cfg, "deepseek_db_path", "./data/chat_memory.db")
 VOICE_DIR: str = getattr(cfg, "deepseek_voice_dir", "./data/voice")
+IMAGE_CACHE_DIR: str = getattr(cfg, "deepseek_image_dir", "./data/images")
 
 # === 语音开关 ===
 VOICE_ENABLED_PRIVATE: bool = str(getattr(cfg, "voice_enabled_private", "true")).lower() == "true"

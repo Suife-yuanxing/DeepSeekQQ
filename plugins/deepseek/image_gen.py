@@ -24,9 +24,10 @@ from datetime import datetime
 
 from nonebot import logger
 
+from .config import IMAGE_CACHE_DIR
+
 # 图片缓存目录
-_IMAGE_CACHE_DIR = "./data/images"
-os.makedirs(_IMAGE_CACHE_DIR, exist_ok=True)
+os.makedirs(IMAGE_CACHE_DIR, exist_ok=True)
 
 # 触发词配置
 _IMAGE_TRIGGERS = {
@@ -102,7 +103,7 @@ async def generate_image(prompt: str) -> Optional[str]:
     prompt_hash = hashlib.md5(prompt.encode()).hexdigest()[:12]
     timestamp = datetime.now().strftime("%H%M%S")
     filename = f"img_{timestamp}_{prompt_hash}.jpg"
-    cache_path = os.path.join(_IMAGE_CACHE_DIR, filename)
+    cache_path = os.path.join(IMAGE_CACHE_DIR, filename)
 
     # 如果已缓存，直接返回
     if os.path.exists(cache_path):
@@ -145,7 +146,7 @@ async def cleanup_old_images(max_age_hours: int = 24):
         now = datetime.now().timestamp()
         cutoff = now - max_age_hours * 3600
         count = 0
-        for f in Path(_IMAGE_CACHE_DIR).glob("img_*.jpg"):
+        for f in Path(IMAGE_CACHE_DIR).glob("img_*.jpg"):
             if f.stat().st_mtime < cutoff:
                 f.unlink()
                 count += 1

@@ -31,7 +31,7 @@ from .media import split_reply_and_links, extract_shareable_from_search, build_r
 from .sticker import parse_sticker_tag, select_sticker, should_send_sticker_fallback, filter_sticker_tag, select_sticker_with_search
 from .security import scan_input, get_blocked_reply
 from .plugin_manager import get_enabled_plugins, load_plugins_from_dir
-from .image_gen import should_generate_image, generate_image
+from .image_gen import should_generate_image, generate_image, _extract_draw_prompt
 
 
 # ============================================================
@@ -423,7 +423,6 @@ async def _stage_image_gen(ctx: ChatContext) -> Optional[str]:
 
     # "画"类触发：从用户消息提取描述
     if img_config["id"] == "draw":
-        from .image_gen import _extract_draw_prompt
         prompt = _extract_draw_prompt(ctx.raw_msg)
     else:
         prompt = img_config["prompt"]
