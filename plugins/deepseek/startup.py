@@ -141,6 +141,18 @@ async def on_start():
     # 启动所有任务
     await loop_manager.start_all()
 
+    # === 启动 ScreenMCP Worker (手机控制) ===
+    try:
+        from .config import PHONE_CONTROL_ENABLED, SCREENMCP_API_KEY
+        if PHONE_CONTROL_ENABLED and SCREENMCP_API_KEY:
+            from .screenmcp_worker import start_worker
+            await start_worker(SCREENMCP_API_KEY, 8765)
+            logger.info(f"[手机] ScreenMCP Worker 已启动，端口 8765")
+        else:
+            logger.info("[手机] 手机控制未启用或未配置 API Key")
+    except Exception as e:
+        logger.error(f"[手机] ScreenMCP Worker 启动失败: {e}")
+
     # 注册状态端点
     try:
         app = driver.server_app
