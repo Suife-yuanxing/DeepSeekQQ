@@ -32,6 +32,7 @@ from .config import (
 # ============================================================
 
 WORKER_URL = "ws://127.0.0.1:8765"
+WORKER_SSL_URL = "wss://127.0.0.1:8766"  # SSL 端口
 CMD_TIMEOUT = 30
 
 
@@ -55,6 +56,7 @@ class WorkerClient:
             return True
         try:
             self._session = aiohttp.ClientSession()
+            # 本地连接用 WS，不验证 SSL
             self._ws = await self._session.ws_connect(WORKER_URL, timeout=10)
 
             # 发送认证
