@@ -159,6 +159,17 @@ WEATHER_CACHE_TTL: int = int(getattr(cfg, "weather_cache_ttl", 1800))
 QWEN_VL_API_KEY: str = getattr(cfg, "qwen_vl_api_key", "") or ""
 QWEN_VL_MODEL: str = getattr(cfg, "qwen_vl_model", "qwen-vl-plus")
 
+# === MiMo TTS ===
+TTS_ENGINE: str = getattr(cfg, "tts_engine", "baidu")  # "baidu" or "mimo"
+MIMO_API_KEY: str = getattr(cfg, "mimo_api_key", "") or ""
+MIMO_API_BASE_URL: str = getattr(cfg, "mimo_api_base_url", "https://api.xiaomimimo.com/v1")
+MIMO_TTS_VOICE: str = getattr(cfg, "mimo_tts_voice", "冰糖")  # 冰糖/茉莉/苏打/白桦
+
+# === 手机控制 (ScreenMCP) ===
+PHONE_CONTROL_ENABLED: bool = str(getattr(cfg, "phone_control_enabled", "false")).lower() == "true"
+SCREENMCP_API_KEY: str = getattr(cfg, "screenmcp_api_key", "") or ""  # pk_xxx from screenmcp.com
+PHONE_CONTROL_USERS: str = str(getattr(cfg, "phone_control_users", MY_QQ))  # 允许的用户QQ号
+
 # === 记忆压缩 ===
 COMPRESS_TOKEN_THRESHOLD: int = int(getattr(cfg, "compress_token_threshold", 3000))
 COMPRESS_MESSAGE_THRESHOLD: int = int(getattr(cfg, "compress_message_threshold", 20))
