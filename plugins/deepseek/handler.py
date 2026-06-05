@@ -122,51 +122,104 @@ class ChatContext:
     image_path: str = ""
 
 
-def _should_quote(ctx: ChatContext) -> bool:
-    """判断是否需要引用回复。
+def _is_multi_topic(msg: str) -> bool:
+    """判断消息是否包含多个独立话题（用句号/换行/问号分隔的多个语句）。"""
+    # 按中文句号、问号、感叹号、换行分割
+    segments = re.split(r'[。！？\n]+', msg)
+    # 过滤空白段，保留有意义的
+    meaningful = [s.strip() for s in segments if len(s.strip()) >= 4]
+    return len(meaningful) >= 2
 
-    群聊条件引用：被@、话题切换、消息间隔>5min、提问/搜索/分析。
-    私聊：话题切换时引用，普通延续不引用。
-    """
+
+def _is_question(msg: str) -> bool:
+    """判断消息是否是一个明确的提问。"""
+    if msg.rstrip().endswith(('?', '？')):
+        return True
+    q_keywords = ["怎么", "为什么", "什么", "哪里", "哪个", "多少", "几",
+                  "吗", "呢", "能不能", "可以吗", "好不好", "是不是", "有没有"]
+    return any(kw in msg for kw in q_keywords)
+
+
+def _is_greeting(msg: str) -> bool:
+    """判断消息是否是简单寒暄（不需要引用）。"""
+    greetings = ["嗯", "嗯嗯", "哈哈", "哦", "好的", "好吧", "行", "可以",
+                 "ok", "OK", "收到", "了解", "知道了", "嗯好", "好嘞", "棒"]
+    return msg.strip() in greetings
+
+
+def _has_time_gap(ctx: ChatContext, threshold: int = 300) -> bool:
+    """检查与上一条消息的时间间隔是否超过阈值。"""
     import time
+    if not ctx.recent_memories:
+        return False
+    last = ctx.recent_memories[-1]
+    if isinstance(last, dict) and last.get("timestamp"):
+        try:
+            return (time.time() - float(last["timestamp"])) > threshold
+        except (ValueError, TypeError):
+            pass
+    return False
 
-    # 搜索结果 / 分析类请求 → 始终引用
+
+def _is_bot_at(event: MessageEvent, bot_id: str) -> bool:
+    """检查 bot 是否被 @ 了。"""
+    try:
+        for seg in event.message:
+            if seg.type == "at" and str(seg.data.get("qq", "")) == str(bot_id):
+                return True
+    except Exception:
+        pass
+    return False
+
+
+def _should_quote(ctx: ChatContext) -> bool:
+    """模拟真人引用决策：只在需要定位上下文时引用。
+
+    核心原则：引用是「定位器」，帮对方知道我在回哪句。
+    - 群聊多人 → 引用定位
+    - 长消息挑着回 → 引用那句
+    - 私聊连续对话 → 不引用（上下文天然清晰）
+    """
+    msg = ctx.raw_msg.strip()
+
+    # ===== 始终引用的场景 =====
+    # 搜索/分析请求 → 引用原问题，方便用户对照
     if ctx.is_explicit_search:
         return True
     analysis_keywords = ["怎么看", "分析", "评价", "观点", "说说", "讲讲", "详细介绍"]
-    if any(kw in ctx.raw_msg for kw in analysis_keywords):
-        return True
-    if ctx.analysis and ctx.analysis.context.user_intent == "提问":
+    if any(kw in msg for kw in analysis_keywords):
         return True
 
-    # 群聊：条件引用
-    if ctx.is_group:
-        # 被 @ 了 → 引用（让对方知道在回复谁）
-        try:
-            for seg in ctx.event.message:
-                if seg.type == "at" and str(seg.data.get("qq", "")) == str(ctx.bot.self_id):
-                    return True
-        except Exception:
-            pass
-        # 话题切换（topic_shift_score > 0.6）→ 引用
-        if ctx.analysis and ctx.analysis.context.topic_shift_score > 0.6:
-            return True
-        # 消息间隔 > 5 分钟 → 引用（上下文已断）
-        if ctx.recent_memories:
-            last = ctx.recent_memories[-1]
-            if isinstance(last, dict) and last.get("timestamp"):
-                try:
-                    gap = time.time() - float(last["timestamp"])
-                    if gap > 300:
-                        return True
-                except (ValueError, TypeError):
-                    pass
-        # 其他群聊延续对话 → 不引用
+    # ===== 始终不引用的场景 =====
+    # 简单寒暄 → 不引用（引用"嗯嗯"很刻意）
+    if _is_greeting(msg):
         return False
 
-    # 私聊：话题切换时引用
+    # ===== 群聊逻辑 =====
+    if ctx.is_group:
+        # 被 @ → 引用（必须让对方知道在回谁）
+        if _is_bot_at(ctx.event, ctx.bot.self_id):
+            return True
+        # 多话题消息 → 引用相关部分（帮用户定位 bot 回的是哪句）
+        if _is_multi_topic(msg):
+            return True
+        # 时间间隔 > 5 分钟 → 引用（上下文已断，需要定位）
+        if _has_time_gap(ctx):
+            return True
+        # 明确提问 → 引用（方便回看问题）
+        if _is_question(msg):
+            return True
+        # 连续聊天 → 不引用
+        return False
+
+    # ===== 私聊逻辑 =====
+    # 话题切换 → 引用（表示"我看到你换话题了"）
     if ctx.analysis and ctx.analysis.context.topic_shift_score > 0.6:
         return True
+    # 明确提问 → 引用
+    if _is_question(msg):
+        return True
+    # 连续聊天 → 不引用
     return False
 
 
