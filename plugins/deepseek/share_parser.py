@@ -5,7 +5,6 @@
 - 按平台解析 + 通用 fallback
 - 全局 URL 抓取冷却（防重复请求）+ 容量上限防泄漏
 """
-import os
 import re
 import json
 import hashlib
@@ -15,10 +14,10 @@ from collections import OrderedDict
 
 import aiohttp
 
-from .config import SHARE_TTL, VOICE_DIR, URL_FETCH_COOLDOWN
+from .config import SHARE_TTL, URL_FETCH_COOLDOWN
 from .database import get_article_cache, save_article_cache
 from .api import get_http_session
-from .vision import recognize_sticker
+from .vision import recognize_sticker, analyze_image
 from nonebot import logger
 
 _recent_shares: Dict[str, List[Dict[str, Any]]] = {}
@@ -39,29 +38,18 @@ class LRUCooldownDict(OrderedDict):
         super().__setitem__(key, value)
 
 _url_fetch_cooldown: Dict[str, float] = LRUCooldownDict()
-URL_FETCH_COOLDOWN_SECONDS = URL_FETCH_COOLDOWN  # 5分钟内不重复抓取同一URL
 
 
 # ==================== 内容有效性校验 ====================
 
-def _is_valid_article(article: Optional[Dict[str, str]]) -> bool:
-    if not article or not article.get("summary"):
-        return False
-    if article.get("needs_paste") or article.get("platform") == "小黑盒":
-        return True
-    if article.get("restricted"):
-        return True
-    summary = article["summary"].strip()
-    if len(summary) < 80:
-        return False
-    invalid_markers = [
-        "页面框架", "内容被截断", "未登录", "登录后查看",
-        "内容为空", "只有框架", "技术性参数", "shallowReactive"
-    ]
-    return not any(m in summary for m in invalid_markers)
+_INVALID_MARKERS = [
+    "页面框架", "内容被截断", "未登录", "登录后查看",
+    "内容为空", "只有框架", "技术性参数", "shallowReactive"
+]
 
 
 def _is_valid_share(s: Dict[str, Any]) -> bool:
+    """校验分享内容是否有效（统一入口，同时供外部模块调用）。"""
     summary = s.get("summary", "")
     if not summary:
         return False
@@ -71,11 +59,7 @@ def _is_valid_share(s: Dict[str, Any]) -> bool:
         return True
     if len(summary.strip()) < 80:
         return False
-    invalid_markers = [
-        "页面框架", "内容被截断", "未登录", "登录后查看",
-        "内容为空", "只有框架", "技术性参数", "shallowReactive"
-    ]
-    return not any(m in summary for m in invalid_markers)
+    return not any(m in summary for m in _INVALID_MARKERS)
 
 
 # ==================== 增强网页抓取 ====================
@@ -83,16 +67,15 @@ def _is_valid_share(s: Dict[str, Any]) -> bool:
 async def fetch_url_content(url: str) -> Optional[Dict[str, str]]:
     """增强版网页抓取，按平台解析，带缓存和全局冷却。"""
     now = datetime.now().timestamp()
+    cache_key = hashlib.md5(url.encode()).hexdigest()
+
     last_fetch = _url_fetch_cooldown.get(url, 0)
-    if now - last_fetch < URL_FETCH_COOLDOWN_SECONDS:
-        # 冷却中，尝试返回缓存
-        cache_key = hashlib.md5(url.encode()).hexdigest()
+    if now - last_fetch < URL_FETCH_COOLDOWN:
         cached = await get_article_cache(cache_key)
         if cached:
             return cached
         return None
 
-    cache_key = hashlib.md5(url.encode()).hexdigest()
     cached = await get_article_cache(cache_key)
     if cached:
         return cached
@@ -138,6 +121,13 @@ async def fetch_url_content(url: str) -> Optional[Dict[str, str]]:
         return None
 
 
+def _strip_html(match: Optional[re.Match], fallback: str = "") -> str:
+    """从正则匹配中提取文本并清除 HTML 标签。"""
+    if not match:
+        return fallback
+    return re.sub(r'<[^>]+>', '', match.group(1)).strip()
+
+
 def _parse_by_platform(html: str, url: str) -> Optional[Dict[str, str]]:
     """按平台解析。返回统一格式的字典。"""
     base_fields = {
@@ -154,7 +144,7 @@ def _parse_by_platform(html: str, url: str) -> Optional[Dict[str, str]]:
             title = re.search(r'"desc"\s*:\s*"([^"]{4,})"', html)
         if not title:
             title = re.search(r'<title[^>]*>(.*?)</title>', html, re.DOTALL)
-        title = re.sub(r'<[^>]+>', '', title.group(1)).strip() if title else "抖音视频"
+        title = _strip_html(title, "抖音视频")
 
         desc = re.search(r'<meta[^>]*property="og:description"[^>]*content="([^"]*)"', html)
         if not desc:
@@ -199,7 +189,7 @@ def _parse_by_platform(html: str, url: str) -> Optional[Dict[str, str]]:
         title = re.search(r'<meta[^>]*property="og:title"[^>]*content="([^"]*)"', html)
         if not title:
             title = re.search(r'<title[^>]*>(.*?)</title>', html, re.DOTALL)
-        title = re.sub(r'<[^>]+>', '', title.group(1)).strip() if title else "小黑盒分享"
+        title = _strip_html(title, "小黑盒分享")
         desc = re.search(r'<meta[^>]*property="og:description"[^>]*content="([^"]*)"', html)
         desc = desc.group(1) if desc else ""
         return {
@@ -214,7 +204,7 @@ def _parse_by_platform(html: str, url: str) -> Optional[Dict[str, str]]:
 
     if "bilibili.com/read" in url or "bilibili.com/opus" in url:
         title = re.search(r'<h1[^>]*class="[^"]*title[^"]*"[^>]*>(.*?)</h1>', html)
-        title = re.sub(r'<[^>]+>', '', title.group(1)).strip() if title else "B站专栏"
+        title = _strip_html(title, "B站专栏")
         author = re.search(r'"name":"([^"]+)"', html)
         author = author.group(1) if author else "未知UP"
         content = re.search(
@@ -239,11 +229,11 @@ def _parse_by_platform(html: str, url: str) -> Optional[Dict[str, str]]:
         title = re.search(r'<h1[^>]*class="[^"]*QuestionHeader-title[^"]*"[^>]*>(.*?)</h1>', html)
         if not title:
             title = re.search(r'<h1[^>]*class="[^"]*Post-Title[^"]*"[^>]*>(.*?)</h1>', html)
-        title = re.sub(r'<[^>]+>', '', title.group(1)).strip() if title else "知乎文章"
+        title = _strip_html(title, "知乎文章")
         author = re.search(r'"author":"([^"]+)"', html) or re.search(
             r'<a[^>]*class="[^"]*AuthorInfo-name[^"]*"[^>]*>(.*?)</a>', html
         )
-        author = re.sub(r'<[^>]+>', '', author.group(1)).strip() if author else "未知作者"
+        author = _strip_html(author, "未知作者")
         content = re.search(
             r'<div[^>]*class="[^"]*RichContent-inner[^"]*"[^>]*>(.*?)</div>',
             html, re.DOTALL
@@ -264,9 +254,9 @@ def _parse_by_platform(html: str, url: str) -> Optional[Dict[str, str]]:
 
     if "mp.weixin.qq.com" in url:
         title = re.search(r'<h2[^>]*class="rich_media_title[^"]*"[^>]*>(.*?)</h2>', html, re.DOTALL)
-        title = re.sub(r'<[^>]+>', '', title.group(1)).strip() if title else "公众号文章"
+        title = _strip_html(title, "公众号文章")
         author = re.search(r'<a[^>]*id="js_name"[^>]*>(.*?)</a>', html, re.DOTALL)
-        author = re.sub(r'<[^>]+>', '', author.group(1)).strip() if author else "未知公众号"
+        author = _strip_html(author, "未知公众号")
         content = re.search(
             r'<div[^>]*class="rich_media_content[^"]*"[^>]*>(.*?)</div>',
             html, re.DOTALL
@@ -298,7 +288,7 @@ def _parse_generic(html: str) -> Optional[Dict[str, str]]:
     body = article.group(1) if article else text
 
     title = re.search(r'<title[^>]*>(.*?)</title>', html, re.DOTALL)
-    title = re.sub(r'<[^>]+>', '', title.group(1)).strip() if title else "无标题"
+    title = _strip_html(title, "无标题")
 
     clean = _clean_html(body)
     if len(clean) < 200:
@@ -382,21 +372,17 @@ def _cleanup_expired_shares(session_id: str):
 async def global_cleanup_shares():
     """全局清理所有过期分享缓存（建议每小时调用一次）。"""
     now = datetime.now().timestamp()
-    expired_sessions = []
-    for sid, shares in list(_recent_shares.items()):
-        valid = [s for s in shares if now - s.get("time", 0) < SHARE_TTL]
-        if valid:
-            _recent_shares[sid] = valid[-5:]
-        else:
-            expired_sessions.append(sid)
-    for sid in expired_sessions:
-        del _recent_shares[sid]
-    # 清理全局 URL 冷却（LRU 会自动处理，但这里也清理过期的）
-    expired_urls = [u for u, t in list(_url_fetch_cooldown.items()) if now - t > URL_FETCH_COOLDOWN_SECONDS * 2]
+    # 复用单 session 清理逻辑
+    before = len(_recent_shares)
+    for sid in list(_recent_shares.keys()):
+        _cleanup_expired_shares(sid)
+    freed_sessions = before - len(_recent_shares)
+    # 清理全局 URL 冷却
+    expired_urls = [u for u, t in list(_url_fetch_cooldown.items()) if now - t > URL_FETCH_COOLDOWN * 2]
     for u in expired_urls:
         del _url_fetch_cooldown[u]
-    if expired_sessions or expired_urls:
-        logger.info(f"[分享] 全局清理完成，释放 {len(expired_sessions)} 个 session, {len(expired_urls)} 个 URL 冷却")
+    if freed_sessions or expired_urls:
+        logger.info(f"[分享] 全局清理完成，释放 {freed_sessions} 个 session, {len(expired_urls)} 个 URL 冷却")
 
 
 async def extract_and_cache_shares(event, session_id: str) -> bool:
@@ -417,7 +403,7 @@ async def extract_and_cache_shares(event, session_id: str) -> bool:
                     continue
                 seen_urls.add(url)
                 article = await fetch_url_content(url)
-                if _is_valid_article(article):
+                if _is_valid_share(article):
                     display = f"{article.get('title', '无标题')} - {article.get('author', '未知')}"
                     shares.append({
                         "type": "网页",
@@ -464,7 +450,6 @@ async def extract_and_cache_shares(event, session_id: str) -> bool:
                 # 三层降级识别图片：视觉模型 → OCR → 占位
                 img_desc = "[图片内容暂无法直接识别]"
                 try:
-                    from .vision import analyze_image
                     if img_url and img_url != "未知图片":
                         vision_result = await analyze_image(img_url, img_prompt)
                         if vision_result and vision_result != "[图片内容暂无法识别]" and vision_result != "[图片文件不存在]":
@@ -508,7 +493,7 @@ async def extract_and_cache_shares(event, session_id: str) -> bool:
                                 break
                             seen_urls.add(card_url)
                             article = await fetch_url_content(card_url)
-                            if _is_valid_article(article):
+                            if _is_valid_share(article):
                                 shares.append({
                                     "type": "网页",
                                     "source": f"{article.get('title', title)} - {article.get('author', '未知')}",

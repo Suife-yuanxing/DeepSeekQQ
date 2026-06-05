@@ -10,6 +10,7 @@ API 格式（OpenAI 兼容）:
 风格标签: 开心/害羞/傲娇/撒娇/慵懒/难过/生气 等
 """
 import os
+import binascii
 import base64
 import asyncio
 from datetime import datetime
@@ -20,10 +21,14 @@ import aiofiles
 
 from nonebot import logger
 
+from .api import get_http_session
 from .config import (
     MIMO_API_KEY, MIMO_API_BASE_URL, MIMO_TTS_VOICE,
     VOICE_MAX_LENGTH, VOICE_DIR,
 )
+
+# 默认风格（无情绪时使用）
+DEFAULT_STYLE = "温柔甜美，自然可爱"
 
 # 情绪 → MiMo 风格标签映射（基于 bot VA 情绪模型的 dominant 字段）
 EMOTION_STYLE_MAP = {
@@ -44,7 +49,7 @@ EMOTION_STYLE_MAP = {
 }
 
 
-async def generate_mimo_voice(text: str, emotion: str = None) -> Optional[str]:
+async def generate_mimo_voice(text: str, emotion: Optional[str] = None) -> Optional[str]:
     """调用 MiMo TTS 生成语音文件。
 
     Args:
@@ -62,11 +67,13 @@ async def generate_mimo_voice(text: str, emotion: str = None) -> Optional[str]:
         logger.warning(f"[MiMo TTS] 文本过长({len(text)}字)，跳过")
         return None
 
+    # 确保输出目录存在
+    os.makedirs(VOICE_DIR, exist_ok=True)
+
     # 构建风格指令
-    style = EMOTION_STYLE_MAP.get(emotion, "温柔甜美，自然可爱") if emotion else "温柔甜美，自然可爱"
+    style = EMOTION_STYLE_MAP.get(emotion, DEFAULT_STYLE) if emotion else DEFAULT_STYLE
     style_instruction = f"用{style}的语气说话"
 
-    # 构建请求 payload
     payload = {
         "model": "mimo-v2.5-tts",
         "messages": [
@@ -88,11 +95,10 @@ async def generate_mimo_voice(text: str, emotion: str = None) -> Optional[str]:
     mp3_path = f"{VOICE_DIR}/mimo_voice_{int(datetime.now().timestamp() * 1000)}.mp3"
 
     try:
-        from .api import get_http_session
         session = await get_http_session()
         async with session.post(
             url, json=payload, headers=headers,
-            timeout=aiohttp.ClientTimeout(total=30),
+            timeout=aiohttp.ClientTimeout(total=60),
         ) as resp:
             if resp.status != 200:
                 error_text = await resp.text()
@@ -100,8 +106,13 @@ async def generate_mimo_voice(text: str, emotion: str = None) -> Optional[str]:
                 return None
 
             data = await resp.json()
+            choices = data.get("choices", [])
+            if not choices:
+                logger.error(f"[MiMo TTS] 响应中无 choices: {str(data)[:200]}")
+                return None
+
             audio_b64 = (
-                data.get("choices", [{}])[0]
+                choices[0]
                 .get("message", {})
                 .get("audio", {})
                 .get("data", "")
@@ -110,21 +121,39 @@ async def generate_mimo_voice(text: str, emotion: str = None) -> Optional[str]:
                 logger.error(f"[MiMo TTS] 响应中无音频数据: {str(data)[:200]}")
                 return None
 
-            # 解码 base64 并写入文件
-            audio_bytes = base64.b64decode(audio_b64)
+            try:
+                audio_bytes = base64.b64decode(audio_b64)
+            except binascii.Error as e:
+                logger.error(f"[MiMo TTS] base64 解码失败: {e}")
+                return None
+
             async with aiofiles.open(mp3_path, "wb") as f:
                 await f.write(audio_bytes)
 
-            if os.path.exists(mp3_path) and os.path.getsize(mp3_path) > 1000:
-                logger.info(f"[MiMo TTS] 生成成功: {mp3_path} ({os.path.getsize(mp3_path)} bytes)")
+            file_size = os.path.getsize(mp3_path)
+            if file_size > 1000:
+                logger.info(f"[MiMo TTS] 生成成功: {mp3_path} ({file_size} bytes)")
                 return mp3_path
             else:
-                logger.warning("[MiMo TTS] 生成的文件过小或不存在")
+                logger.warning(f"[MiMo TTS] 生成的文件过小: {file_size} bytes")
+                # 清理无效文件
+                _safe_remove(mp3_path)
                 return None
 
     except asyncio.TimeoutError:
-        logger.error("[MiMo TTS] 请求超时(30s)")
+        logger.error("[MiMo TTS] 请求超时(60s)")
+        _safe_remove(mp3_path)
         return None
     except Exception as e:
         logger.error(f"[MiMo TTS] 异常: {e}")
+        _safe_remove(mp3_path)
         return None
+
+
+def _safe_remove(path: str):
+    """安全删除文件，忽略不存在的情况。"""
+    try:
+        if path and os.path.exists(path):
+            os.remove(path)
+    except OSError:
+        pass

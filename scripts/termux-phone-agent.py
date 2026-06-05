@@ -18,13 +18,13 @@
   - 返回/桌面/最近任务
 """
 import json
+import re
 import asyncio
 import subprocess
 import base64
 import os
 import sys
 import time
-import signal
 from typing import Optional, Dict, Any
 
 try:
@@ -153,8 +153,11 @@ def cmd_scroll(x: int, y: int, dx: int, dy: int) -> Dict[str, Any]:
 
 def cmd_type(text: str) -> Dict[str, Any]:
     """输入文字（需要先聚焦输入框）。"""
-    # ADB 输入需要转义特殊字符
-    escaped = text.replace(" ", "%s").replace("&", "\\&").replace("<", "\\<").replace(">", "\\>")
+    # ADB input text: 空格用 %s 代替，过滤危险字符
+    safe = re.sub(r"[^a-zA-Z0-9一-龥.,;:!?@#%_+=\-/]", "", text)
+    escaped = safe.replace(" ", "%s")
+    if not escaped:
+        return {"status": "error", "error": "无有效文字"}
     ok, out = run_adb(["shell", "input", "text", escaped])
     return {"status": "ok" if ok else "error", "result": {"action": "type", "text": text[:50]}}
 
@@ -180,15 +183,19 @@ def cmd_keyevent(keycode: str) -> Dict[str, Any]:
 
 def cmd_screenshot(quality: int = 80, max_width: int = 720) -> Dict[str, Any]:
     """截图并返回 base64。"""
+    # 使用 Termux 的 TMPDIR（兼容 Android）
+    tmp_dir = os.environ.get("TMPDIR", "/data/data/com.termux/files/usr/tmp")
+    if not os.path.isdir(tmp_dir):
+        tmp_dir = "/tmp"
+    local_path = os.path.join(tmp_dir, f"screenshot_{os.getpid()}.png")
+    device_path = f"/sdcard/screenshot_{os.getpid()}.png"
+
     try:
-        # 在手机上截图
-        ok, _ = run_adb(["shell", "screencap", "-p", "/sdcard/screenshot.png"])
+        ok, _ = run_adb(["shell", "screencap", "-p", device_path])
         if not ok:
             return {"status": "error", "error": "截图失败"}
 
-        # 拉取到本地
-        local_path = "/tmp/screenshot.png"
-        ok, _ = run_adb(["pull", "/sdcard/screenshot.png", local_path])
+        ok, _ = run_adb(["pull", device_path, local_path])
         if not ok:
             return {"status": "error", "error": "拉取截图失败"}
 
@@ -197,27 +204,28 @@ def cmd_screenshot(quality: int = 80, max_width: int = 720) -> Dict[str, Any]:
             from PIL import Image
             import io
             img = Image.open(local_path)
-            # 缩放
             if img.width > max_width:
                 ratio = max_width / img.width
                 new_size = (max_width, int(img.height * ratio))
                 img = img.resize(new_size, Image.Resampling.LANCZOS)
-            # 转 base64
             buf = io.BytesIO()
             img.save(buf, format="JPEG", quality=quality)
             b64 = base64.b64encode(buf.getvalue()).decode()
         except ImportError:
-            # 没有 PIL，直接读取原图
             with open(local_path, "rb") as f:
                 b64 = base64.b64encode(f.read()).decode()
-
-        # 清理临时文件
-        os.remove(local_path)
-        run_adb(["shell", "rm", "/sdcard/screenshot.png"])
 
         return {"status": "ok", "result": {"image": b64}}
     except Exception as e:
         return {"status": "error", "error": str(e)}
+    finally:
+        # 确保清理临时文件
+        try:
+            if os.path.exists(local_path):
+                os.remove(local_path)
+        except OSError:
+            pass
+        run_adb(["shell", "rm", device_path])
 
 
 def cmd_ui_tree() -> Dict[str, Any]:
@@ -236,7 +244,6 @@ def cmd_ui_tree() -> Dict[str, Any]:
             return {"status": "error", "error": "读取 UI XML 失败"}
 
         # 简单解析 XML 提取文本
-        import re
         texts = re.findall(r'text="([^"]*)"', xml_content)
         texts = [t for t in texts if t.strip()]
 
@@ -247,16 +254,18 @@ def cmd_ui_tree() -> Dict[str, Any]:
 
 def cmd_open_app(package: str) -> Dict[str, Any]:
     """打开应用。"""
+    # 校验包名格式，防止注入
+    if not re.match(r'^[a-zA-Z0-9._]+$', package):
+        return {"status": "error", "error": f"非法包名: {package}"}
     ok, out = run_adb(["shell", "monkey", "-p", package, "-c", "android.intent.category.LAUNCHER", "1"])
     return {"status": "ok" if ok else "error", "result": {"action": "open_app", "package": package}}
 
 
 def cmd_get_current_app() -> Dict[str, Any]:
     """获取当前前台应用包名。"""
-    ok, out = run_adb(["shell", "dumpsys", "activity", "recents", "|", "grep", "realActivity"])
+    # 注意：subprocess list 参数不支持管道，需在 Python 端过滤
+    ok, out = run_adb(["shell", "dumpsys", "activity", "recents"])
     if ok and out:
-        # 解析包名
-        import re
         match = re.search(r'realActivity=([^/]+)', out)
         if match:
             return {"status": "ok", "result": {"package": match.group(1)}}
@@ -328,7 +337,6 @@ async def connect_to_server(server_url: str, api_key: str, device_id: str):
                 "role": "phone",
                 "key": api_key,
                 "device_id": device_id,
-                "target_device_id": device_id,
             }
             await ws.send(json.dumps(auth_msg))
 
@@ -441,9 +449,6 @@ async def main():
 
 
 if __name__ == "__main__":
-    # 处理 Ctrl+C
-    signal.signal(signal.SIGINT, lambda s, f: sys.exit(0))
-
     try:
         asyncio.run(main())
     except KeyboardInterrupt:

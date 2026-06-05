@@ -116,7 +116,7 @@ async def _convert_mp3_to_silk(mp3_path: str) -> Optional[str]:
                 pass
         return None
 
-async def generate_voice_file(text: str, emotion: str = None) -> Optional[str]:
+async def generate_voice_file(text: str, emotion: Optional[str] = None) -> Optional[str]:
     """生成语音文件，返回本地路径。根据 TTS_ENGINE 自动路由。"""
     if len(text) > VOICE_MAX_LENGTH:
         logger.warning(f"[语音] 文本过长({len(text)}字)，跳过语音")
