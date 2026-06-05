@@ -29,6 +29,18 @@ logs/
 .idea/
 *.swp
 
+# 证书和密钥
+*.pem
+*.crt
+*.key
+
+# 二进制/安装包
+*.apk
+
+# 截图（临时文件）
+screenshot.png
+screenmcp_launch.png
+
 # 系统文件
 .DS_Store
 Thumbs.db

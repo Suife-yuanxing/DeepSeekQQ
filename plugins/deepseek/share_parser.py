@@ -402,6 +402,8 @@ async def global_cleanup_shares():
 async def extract_and_cache_shares(event, session_id: str) -> bool:
     """提取消息中的分享内容并缓存。修复了卡片重复添加问题。"""
     msg = event.get_message()
+    # 提取用户纯文本，用于图片 prompt 上下文判断
+    user_text = msg.extract_plain_text().strip() if msg else ""
     shares = []
     seen_urls = set()
 
@@ -450,12 +452,21 @@ async def extract_and_cache_shares(event, session_id: str) -> bool:
                         shares.append({"type": "表情", "source": "用户发了一个表情", "summary": "[用户发送了一个QQ表情图片，无法确定具体内容]", "image_url": img_url, "time": datetime.now().timestamp()})
             else:
                 img_url = seg.data.get("url") or seg.data.get("file", "未知图片")
+                # 动态 prompt：根据用户消息上下文选择识别策略
+                if user_text and any(kw in user_text for kw in ["截图", "聊天记录", "对话", "屏幕"]):
+                    img_prompt = "这是一张截图，请重点识别其中的文字内容和界面元素，用中文简洁描述，2-3句话"
+                elif user_text and any(kw in user_text for kw in ["表情包", "表情", "搞笑", "斗图"]):
+                    img_prompt = "这是一个表情包，请描述其中的人物表情、动作和文字，用中文简洁描述，2句话"
+                elif user_text and any(kw in user_text for kw in ["这是什么", "看看", "帮我", "识别", "什么"]):
+                    img_prompt = "请详细描述这张图片的内容，包括主要物体、场景、文字等，用中文回答，3-4句话"
+                else:
+                    img_prompt = "请用中文简洁描述这张图片的主要内容，2-3句话，如果有文字请提取出来"
                 # 三层降级识别图片：视觉模型 → OCR → 占位
                 img_desc = "[图片内容暂无法直接识别]"
                 try:
                     from .vision import analyze_image
                     if img_url and img_url != "未知图片":
-                        vision_result = await analyze_image(img_url, "请用中文简洁描述这张图片的主要内容，2-3句话")
+                        vision_result = await analyze_image(img_url, img_prompt)
                         if vision_result and vision_result != "[图片内容暂无法识别]" and vision_result != "[图片文件不存在]":
                             img_desc = f"[图片内容: {vision_result}]"
                 except Exception as e:

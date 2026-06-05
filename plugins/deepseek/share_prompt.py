@@ -30,6 +30,14 @@ def format_shares_for_prompt(shares: List[Dict[str, Any]], user_msg: str = "") -
     lines.append(
         "注意：如果用户接下来的问题与上述内容明显相关，请基于这些内容结合上下文回答；如果不相关，请正常聊天，不必刻意提及。"
     )
+    # 图片回复行为指引
+    has_image = any(s.get("type") == "图片" for s in target)
+    if has_image:
+        lines.append(
+            "图片回复要求：不要说「我看到了一张图片」这种空话。"
+            "要对图片内容做出具体反应——如果有趣就调侃，如果好看就夸，"
+            "如果有文字就评论文字内容，像朋友发图给你看一样自然回复。"
+        )
     return "\n".join(lines)
 
 

@@ -20,7 +20,8 @@ from .config import (
     VOICE_ENABLED_PRIVATE, VOICE_ENABLED_GROUP,
     VOICE_CHANCE, VOICE_MAX_LENGTH, VOICE_TRY_CONVERT, VOICE_NAME,
     VOICE_DIR,
-    BAIDU_TTS_PER, BAIDU_TTS_SPD, BAIDU_TTS_PIT, BAIDU_TTS_VOL
+    BAIDU_TTS_PER, BAIDU_TTS_SPD, BAIDU_TTS_PIT, BAIDU_TTS_VOL,
+    TTS_ENGINE,
 )
 from .api import get_http_session
 from nonebot import logger
@@ -115,12 +116,18 @@ async def _convert_mp3_to_silk(mp3_path: str) -> Optional[str]:
                 pass
         return None
 
-async def generate_voice_file(text: str) -> Optional[str]:
-    """生成语音文件，返回本地路径。"""
+async def generate_voice_file(text: str, emotion: str = None) -> Optional[str]:
+    """生成语音文件，返回本地路径。根据 TTS_ENGINE 自动路由。"""
     if len(text) > VOICE_MAX_LENGTH:
         logger.warning(f"[语音] 文本过长({len(text)}字)，跳过语音")
         return None
 
+    # MiMo TTS 引擎
+    if TTS_ENGINE == "mimo":
+        from .voice_mimo import generate_mimo_voice
+        return await generate_mimo_voice(text, emotion)
+
+    # 百度 TTS 引擎（默认）
     token = await _get_baidu_token()
     if not token:
         logger.warning("[语音] 百度 Token 获取失败")
@@ -162,13 +169,13 @@ async def _delayed_cleanup(path: str, delay: int = 300):
     except Exception as e:
         logger.warning(f"[语音] 清理失败: {e}")
 
-async def send_voice(bot: Bot, event: MessageEvent, text: str):
+async def send_voice(bot: Bot, event: MessageEvent, text: str, emotion: str = None):
     is_group = isinstance(event, GroupMessageEvent)
     enabled = VOICE_ENABLED_GROUP if is_group else VOICE_ENABLED_PRIVATE
     if not enabled:
         return
 
-    voice_path = await generate_voice_file(text)
+    voice_path = await generate_voice_file(text, emotion)
     if not voice_path or not os.path.exists(voice_path):
         logger.info("[语音] 无有效语音文件")
         return

@@ -37,7 +37,11 @@ CMD_TIMEOUT = 30
 
 
 class WorkerClient:
-    """与本地 ScreenMCP Worker 的 WebSocket 连接。"""
+    """与本地 ScreenMCP Worker 的 WebSocket 连接。
+
+    消息分发统一由 _recv_loop 处理，send_command 只注册 Future 并等待，
+    避免多处同时读取同一 WebSocket 导致竞争。
+    """
 
     def __init__(self):
         self._ws: Optional[aiohttp.ClientWebSocketResponse] = None
@@ -45,6 +49,9 @@ class WorkerClient:
         self._connected = False
         self._pending: Dict[int, asyncio.Future] = {}
         self._recv_task: Optional[asyncio.Task] = None
+        self._cmd_counter: int = 0
+        self._last_response: Optional[dict] = None
+        self._response_event: asyncio.Event = asyncio.Event()
 
     @property
     def connected(self) -> bool:
@@ -102,7 +109,7 @@ class WorkerClient:
         self._pending.clear()
 
     async def _recv_loop(self):
-        """后台接收消息循环。"""
+        """后台接收消息循环 — 唯一的 WebSocket 读取点。"""
         try:
             async for msg in self._ws:
                 if msg.type == aiohttp.WSMsgType.TEXT:
@@ -114,7 +121,7 @@ class WorkerClient:
                         await self._ws.send_json({"type": "pong"})
                         continue
 
-                    # 命令已接受
+                    # 命令已接受 — 记录 cmd_id 但不处理
                     if msg_type == "cmd_accepted":
                         continue
 
@@ -123,12 +130,27 @@ class WorkerClient:
                         logger.info(f"[手机] 手机状态: {'在线' if data.get('connected') else '离线'}")
                         continue
 
-                    # 命令响应（无 type 字段，有 id + status）
-                    if "id" in data and "status" in data:
-                        cmd_id = data["id"]
-                        fut = self._pending.pop(cmd_id, None)
-                        if fut and not fut.done():
-                            fut.set_result(data)
+                    # 错误消息
+                    if msg_type == "error":
+                        # 尝试匹配到等待中的命令
+                        cmd_id = data.get("id")
+                        if cmd_id is not None:
+                            fut = self._pending.pop(cmd_id, None)
+                            if fut and not fut.done():
+                                fut.set_result({"success": False, "error": data.get("error", "unknown")})
+                        continue
+
+                    # 命令响应（有 status 字段）
+                    if "status" in data:
+                        cmd_id = data.get("id")
+                        if cmd_id is not None:
+                            fut = self._pending.pop(cmd_id, None)
+                            if fut and not fut.done():
+                                fut.set_result(data)
+                        else:
+                            # 无 id 的响应，用事件通知（兼容旧协议）
+                            self._last_response = data
+                            self._response_event.set()
                         continue
 
                 elif msg.type in (aiohttp.WSMsgType.ERROR, aiohttp.WSMsgType.CLOSE):
@@ -139,64 +161,38 @@ class WorkerClient:
             logger.error(f"[手机] 接收循环异常: {e}")
         finally:
             self._connected = False
+            # 唤醒所有等待中的命令
+            for fut in self._pending.values():
+                if not fut.done():
+                    fut.set_result({"success": False, "error": "连接已断开"})
+            self._pending.clear()
+            self._response_event.set()  # 唤醒无 id 等待
 
     async def send_command(self, cmd: str, params: dict = None) -> dict:
-        """发送命令并等待响应。"""
+        """发送命令并等待响应。所有响应由 _recv_loop 分发。"""
         if not self.connected:
             return {"success": False, "error": "未连接 Worker"}
 
-        # 创建 Future 等待响应
+        # 生成命令 ID，注册 Future
+        self._cmd_counter += 1
+        cmd_id = self._cmd_counter
         loop = asyncio.get_event_loop()
         future = loop.create_future()
+        self._pending[cmd_id] = future
 
-        # 发送命令
-        await self._ws.send_json({"cmd": cmd, "params": params or {}})
-
-        # 等待 cmd_accepted 获取 ID
         try:
-            # 通过轮询等待（cmd_accepted 和 response 可能几乎同时到达）
-            deadline = time.time() + CMD_TIMEOUT
-            while time.time() < deadline:
-                # 检查是否有新响应（recv_loop 会处理）
-                await asyncio.sleep(0.05)
-                # 如果已经收到了响应，会通过 recv_loop 设置 future
-                # 但我们需要先拿到 cmd_accepted 的 id
-                # 简化方案：直接等待 recv_loop 处理
-                break
-        except Exception:
-            pass
+            # 发送命令（带 id）
+            await self._ws.send_json({"id": cmd_id, "cmd": cmd, "params": params or {}})
 
-        # 直接等待响应（recv_loop 会匹配 id）
-        # 注入一个临时的等待机制
-        try:
-            # 发送后等待响应
-            resp = await asyncio.wait_for(self._wait_for_response(), timeout=CMD_TIMEOUT)
+            # 等待 _recv_loop 通过 id 匹配设置结果
+            resp = await asyncio.wait_for(future, timeout=CMD_TIMEOUT)
             return resp
         except asyncio.TimeoutError:
+            self._pending.pop(cmd_id, None)
             return {"success": False, "error": "命令超时"}
         except Exception as e:
+            self._pending.pop(cmd_id, None)
             return {"success": False, "error": str(e)}
-
-    async def _wait_for_response(self) -> dict:
-        """等待下一个命令响应。"""
-        # 简化实现：直接从 WebSocket 读取，跳过非响应消息
-        while True:
-            msg = await self._ws.receive()
-            if msg.type == aiohttp.WSMsgType.TEXT:
-                data = json.loads(msg.data)
-                # 跳过心跳和 cmd_accepted
-                if data.get("type") in ("ping", "cmd_accepted", "phone_status"):
-                    if data.get("type") == "ping":
-                        await self._ws.send_json({"type": "pong"})
-                    continue
-                # 这是命令响应
-                if "id" in data and "status" in data:
-                    return data
-                # 错误消息
-                if data.get("type") == "error":
-                    return {"success": False, "error": data.get("error", "unknown")}
-            elif msg.type in (aiohttp.WSMsgType.ERROR, aiohttp.WSMsgType.CLOSE):
-                return {"success": False, "error": "连接已断开"}
 
 
 # 全局客户端实例
