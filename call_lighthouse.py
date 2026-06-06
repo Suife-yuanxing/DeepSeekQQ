@@ -1,4 +1,4 @@
-import subprocess, json, sys, time, os
+import subprocess, json, sys, os, threading
 
 tool_name = sys.argv[1]
 args = json.loads(sys.argv[2]) if len(sys.argv) > 2 else {}
@@ -24,29 +24,43 @@ init = json.dumps({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"proto
 proc.stdin.write(init.encode())
 proc.stdin.flush()
 
-time.sleep(3)
-
 # Send tools/call
 call = json.dumps({"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":tool_name,"arguments":args}}) + '\n'
 proc.stdin.write(call.encode())
 proc.stdin.flush()
 
-time.sleep(10)
+# 动态读取 stdout，直到收到 id=2 的响应或超时
+result = None
+stderr_lines = []
+
+def read_stdout():
+    global result
+    for line in proc.stdout:
+        try:
+            j = json.loads(line.decode().strip())
+            if j.get('id') == 2:
+                result = j
+                break
+        except (json.JSONDecodeError, ValueError):
+            pass
+
+def read_stderr():
+    for line in proc.stderr:
+        stderr_lines.append(line.decode(errors='replace'))
+
+t_out = threading.Thread(target=read_stdout, daemon=True)
+t_err = threading.Thread(target=read_stderr, daemon=True)
+t_out.start()
+t_err.start()
+
+t_out.join(timeout=15)
 proc.terminate()
 
-stdout = proc.stdout.read().decode()
-stderr = proc.stderr.read().decode()
+if stderr_lines:
+    err_text = ''.join(stderr_lines)[:500]
+    print("STDERR:", err_text, file=sys.stderr)
 
-if stderr:
-    print("STDERR:", stderr[:500], file=sys.stderr)
-
-for line in stdout.split('\n'):
-    try:
-        j = json.loads(line)
-        if j.get('id') == 2:
-            print(json.dumps(j, indent=2, ensure_ascii=False))
-    except:
-        pass
-
-if not stdout.strip():
-    print("No output received")
+if result:
+    print(json.dumps(result, indent=2, ensure_ascii=False))
+else:
+    print("No valid response received (timeout or empty output)")

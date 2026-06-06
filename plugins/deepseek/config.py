@@ -41,7 +41,7 @@ SERVER_HOST: str = getattr(cfg, "host", "0.0.0.0")
 SERVER_PORT: int = int(getattr(cfg, "port", 8080))
 
 # === 主人 QQ ===
-MY_QQ: str = str(getattr(cfg, "my_qq", "2938897660"))
+MY_QQ: str = str(getattr(cfg, "my_qq", ""))
 
 # === 回复长度策略 ===
 REPLY_LENGTH_CONFIG = {

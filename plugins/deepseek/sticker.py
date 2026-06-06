@@ -233,6 +233,12 @@ def filter_sticker_tag(reply_text: str, session_id: str = "",
     Returns:
         (text, should_send_sticker)
     """
+    # 定期清理缓存，防止内存泄漏
+    if len(_last_sticker_session) > 500:
+        keys = list(_last_sticker_session.keys())
+        for k in keys[:len(keys) - 200]:
+            del _last_sticker_session[k]
+
     clean_text, emotion, scene = parse_sticker_tag(reply_text)
     if not emotion:
         # LLM 没加标签，不需要过滤

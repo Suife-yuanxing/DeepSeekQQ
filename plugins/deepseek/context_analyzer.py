@@ -6,6 +6,7 @@
 
 替代原有的关键词匹配方案，实现语义级理解。
 """
+import asyncio
 import json
 import math
 import re
@@ -273,8 +274,7 @@ async def analyze_context_and_emotion(
         await update_user_mood(user_id, final_valence, final_arousal, emo_type)
 
         # Phase 3：异步记录情绪日志
-        asyncio_create_task = __import__('asyncio').create_task
-        asyncio_create_task(_log_emotion(user_id, "private_" + user_id, emo_type, final_valence, final_arousal, user_msg))
+        asyncio.create_task(_log_emotion(user_id, "private_" + user_id, emo_type, final_valence, final_arousal, user_msg))
 
         logger.info(
             f"[分析] 用户={user_id[:6]} 意图={context.user_intent} "
