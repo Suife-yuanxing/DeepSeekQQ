@@ -113,6 +113,11 @@ PROACTIVE_CONFIG = {
         "target_users": [MY_QQ] if MY_QQ else [],
         "target_groups": [],
     },
+    "sleep_nag": {
+        "enabled": True,
+        "max_nags_per_night": 2,
+        "target_users": [MY_QQ] if MY_QQ else [],
+    },
 }
 
 AFFECTION_LEVELS = [

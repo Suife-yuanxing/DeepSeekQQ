@@ -568,11 +568,11 @@ async def get_today_proactive_count(user_id: str, today: str) -> int:
         return row["cnt"] if row else 0
 
 
-async def log_proactive(user_id: str, msg_type: str, content: str):
+async def log_proactive(user_id: str, msg_type: str, content: str, scene: str = ""):
     db = await get_db()
     await db.execute(
-        "INSERT INTO proactive_log (user_id, type, content, timestamp) VALUES (?, ?, ?, ?)",
-        (user_id, msg_type, content[:200], datetime.now().timestamp())
+        "INSERT INTO proactive_log (user_id, type, content, timestamp, scene) VALUES (?, ?, ?, ?, ?)",
+        (user_id, msg_type, content[:200], datetime.now().timestamp(), scene)
     )
     await db.commit()
 
@@ -592,16 +592,42 @@ async def has_user_message_today(session_id: str) -> bool:
 
 
 async def get_recent_greetings(scene: str, limit: int = 10) -> List[str]:
-    """获取最近的同类问候消息（用于去重）。scene: 'morning'/'night'/'sleep_nag'"""
+    """获取最近的同类问候消息（用于去重）。scene: 'morning'/'night'/'sleep_nag' 等。"""
     db = await get_db()
-    pattern = f"%{scene}%"
     async with db.execute(
         """SELECT content FROM proactive_log
-           WHERE content LIKE ? ORDER BY timestamp DESC LIMIT ?""",
-        (pattern, limit)
+           WHERE scene = ? ORDER BY timestamp DESC LIMIT ?""",
+        (scene, limit)
     ) as cursor:
         rows = await cursor.fetchall()
         return [r["content"] for r in rows]
+
+
+async def has_proactive_today(user_id: str, scene: str) -> bool:
+    """检查今天是否已向该用户发送过指定 scene 的主动消息。"""
+    today = datetime.now().strftime("%Y-%m-%d")
+    db = await get_db()
+    async with db.execute(
+        """SELECT COUNT(*) as cnt FROM proactive_log
+           WHERE user_id = ? AND scene = ?
+           AND datetime(timestamp, 'unixepoch', 'localtime') LIKE ?""",
+        (user_id, scene, f"{today}%")
+    ) as cursor:
+        row = await cursor.fetchone()
+        return (row["cnt"] if row else 0) > 0
+
+
+async def get_today_proactive_count_by_scene(user_id: str, scene: str, today: str) -> int:
+    """统计今天已向该用户发送指定 scene 的主动消息次数。"""
+    db = await get_db()
+    async with db.execute(
+        """SELECT COUNT(*) as cnt FROM proactive_log
+           WHERE user_id = ? AND scene = ?
+           AND datetime(timestamp, 'unixepoch', 'localtime') LIKE ?""",
+        (user_id, scene, f"{today}%")
+    ) as cursor:
+        row = await cursor.fetchone()
+        return row["cnt"] if row else 0
 
 
 async def has_recent_message(session_id: str, minutes: int = 30) -> bool:

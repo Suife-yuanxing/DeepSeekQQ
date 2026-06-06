@@ -12,6 +12,7 @@ from .config import PROACTIVE_CONFIG, MY_QQ
 from .database import (
     get_today_proactive_count, log_proactive, get_silent_private_users,
     get_affection, has_recent_message, get_recent_greetings,
+    has_proactive_today, get_today_proactive_count_by_scene,
 )
 from .api import call_deepseek_api
 from .memory import save_reply
@@ -23,7 +24,7 @@ _scheduler: Optional[AsyncIOScheduler] = None
 _registered_bot_id: Optional[int] = None
 
 
-async def _send_proactive_message(bot, target_type: str, target_id: str, message: str):
+async def _send_proactive_message(bot, target_type: str, target_id: str, message: str, scene: str = ""):
     try:
         if target_type == "private":
             await bot.send_private_msg(user_id=int(target_id), message=OBMessage(message))
@@ -34,7 +35,7 @@ async def _send_proactive_message(bot, target_type: str, target_id: str, message
         elif target_type == "group":
             await bot.send_group_msg(group_id=int(target_id), message=OBMessage(message))
             logger.info(f"[主动消息] 群聊 {target_id}: {message[:50]}...")
-        await log_proactive(target_id, target_type, message)
+        await log_proactive(target_id, target_type, message, scene=scene)
     except Exception as e:
         logger.error(f"[主动消息] 发送失败 {target_id}: {e}")
 
@@ -67,6 +68,7 @@ async def _generate_proactive_message(scene: str, user_id: str = "") -> str:
         "sleep_nag": "现在是凌晨了，主人还在聊天。你要催他睡觉，语气要强势一点。",
         "silence": "你好久没和主人聊天了，想主动找他说话。",
         "holiday": "今天是个节日，要给主人发节日问候。",
+        "checkin": "你突然想起主人了，想找他说说话。语气随意、自然，像突然想到一样。",
     }
 
     prompt = scene_prompts.get(scene, "给主人发一条消息。")
@@ -113,31 +115,36 @@ async def _generate_proactive_message(scene: str, user_id: str = "") -> str:
         "sleep_nag": ["你怎么还没睡！！", "再不睡我要生气了", "熬夜对身体不好哦...快去睡"],
         "silence": ["你在干嘛呀~", "好久不见了喵", "想你了"],
         "holiday": ["节日快乐喵~", "今天过节呀~"],
+        "checkin": ["在干嘛呀~", "突然想到你了", "忙不忙呀"],
     }
     return random.choice(fallbacks.get(scene, ["喵~"]))
 
 
 async def _morning_greeting(bot):
-    """9:30 兜底早安：只有用户今天还没发过消息才发。"""
+    """9:30 兜底早安：如果用户今天已被感知式早安覆盖，跳过。"""
     cfg = PROACTIVE_CONFIG["morning_greeting"]
     if not cfg["enabled"]:
         return
     for uid in cfg["target_users"]:
+        # 已发过早安或已被感知式触发，跳过
+        if await has_proactive_today(str(uid), "morning") or \
+           await has_proactive_today(str(uid), "morning_triggered"):
+            continue
         session_id = f"private_{uid}"
-        # 如果用户今天已经发过消息（说明已经醒了），不主动发早安
-        # 感知式早安由 handler.py 在用户第一条消息时触发
         from .database import has_user_message_today
         if await has_user_message_today(session_id):
             continue
         msg = await _generate_proactive_message("morning", str(uid))
-        await _send_proactive_message(bot, "private", str(uid), msg)
+        await _send_proactive_message(bot, "private", str(uid), msg, scene="morning")
     for gid in cfg["target_groups"]:
+        if await has_proactive_today(str(gid), "morning"):
+            continue
         session_id = f"group_{gid}"
         from .database import has_user_message_today
         if await has_user_message_today(session_id):
             continue
         msg = await _generate_proactive_message("morning")
-        await _send_proactive_message(bot, "group", str(gid), msg)
+        await _send_proactive_message(bot, "group", str(gid), msg, scene="morning")
 
 
 async def _night_greeting(bot):
@@ -146,18 +153,17 @@ async def _night_greeting(bot):
     if not cfg["enabled"]:
         return
     for uid in cfg["target_users"]:
-        # 只有用户最近30分钟还在聊天才催睡
         session_id = f"private_{uid}"
         if not await has_recent_message(session_id, minutes=30):
             continue
         msg = await _generate_proactive_message("night", str(uid))
-        await _send_proactive_message(bot, "private", str(uid), msg)
+        await _send_proactive_message(bot, "private", str(uid), msg, scene="night")
     for gid in cfg["target_groups"]:
         session_id = f"group_{gid}"
         if not await has_recent_message(session_id, minutes=30):
             continue
         msg = await _generate_proactive_message("night")
-        await _send_proactive_message(bot, "group", str(gid), msg)
+        await _send_proactive_message(bot, "group", str(gid), msg, scene="night")
 
 
 async def _check_silence_and_notify(bot):
@@ -174,10 +180,31 @@ async def _check_silence_and_notify(bot):
             if today_count >= cfg["max_daily_proactive"]:
                 continue
             msg = await _generate_proactive_message("silence", user_id)
-            await _send_proactive_message(bot, "private", user_id, msg)
+            await _send_proactive_message(bot, "private", user_id, msg, scene="silence")
             await asyncio.sleep(random.uniform(2, 5))
     except Exception as e:
         logger.info(f"[主动消息] 沉默检查失败: {e}")
+
+
+async def _sleep_nag(bot):
+    """凌晨催睡：00:00-02:00 每 30 分钟检查，用户还在聊天就催。"""
+    hour = datetime.now().hour
+    if not (0 <= hour < 2):
+        return
+    cfg = PROACTIVE_CONFIG.get("sleep_nag", {})
+    if not cfg.get("enabled", True):
+        return
+    max_nags = cfg.get("max_nags_per_night", 2)
+    today = datetime.now().strftime("%Y-%m-%d")
+    for uid in cfg.get("target_users", []):
+        nag_count = await get_today_proactive_count_by_scene(str(uid), "sleep_nag", today)
+        if nag_count >= max_nags:
+            continue
+        session_id = f"private_{uid}"
+        if not await has_recent_message(session_id, minutes=30):
+            continue
+        msg = await _generate_proactive_message("sleep_nag", str(uid))
+        await _send_proactive_message(bot, "private", str(uid), msg, scene="sleep_nag")
 
 
 async def _holiday_greeting(bot):
@@ -189,10 +216,10 @@ async def _holiday_greeting(bot):
         holiday_name = cfg["holidays"][today]  # fallback
         for uid in cfg["target_users"]:
             msg = await _generate_proactive_message("holiday", str(uid))
-            await _send_proactive_message(bot, "private", str(uid), msg)
+            await _send_proactive_message(bot, "private", str(uid), msg, scene="holiday")
         for gid in cfg["target_groups"]:
             msg = await _generate_proactive_message("holiday")
-            await _send_proactive_message(bot, "group", str(gid), msg)
+            await _send_proactive_message(bot, "group", str(gid), msg, scene="holiday")
 
 
 async def register_proactive_jobs(bot):
@@ -220,25 +247,30 @@ async def register_proactive_jobs(bot):
 
     mg = PROACTIVE_CONFIG["morning_greeting"]
     if mg["enabled"]:
-        _scheduler.add_job(_morning_greeting, 'cron', hour=mg["hour"], minute=mg["minute"], args=[bot], id="morning", replace_existing=True)
+        _scheduler.add_job(_morning_greeting, 'cron', hour=mg["hour"], minute=mg["minute"], args=[bot], id="morning", replace_existing=True, jitter=300)
 
     ng = PROACTIVE_CONFIG["night_greeting"]
     if ng["enabled"]:
-        _scheduler.add_job(_night_greeting, 'cron', hour=ng["hour"], minute=ng["minute"], args=[bot], id="night", replace_existing=True)
+        _scheduler.add_job(_night_greeting, 'cron', hour=ng["hour"], minute=ng["minute"], args=[bot], id="night", replace_existing=True, jitter=300)
 
     sc = PROACTIVE_CONFIG["silence_check"]
     if sc["enabled"]:
-        _scheduler.add_job(_check_silence_and_notify, 'interval', hours=sc["check_interval_hours"], args=[bot], id="silence", replace_existing=True)
+        _scheduler.add_job(_check_silence_and_notify, 'interval', hours=sc["check_interval_hours"], args=[bot], id="silence", replace_existing=True, jitter=300)
 
     hg = PROACTIVE_CONFIG["holiday_greeting"]
     if hg["enabled"]:
-        _scheduler.add_job(_holiday_greeting, 'cron', hour=0, minute=1, args=[bot], id="holiday", replace_existing=True)
+        _scheduler.add_job(_holiday_greeting, 'cron', hour=0, minute=1, args=[bot], id="holiday", replace_existing=True, jitter=180)
 
     # Phase 7：随机「突然想到你」问候（每2小时检查，傍晚窗口触发）
-    _scheduler.add_job(_random_checkin, 'interval', hours=2, args=[bot], id="random_checkin", replace_existing=True)
+    _scheduler.add_job(_random_checkin, 'interval', hours=2, args=[bot], id="random_checkin", replace_existing=True, jitter=300)
+
+    # 凌晨催睡（00:00-01:59 每30分钟检查）
+    snc = PROACTIVE_CONFIG.get("sleep_nag", {})
+    if snc.get("enabled", True):
+        _scheduler.add_job(_sleep_nag, 'cron', hour='0-1', minute='*/30', args=[bot], id="sleep_nag", replace_existing=True, jitter=120)
 
     _scheduler.start()
-    logger.info(f"✅ 主动消息已启动 | 早安:{mg['hour']}:{mg['minute']:02d} | 晚安:{ng['hour']}:{ng['minute']:02d} | 沉默检查:每{sc['check_interval_hours']}h(阈值{sc['silence_threshold_hours']}h) | 节日:每天0:01 | 随机问候:每2h")
+    logger.info(f"✅ 主动消息已启动 | 早安:{mg['hour']}:{mg['minute']:02d}(±5min) | 晚安:{ng['hour']}:{ng['minute']:02d}(±5min) | 沉默检查:每{sc['check_interval_hours']}h | 凌晨催睡:00:00-02:00/30min | 节日:每天0:01 | 随机问候:每2h")
 
 
 # ---------- Phase 7：主动消息增强 ----------
@@ -284,7 +316,7 @@ async def _random_checkin(bot):
             return
         user_id = random.choice(targets)
         msg = await _generate_proactive_message("checkin", user_id)
-        await _send_proactive_message(bot, "private", user_id, msg)
+        await _send_proactive_message(bot, "private", user_id, msg, scene="checkin")
     except Exception as e:
         logger.info(f"[随机问候] 失败（非关键）: {e}")
 

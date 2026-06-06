@@ -217,3 +217,16 @@ async def migrate_v8_add_bot_disclosures(db: aiosqlite.Connection):
         )
     """)
     await db.commit()
+
+
+@migration(9)
+async def migrate_v9_add_proactive_scene(db: aiosqlite.Connection):
+    """proactive_log 表添加 scene 列（修复去重机制）。"""
+    async with db.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='proactive_log'") as cur:
+        if not await cur.fetchone():
+            return
+    async with db.execute("PRAGMA table_info(proactive_log)") as cursor:
+        columns = [row[1] for row in await cursor.fetchall()]
+    if "scene" not in columns:
+        await db.execute("ALTER TABLE proactive_log ADD COLUMN scene TEXT DEFAULT ''")
+    await db.commit()

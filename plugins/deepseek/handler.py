@@ -138,6 +138,8 @@ class ChatContext:
     affection_decay_hint: Optional[str] = None
     # 关系里程碑
     milestone_hint: Optional[str] = None
+    # 感知式早安
+    is_first_today: bool = False
 
 
 def _is_multi_topic(msg: str) -> bool:
@@ -507,6 +509,9 @@ async def _stage_context(ctx: ChatContext) -> Optional[str]:
     ctx.emotion_params = get_emotion_params(ctx.analysis.emotion)
     # 功能③：获取用户偏好
     ctx.user_prefs = await get_user_pref_hints(ctx.user_id)
+    # 感知式早安：检测今天首条消息
+    from .database import has_user_message_today
+    ctx.is_first_today = not await has_user_message_today(ctx.session_id)
     # Phase 6：渐进式自我披露（15%概率）
     if ctx.affection and random.random() < 0.15:
         from .database import get_undisclosed_facts
@@ -630,6 +635,20 @@ async def _stage_llm(ctx: ChatContext) -> Optional[str]:
                 "\n回复要求：短、温暖、不要追问、不要开启新话题。"
                 "像关灯一样自然地道别。1句话就够了。"
             )
+        elif ctx.is_first_today:
+            # 感知式早安：用户今天首条消息（非早安问候），自然问候
+            hour = datetime.now().hour
+            if 6 <= hour < 12:
+                sys_prompt += (
+                    "\n【首条消息感知】这是用户今天第一条消息。"
+                    "自然地问候一下，但不要刻意说'早安'，除非用户先说。"
+                    "比如'你来啦~'、'今天这么早？'之类的自然过渡。"
+                )
+                # 记录感知式早安已触发，让 9:30 cron 跳过
+                from .database import log_proactive
+                asyncio.create_task(log_proactive(
+                    ctx.user_id, "private", "[感知式早安]", scene="morning_triggered"
+                ))
 
         messages = [{"role": "system", "content": sys_prompt}]
         history_limit = REPLY_LENGTH_CONFIG["context_depth"] * CHAT_HISTORY_MULTIPLIER
