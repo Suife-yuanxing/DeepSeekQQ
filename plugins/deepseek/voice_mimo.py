@@ -48,6 +48,27 @@ EMOTION_STYLE_MAP = {
     "撒娇": "撒娇甜美，软软的",
 }
 
+# 情绪 → 音色映射（猫娘人设：活泼用冰糖，温柔用茉莉）
+EMOTION_VOICE_MAP = {
+    "开心": "冰糖",     # 活泼少女，元气满满
+    "兴奋": "冰糖",     # 活泼少女
+    "可爱": "冰糖",     # 活泼少女
+    "期待": "冰糖",     # 活泼少女
+    "傲娇": "冰糖",     # 嘴硬心软
+    "生气": "冰糖",     # 傲娇生气
+    "嫌弃": "冰糖",     # 傲娇嫌弃
+    "害羞": "茉莉",     # 温柔知性，软软的
+    "撒娇": "茉莉",     # 温柔甜美
+    "感动": "茉莉",     # 温暖治愈
+    "爱": "茉莉",       # 温柔
+    "难过": "茉莉",     # 温柔安慰
+    "担心": "茉莉",     # 关心体贴
+    "害怕": "茉莉",     # 安慰感
+    "平静": "茉莉",     # 温柔平静
+    "无聊": "茉莉",     # 慵懒温柔
+}
+DEFAULT_VOICE = "冰糖"  # 默认活泼少女
+
 
 async def generate_mimo_voice(text: str, emotion: Optional[str] = None) -> Optional[str]:
     """调用 MiMo TTS 生成语音文件。
@@ -70,9 +91,12 @@ async def generate_mimo_voice(text: str, emotion: Optional[str] = None) -> Optio
     # 确保输出目录存在
     os.makedirs(VOICE_DIR, exist_ok=True)
 
-    # 构建风格指令
+    # 构建风格指令和音色
     style = EMOTION_STYLE_MAP.get(emotion, DEFAULT_STYLE) if emotion else DEFAULT_STYLE
     style_instruction = f"用{style}的语气说话"
+
+    # 根据情绪选择音色（猫娘人设联动）
+    voice = EMOTION_VOICE_MAP.get(emotion, DEFAULT_VOICE) if emotion else DEFAULT_VOICE
 
     payload = {
         "model": "mimo-v2.5-tts",
@@ -82,7 +106,7 @@ async def generate_mimo_voice(text: str, emotion: Optional[str] = None) -> Optio
         ],
         "audio": {
             "format": "mp3",
-            "voice": MIMO_TTS_VOICE,
+            "voice": voice,
         },
     }
 
