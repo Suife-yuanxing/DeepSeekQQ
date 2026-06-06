@@ -181,6 +181,12 @@ MIMO_API_KEY: str = getattr(cfg, "mimo_api_key", "") or ""
 MIMO_API_BASE_URL: str = getattr(cfg, "mimo_api_base_url", "https://api.xiaomimimo.com/v1")
 MIMO_TTS_VOICE: str = getattr(cfg, "mimo_tts_voice", "冰糖")  # 冰糖/茉莉/苏打/白桦
 
+# === MiMo STT (语音识别) ===
+STT_ENGINE: str = getattr(cfg, "stt_engine", "mimo")  # "mimo" or "baidu"
+MIMO_STT_API_KEY: str = getattr(cfg, "mimo_stt_api_key", "") or ""
+MIMO_STT_API_BASE_URL: str = getattr(cfg, "mimo_stt_api_base_url", "https://api.xiaomimimo.com/v1")
+MIMO_STT_MODEL: str = getattr(cfg, "mimo_stt_model", "whisper-1")
+
 # === 手机控制 (ScreenMCP) ===
 PHONE_CONTROL_ENABLED: bool = str(getattr(cfg, "phone_control_enabled", "false")).lower() == "true"
 SCREENMCP_API_KEY: str = getattr(cfg, "screenmcp_api_key", "") or ""  # pk_xxx from screenmcp.com

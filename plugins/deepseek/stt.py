@@ -3,13 +3,12 @@
 功能：
 - 检测用户发送的语音消息
 - 下载语音文件
-- 调用百度语音识别 API 将语音转为文字
+- 调用 MiMo STT API（主）或百度语音识别 API（兜底）
 - 返回识别结果供主流程使用
 
-使用百度语音识别 REST API：
-- 短语音识别：https://vop.baidu.com/server_api
-- 支持 pcm/wav/amr 格式，16kHz 采样率
-- token 与 TTS 共用
+引擎优先级：
+1. MiMo STT（OpenAI 兼容 whisper）
+2. 百度语音识别（兜底）
 """
 import os
 import asyncio
@@ -23,7 +22,7 @@ import aiofiles
 from nonebot import logger
 from nonebot.adapters.onebot.v11 import MessageEvent, MessageSegment
 
-from .config import BAIDU_TTS_AK, BAIDU_TTS_SK
+from .config import BAIDU_TTS_AK, BAIDU_TTS_SK, STT_ENGINE
 from .api import get_http_session
 from .voice import _get_baidu_token
 
@@ -171,6 +170,10 @@ async def _cleanup_files(*paths):
 async def recognize_voice(event: MessageEvent) -> Optional[str]:
     """主入口：从语音消息中识别文字。
 
+    引擎优先级：
+    1. MiMo STT（如果配置了 MIMO_STT_API_KEY）
+    2. 百度 STT（兜底）
+
     Returns:
         识别出的文字，或 None（非语音消息/识别失败）
     """
@@ -187,19 +190,32 @@ async def recognize_voice(event: MessageEvent) -> Optional[str]:
         return None
 
     try:
-        # 转换为 PCM
+        # 转换为 PCM（百度需要，MiMo 可以直接用原始格式）
         pcm_path = await _convert_to_pcm(local_path)
         if not pcm_path:
             logger.warning("[STT] PCM转换失败，尝试直接识别原始格式")
-            # 如果已经是 wav 格式，尝试直接用
             if local_path.endswith(".wav"):
                 pcm_path = local_path
             else:
-                return None
+                pcm_path = None
 
-        # 调用百度 STT
-        text = await _call_baidu_stt(pcm_path)
-        return text
+        # 引擎 1: MiMo STT（优先）
+        if STT_ENGINE == "mimo":
+            from .stt_mimo import call_mimo_stt
+            # MiMo STT 可以直接处理 amr/wav/mp3 等格式
+            text = await call_mimo_stt(local_path)
+            if text:
+                return text
+            logger.warning("[MiMo STT] 识别失败，降级到百度 STT")
+
+        # 引擎 2: 百度 STT（兜底）
+        if pcm_path:
+            text = await _call_baidu_stt(pcm_path)
+            return text
+        else:
+            logger.warning("[百度 STT] 无 PCM 文件，跳过")
+            return None
+
     finally:
         # 异步清理
         asyncio.create_task(_cleanup_files(local_path))
