@@ -63,15 +63,15 @@ class TestReplyLengthEstimation:
 
     def test_emotional_message(self):
         result = estimate_reply_length("我今天好难过啊，想哭", [])
-        assert result["style"] == "情感倾诉"
+        assert result["style"] == "共情回应，简短但走心"
 
     def test_question_message(self):
         result = estimate_reply_length("你觉得这个怎么样？", [])
-        assert result["style"] == "认真回答"
+        assert result["style"] == "简洁回答，不用展开太多"
 
     def test_bot_angry_mood(self):
         result = estimate_reply_length("你好", [], bot_mood={"dominant": "生气"})
-        assert result["style"] == "冷淡不耐烦"
+        assert result["style"] == "冷淡不耐烦，回得短"
 
 
 if __name__ == "__main__":

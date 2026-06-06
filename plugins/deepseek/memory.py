@@ -9,6 +9,7 @@ import asyncio
 import re
 import json
 import random
+import time
 from datetime import datetime
 from typing import List, Dict, Any, Optional
 
@@ -24,6 +25,7 @@ from .database import (
     save_memory_tags, get_relevant_memory_tags, boost_memory_tag,
     get_user_mood, update_user_preference, get_top_preference,
     save_reply_quality, get_quality_stats,
+    get_session_state, save_session_state,
 )
 from .context_analyzer import analyze_context_and_emotion, AnalysisResult
 
@@ -86,6 +88,8 @@ async def save_reply(session_id: str, user_id: str, raw_msg: str, reply_text: st
     asyncio.create_task(_learn_preferences(user_id, raw_msg, reply_text, session_id))
     # 功能⑦：异步评估回复质量
     asyncio.create_task(_evaluate_reply_quality(user_id, session_id, raw_msg, reply_text))
+    # 跨会话状态更新
+    asyncio.create_task(_update_session_state(session_id, raw_msg, reply_text))
     # 策略性压缩：基于消息数或估算 token 数触发
     msg_count = await count_memories(session_id)
     if msg_count >= COMPRESS_MESSAGE_THRESHOLD:
@@ -218,8 +222,11 @@ async def _summarize_and_compress(session_id: str):
 
 async def _extract_memory_tags(user_id: str, session_id: str, user_msg: str, reply_text: str):
     """从对话中提取用户标签。新标签初始置信度 0.5。"""
-    if not isinstance(session_id, str) or not session_id.startswith("private_"):
-        if not any(k in user_msg + reply_text for k in ["喜欢", "讨厌", "怕", "不吃", "名字", "生日", "住", "工作", "专业"]):
+    # Phase 4：群聊也提取记忆标签（范围限定为关键事实）
+    is_group = isinstance(session_id, str) and session_id.startswith("group_")
+    if is_group:
+        # 群聊只提取明确的关键事实（避免噪音）
+        if not any(k in user_msg + reply_text for k in ["喜欢", "讨厌", "怕", "不吃", "名字", "生日", "住", "工作", "专业", "养了", "我是"]):
             return
 
     prompt = f"""从以下对话中，提取关于用户的客观关键信息（偏好、事实、禁忌、情绪）。
@@ -268,6 +275,21 @@ async def apply_affection_delta(user_id: str, raw_msg: str):
 async def _learn_preferences(user_id: str, raw_msg: str, reply_text: str, session_id: str):
     """从对话行为中异步学习用户偏好。"""
     try:
+        # 0. 关系风格学习（Phase 4）：检测用户的口吻风格
+        teasing_kw = ["笨蛋", "傻猫", "憨憨", "你不行", "就这", "菜", "笨猫", "蠢猫", "废物", "垃圾"]
+        polite_kw = ["请问", "谢谢", "麻烦", "帮忙", "辛苦了", "谢谢你", "多谢"]
+        gentle_kw = ["乖", "摸摸", "好喵", "可爱", "最喜欢你了", "抱抱"]
+
+        if any(kw in raw_msg for kw in teasing_kw):
+            from .database import update_relationship_style
+            await update_relationship_style(user_id, "tsundere", 0.05)
+        if any(kw in raw_msg for kw in polite_kw):
+            from .database import update_relationship_style
+            await update_relationship_style(user_id, "polite", 0.05)
+        if any(kw in raw_msg for kw in gentle_kw):
+            from .database import update_relationship_style
+            await update_relationship_style(user_id, "gentle", 0.05)
+
         # 1. 回复长度偏好：用户追问 = 想要更长回复
         if len(reply_text) < 30 and any(kw in raw_msg for kw in ["然后呢", "继续", "详细说", "说清楚", "没说完"]):
             await update_user_preference(user_id, "reply_length", "long", 0.1)
@@ -329,6 +351,10 @@ async def get_user_pref_hints(user_id: str) -> Dict[str, str]:
         top_topic = await get_top_preference(user_id, "topic_interest")
         if top_topic:
             result["topic_interest"] = top_topic
+        # Phase 4：关系风格
+        rel_style = await get_top_preference(user_id, "relationship_style")
+        if rel_style:
+            result["relationship_style"] = rel_style
         return result
     except Exception:
         return {}
@@ -412,3 +438,96 @@ async def _adjust_reply_strategy(user_id: str, stats: Dict[str, Any]):
 
     except Exception as e:
         logger.info(f"[策略] 调整失败（非关键）: {e}")
+
+
+# ---------- 跨会话上下文恢复 ----------
+
+async def recover_session_context(session_id: str, user_id: str) -> Optional[Dict[str, Any]]:
+    """在会话首条消息时，从 session_state 恢复上次对话的上下文。
+
+    只在会话「新鲜」时触发（当前会话历史为空或仅 1 条）。
+    返回一个包含 recall_prompt 的字典，用于注入 system prompt。
+    """
+    try:
+        state = await get_session_state(session_id)
+        if not state:
+            return None
+
+        # 检查当前会话是否「新鲜」（刚启动，还没有历史）
+        recent = await get_recent_memories(session_id, 3)
+        if len(recent) > 1:
+            return None  # 会话已有活跃对话，不需要恢复
+
+        last_interaction = state.get("last_interaction", 0)
+        if last_interaction == 0:
+            return None
+
+        hours_ago = (time.time() - last_interaction) / 3600
+        topic = state.get("last_topic", "")
+        emotion = state.get("last_emotion", "")
+
+        # 超过 30 天不恢复（太久远了）
+        if hours_ago > 720:
+            return None
+
+        # 构建自然的时间描述
+        if hours_ago < 1:
+            time_hint = "刚才"
+        elif hours_ago < 8:
+            time_hint = f"{int(hours_ago)}小时前"
+        elif hours_ago < 24:
+            time_hint = "昨天"
+        elif hours_ago < 48:
+            time_hint = "前天"
+        else:
+            time_hint = f"{int(hours_ago / 24)}天前"
+
+        recall_prompt = ""
+        if topic:
+            recall_prompt = (
+                f"你{time_hint}和他在聊「{topic}」，"
+                f"当时他{emotion}。" if emotion else
+                f"你{time_hint}和他在聊「{topic}」。"
+            )
+            recall_prompt += (
+                "如果他现在说的话和之前有关，自然地接上话题——"
+                "不用说「上次聊到」「之前说过」之类的废话，就像一直在聊一样自然接话。"
+            )
+
+        logger.info(f"[会话恢复] {session_id[:20]}... 上次: {topic[:30] if topic else '无'} ({time_hint})")
+        return {
+            "last_topic": topic,
+            "last_emotion": emotion,
+            "time_hint": time_hint,
+            "recall_prompt": recall_prompt,
+        }
+    except Exception as e:
+        logger.info(f"[会话恢复] 失败（非关键）: {e}")
+        return None
+
+
+async def _update_session_state(session_id: str, raw_msg: str, reply_text: str):
+    """每次回复后异步更新 session_state，记录当前对话状态。"""
+    try:
+        # 提取简要话题（用户消息中的前几个中文词）
+        topic_keywords = re.findall(r'[一-鿿]{2,8}', raw_msg)
+        topic = "、".join(topic_keywords[:3]) if topic_keywords else "闲聊"
+
+        # 提取用户可能的情绪
+        emotion = ""
+        if any(kw in raw_msg for kw in ["哈哈", "笑", "开心", "好", "棒", "喜欢"]):
+            emotion = "心情不错"
+        elif any(kw in raw_msg for kw in ["累", "烦", "难过", "哭", "气"]):
+            emotion = "情绪不太好"
+        elif any(kw in raw_msg for kw in ["？", "吗", "怎么", "为什么"]):
+            emotion = "在问问题"
+
+        await save_session_state(
+            session_id,
+            topic=topic[:30],
+            emotion=emotion,
+            context_summary=f"用户: {raw_msg[:100]} | 回复: {reply_text[:100]}"
+        )
+        logger.debug(f"[会话状态] {session_id[:20]}... 已更新: {topic[:20]}")
+    except Exception as e:
+        logger.debug(f"[会话状态] 更新失败（非关键）: {e}")

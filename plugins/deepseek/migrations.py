@@ -128,3 +128,92 @@ async def migrate_v3_add_preferences_and_quality(db: aiosqlite.Connection):
     """)
     await db.execute("CREATE INDEX IF NOT EXISTS idx_reply_quality_user ON reply_quality(user_id, created_at)")
     await db.commit()
+
+
+@migration(4)
+async def migrate_v4_add_memory_tiers(db: aiosqlite.Connection):
+    """添加记忆分层：short_term / long_term 两种衰减速率。"""
+    try:
+        await db.execute("ALTER TABLE memory_tags ADD COLUMN tier TEXT DEFAULT 'short_term'")
+    except Exception:
+        pass
+    # 将已有高置信度标签升级为长期记忆
+    await db.execute(
+        "UPDATE memory_tags SET tier = 'long_term' WHERE confidence >= 0.7 AND hit_count >= 3"
+    )
+    await db.commit()
+
+
+@migration(6)
+async def migrate_v6_add_user_profiles(db: aiosqlite.Connection):
+    """Phase 4：添加用户画像表（关系风格、昵称、兴趣摘要等）。"""
+    await db.execute("""
+        CREATE TABLE IF NOT EXISTS user_profiles (
+            user_id TEXT PRIMARY KEY,
+            relationship_style TEXT DEFAULT 'neutral',
+            nickname TEXT DEFAULT '',
+            first_interaction REAL,
+            total_messages INTEGER DEFAULT 0,
+            last_known_mood TEXT DEFAULT '',
+            known_interests TEXT DEFAULT '',
+            bot_self_summary TEXT DEFAULT ''
+        )
+    """)
+    await db.commit()
+
+
+@migration(5)
+async def migrate_v5_add_emotion_log(db: aiosqlite.Connection):
+    """添加情绪日志表（Phase 3）。"""
+    await db.execute("""
+        CREATE TABLE IF NOT EXISTS emotion_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id TEXT NOT NULL,
+            session_id TEXT NOT NULL,
+            emotion_label TEXT,
+            valence REAL,
+            arousal REAL,
+            trigger_text TEXT,
+            cause_chain TEXT,
+            timestamp REAL
+        )
+    """)
+    await db.execute("CREATE INDEX IF NOT EXISTS idx_emotion_log_ts ON emotion_log(timestamp)")
+    await db.commit()
+
+
+@migration(7)
+async def migrate_v7_add_milestones_and_first_interaction(db: aiosqlite.Connection):
+    """Phase 5：添加关系里程碑追踪表 + affection.first_interaction 字段。"""
+    await db.execute("""
+        CREATE TABLE IF NOT EXISTS relationship_milestones (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id TEXT NOT NULL,
+            milestone_type TEXT NOT NULL,
+            milestone_value INTEGER,
+            triggered_at REAL,
+            triggered BOOLEAN DEFAULT 0,
+            UNIQUE(user_id, milestone_type)
+        )
+    """)
+    # 为 affection 表添加 first_interaction 字段（用于计算认识时长）
+    try:
+        await db.execute("ALTER TABLE affection ADD COLUMN first_interaction REAL")
+    except Exception:
+        pass
+    await db.commit()
+
+
+@migration(8)
+async def migrate_v8_add_bot_disclosures(db: aiosqlite.Connection):
+    """添加 bot 自我披露追踪表。"""
+    await db.execute("""
+        CREATE TABLE IF NOT EXISTS bot_disclosures (
+            user_id TEXT NOT NULL,
+            disclosure_key TEXT NOT NULL,
+            revealed_at REAL,
+            reveal_count INTEGER DEFAULT 1,
+            UNIQUE(user_id, disclosure_key)
+        )
+    """)
+    await db.commit()

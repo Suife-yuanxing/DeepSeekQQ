@@ -119,10 +119,15 @@ async def on_start():
 
     async def _memory_maintenance():
         await asyncio.sleep(300)
-        await decay_memory_tags(decay_rate=0.02)
-        pruned = await prune_memory_tags(min_confidence=0.15)
+        # 分层衰减：短期记忆衰减快，长期记忆衰减慢
+        await decay_memory_tags(decay_rate=0.03, tier="short_term")
+        await decay_memory_tags(decay_rate=0.005, tier="long_term")
+        # 分层清理
+        pruned_short = await prune_memory_tags(min_confidence=0.10, tier="short_term")
+        pruned_long = await prune_memory_tags(min_confidence=0.05, tier="long_term")
+        pruned = (pruned_short or 0) + (pruned_long or 0)
         if pruned > 0:
-            logger.info(f"[记忆] 每日维护：清理了 {pruned} 条低置信度标签")
+            logger.info(f"[记忆] 每日维护：清理了 {pruned} 条低置信度标签 (短期={pruned_short or 0}, 长期={pruned_long or 0})")
 
     async def _image_cleanup():
         await asyncio.sleep(600)
@@ -135,7 +140,12 @@ async def on_start():
     loop_manager.register("WAL checkpoint", _db_checkpoint, 7200)
     loop_manager.register("提醒检查", _reminder_check, REMINDER_CHECK_INTERVAL)
     loop_manager.register("热搜推送", _hot_topics, 14400)
+    async def _affection_decay():
+        from .database import decay_affection
+        await decay_affection(inactive_days=7, decay_points=-1.0)
+
     loop_manager.register("记忆维护", _memory_maintenance, 86400)
+    loop_manager.register("好感度衰减", _affection_decay, 86400)
     loop_manager.register("图片缓存清理", _image_cleanup, 3600)
 
     # 启动所有任务

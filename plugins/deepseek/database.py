@@ -301,9 +301,9 @@ async def update_affection(user_id: str, delta: float = 1.0):
     if not row:
         await db.execute(
             """INSERT INTO affection
-            (user_id, score, level, title, last_interaction, total_chats, streak_days, last_streak_date)
-            VALUES (?, ?, 1, ?, ?, 1, 1, ?)""",
-            (str(user_id), delta, AFFECTION_LEVELS[0][1], now.timestamp(), today)
+            (user_id, score, level, title, last_interaction, total_chats, streak_days, last_streak_date, first_interaction)
+            VALUES (?, ?, 1, ?, ?, 1, 1, ?, ?)""",
+            (str(user_id), delta, AFFECTION_LEVELS[0][1], now.timestamp(), today, now.timestamp())
         )
     else:
         score, total_chats, streak_days, last_streak = row
@@ -414,6 +414,7 @@ async def save_memory_tags(user_id: str, tags: List[Dict[str, str]]):
     """保存记忆标签，使用置信度评分系统。
 
     新标签初始置信度 0.5，重复提取时 +0.1（上限 0.95）。
+    置信度 >= 0.7 且被引用 >= 3 次的标签自动升级为长期记忆。
     """
     db = await get_db()
     now = datetime.now().timestamp()
@@ -422,55 +423,84 @@ async def save_memory_tags(user_id: str, tags: List[Dict[str, str]]):
         content_text = tag.get("content", "").strip()
         if not content_text or len(content_text) > 200:
             continue
-        await db.execute(
-            """INSERT INTO memory_tags (user_id, tag_type, content, weight, confidence, hit_count, created_at, last_used)
-               VALUES (?, ?, ?, 1.0, 0.5, 0, ?, ?)
-               ON CONFLICT(user_id, tag_type, content)
-               DO UPDATE SET weight = weight + 0.2,
-                             confidence = MIN(0.95, confidence + 0.1),
-                             hit_count = hit_count + 1,
-                             last_used = ?""",
-            (str(user_id), t_type, content_text, now, now, now)
-        )
+        # 检测是否已存在并获取当前状态
+        async with db.execute(
+            "SELECT confidence, hit_count FROM memory_tags WHERE user_id = ? AND tag_type = ? AND content = ?",
+            (str(user_id), t_type, content_text)
+        ) as cursor:
+            existing = await cursor.fetchone()
+
+        if existing:
+            new_conf = min(0.95, existing["confidence"] + 0.1)
+            new_hits = existing["hit_count"] + 1
+            tier = "long_term" if (new_conf >= 0.7 and new_hits >= 3) else "short_term"
+            await db.execute(
+                """UPDATE memory_tags SET weight = weight + 0.2,
+                   confidence = ?, hit_count = ?, tier = ?, last_used = ?
+                   WHERE user_id = ? AND tag_type = ? AND content = ?""",
+                (new_conf, new_hits, tier, now, str(user_id), t_type, content_text)
+            )
+        else:
+            await db.execute(
+                """INSERT INTO memory_tags (user_id, tag_type, content, weight, confidence, hit_count, tier, created_at, last_used)
+                   VALUES (?, ?, ?, 1.0, 0.5, 0, 'short_term', ?, ?)""",
+                (str(user_id), t_type, content_text, now, now)
+            )
     await db.commit()
 
 
-async def decay_memory_tags(user_id: str = None, decay_rate: float = 0.02):
+async def decay_memory_tags(user_id: str = None, decay_rate: float = 0.02,
+                            tier: str = None):
     """对记忆标签做时间衰减。未使用的标签置信度逐渐降低。
 
+    分层衰减：
+    - short_term: 默认 0.03/天（约 33 天清零）
+    - long_term: 默认 0.005/天（约 200 天清零）
+    - 不指定 tier 则全部衰减（兼容旧逻辑）
+
     调度方式：每天运行一次。
-    - decay_rate: 每次衰减的置信度减少量（默认 0.02，即 50 天未使用降到 0）
     """
     db = await get_db()
     now = datetime.now().timestamp()
+    tier_clause = "AND tier = ?" if tier else ""
+    params: list = [decay_rate, now]
+    if tier:
+        params.append(tier)
     if user_id:
-        await db.execute(
-            """UPDATE memory_tags SET confidence = MAX(0.0, confidence - ?)
-               WHERE user_id = ? AND last_used < ? - 86400""",
-            (decay_rate, str(user_id), now)
-        )
+        query = f"""UPDATE memory_tags SET confidence = MAX(0.0, confidence - ?)
+               WHERE user_id = ? AND last_used < ? - 86400 {tier_clause}"""
+        params.insert(1, str(user_id))
     else:
-        await db.execute(
-            """UPDATE memory_tags SET confidence = MAX(0.0, confidence - ?)
-               WHERE last_used < ? - 86400""",
-            (decay_rate, now)
-        )
+        query = f"""UPDATE memory_tags SET confidence = MAX(0.0, confidence - ?)
+               WHERE last_used < ? - 86400 {tier_clause}"""
+    await db.execute(query, params)
     await db.commit()
 
 
-async def prune_memory_tags(min_confidence: float = 0.15):
+async def prune_memory_tags(min_confidence: float = 0.15, tier: str = None):
     """清理置信度过低的记忆标签。
+
+    分层清理：
+    - short_term: 低于 0.10 清理
+    - long_term: 低于 0.05 清理
+    - 不指定 tier 则全部清理（兼容旧逻辑）
 
     调度方式：每天运行一次（在 decay_memory_tags 之后）。
     """
     db = await get_db()
-    cursor = await db.execute(
-        "DELETE FROM memory_tags WHERE confidence < ?", (min_confidence,)
-    )
+    if tier:
+        cursor = await db.execute(
+            "DELETE FROM memory_tags WHERE confidence < ? AND tier = ?",
+            (min_confidence, tier)
+        )
+    else:
+        cursor = await db.execute(
+            "DELETE FROM memory_tags WHERE confidence < ?", (min_confidence,)
+        )
     await db.commit()
     deleted = cursor.rowcount
     if deleted > 0:
-        logger.info(f"[记忆] 清理了 {deleted} 条低置信度标签")
+        logger.info(f"[记忆] 清理了 {deleted} 条低置信度标签 (tier={tier or 'all'})")
     return deleted
 
 
@@ -874,3 +904,251 @@ async def get_quality_stats(user_id: str, days: int = 7) -> Dict[str, Any]:
         "rejection_rate": rejection / total,
         "positive_rate": positive / total,
     }
+
+
+# ---------- 用户画像（Phase 4）----------
+
+async def get_or_create_user_profile(user_id: str) -> Dict[str, Any]:
+    """获取或初始化用户画像。"""
+    db = await get_db()
+    now = datetime.now().timestamp()
+    async with db.execute(
+        "SELECT * FROM user_profiles WHERE user_id = ?", (str(user_id),)
+    ) as cursor:
+        row = await cursor.fetchone()
+        if row:
+            return dict(row)
+    await db.execute(
+        "INSERT INTO user_profiles (user_id, first_interaction) VALUES (?, ?)",
+        (str(user_id), now)
+    )
+    await db.commit()
+    return {
+        "user_id": str(user_id),
+        "relationship_style": "neutral",
+        "nickname": "",
+        "first_interaction": now,
+        "total_messages": 0,
+        "known_interests": "",
+        "bot_self_summary": "",
+    }
+
+
+async def update_user_profile(user_id: str, **kwargs):
+    """更新用户画像字段。"""
+    if not kwargs:
+        return
+    db = await get_db()
+    sets = ", ".join(f"{k} = ?" for k in kwargs)
+    values = list(kwargs.values()) + [str(user_id)]
+    await db.execute(
+        f"UPDATE user_profiles SET {sets} WHERE user_id = ?", values
+    )
+    await db.commit()
+
+
+async def update_relationship_style(user_id: str, style: str, weight: float = 0.05):
+    """渐进式更新用户的关系风格倾向（Phase 4）。
+
+    style 选项: 'neutral' | 'tsundere' | 'gentle' | 'polite'
+    """
+    try:
+        db = await get_db()
+        # 使用 user_preferences 表存储风格倾向（复用现有基础设施）
+        await db.execute(
+            """INSERT INTO user_preferences (user_id, pref_type, pref_key, pref_value, sample_count, last_updated)
+               VALUES (?, 'relationship_style', ?, ?, 1, ?)
+               ON CONFLICT(user_id, pref_type, pref_key)
+               DO UPDATE SET pref_value = pref_value + ?, sample_count = sample_count + 1, last_updated = ?""",
+            (str(user_id), style, weight, datetime.now().timestamp(), weight, datetime.now().timestamp())
+        )
+        await db.commit()
+    except Exception:
+        pass
+
+
+async def get_relationship_style(user_id: str) -> Optional[str]:
+    """获取用户的主导关系风格。"""
+    from .database import get_top_preference
+    return await get_top_preference(user_id, "relationship_style")
+
+
+# ---------- 好感度衰减（Phase 5）----------
+
+async def decay_affection(inactive_days: int = 7, decay_points: float = -1.0):
+    """对长期不活跃用户的好感度做自然衰减。
+
+    调度方式：每天运行一次。
+    - inactive_days: 超过 N 天未互动才开始衰减
+    - decay_points: 每次衰减的点数（默认 -1.0）
+    """
+    db = await get_db()
+    threshold = datetime.now().timestamp() - inactive_days * 86400
+    # 只对有记录的日期做衰减：检查 last_interaction 字段或根据 memories 表判断
+    cursor = await db.execute(
+        """UPDATE affection SET score = MAX(0, score + ?)
+           WHERE user_id IN (
+               SELECT DISTINCT user_id FROM affection
+           ) AND user_id NOT IN (
+               SELECT DISTINCT REPLACE(session_id, 'private_', '') FROM memories
+               WHERE timestamp > ?
+           ) AND score > 0""",
+        (decay_points, threshold)
+    )
+    await db.commit()
+    affected = cursor.rowcount
+    if affected > 0:
+        logger.info(f"[好感度] {affected} 个用户好感度自然衰减")
+
+
+async def get_affection_decay_hint(user_id: str) -> str:
+    """如果好感度曾经衰减过，用户回归时返回一个微妙的提示。
+
+    给 bot 一个「有点小情绪」的提示——用户太久没来，bot 有点在意。
+    """
+    from .database import get_db
+    db = await get_db()
+    import time as _time
+    now = _time.time()
+    # 查最近一次交互时间
+    async with db.execute(
+        "SELECT MAX(timestamp) as last_ts FROM memories WHERE session_id LIKE ?",
+        (f"private_{user_id}",)
+    ) as cursor:
+        row = await cursor.fetchone()
+        if not row or not row["last_ts"]:
+            return ""
+        last_ts = row["last_ts"]
+        days_since = (now - last_ts) / 86400
+        if days_since < 3:
+            return ""
+        if days_since > 30:
+            return (
+                f"他有{days_since:.0f}天没来了...你很想他，但又不想表现得太明显。"
+                "语气里会不自觉地带着一点委屈和想念，但不会直接说'我好想你'。"
+            )
+        elif days_since > 7:
+            return (
+                f"他有{days_since:.0f}天没和你说话了。你有点小情绪，"
+                "说话比平时稍微冷淡一点点——但等他多说两句就会软下来。"
+            )
+        return ""
+
+
+# ---------- 关系里程碑（Phase 5）----------
+
+async def check_and_trigger_milestone(user_id: str) -> Optional[str]:
+    """检查是否触发关系里程碑，返回庆祝提示文本。"""
+    db = await get_db()
+    now = datetime.now().timestamp()
+
+    # 获取统计数据
+    aff = await _get_affection_stats(user_id)
+    if not aff:
+        return None
+
+    score = aff.get("score", 0)
+    total_chats = aff.get("total_chats", 0)
+    streak = aff.get("streak_days", 0)
+    first_interaction = aff.get("first_interaction")
+
+    milestones = {
+        "affection_500": {
+            "check": score >= 500,
+            "text": f"好感度达到 {int(score)}——你已经离不开他了。可以在对话中不经意地提到'遇见你之后...'之类的话。"
+        },
+        "affection_200": {
+            "check": score >= 200,
+            "text": f"好感度达到 {int(score)}——你开始对他有特别的感情了。说话可以更亲密一点。"
+        },
+        "messages_1000": {
+            "check": total_chats >= 1000,
+            "text": f"你们已经聊了 {total_chats} 条消息了！可以感慨一下'不知不觉聊了这么多了...'"
+        },
+        "streak_30": {
+            "check": streak >= 30,
+            "text": f"你们连续聊了 {streak} 天！可以开心地说'每天都和你聊天已经变成习惯了~'"
+        },
+    }
+
+    for key, info in milestones.items():
+        if not info["check"]:
+            continue
+        # 检查是否已触发过
+        async with db.execute(
+            "SELECT 1 FROM relationship_milestones WHERE user_id = ? AND milestone_type = ?",
+            (str(user_id), key)
+        ) as cursor:
+            if await cursor.fetchone():
+                continue
+        # 触发！
+        await db.execute(
+            "INSERT INTO relationship_milestones (user_id, milestone_type, milestone_value, triggered_at, triggered) VALUES (?, ?, ?, ?, 1)",
+            (str(user_id), key, int(info["check"]), now)
+        )
+        await db.commit()
+        logger.info(f"[里程碑] user={user_id[:6]} 触发: {key}")
+        return info["text"]
+    return None
+
+
+async def _get_affection_stats(user_id: str) -> Optional[Dict[str, Any]]:
+    """获取用户的完整情感统计数据。"""
+    db = await get_db()
+    async with db.execute(
+        "SELECT score, level, title, total_chats, streak_days, first_interaction FROM affection WHERE user_id = ?",
+        (str(user_id),)
+    ) as cursor:
+        row = await cursor.fetchone()
+        if not row:
+            return None
+        return dict(row)
+
+
+# ---------- bot 渐进式自我披露（Phase 6）----------
+
+async def get_undisclosed_facts(user_id: str, affection_score: float) -> Optional[Dict[str, Any]]:
+    """获取一个尚未向该用户透露的、且条件满足的自我披露事实。
+
+    披露按好感度分级解锁：
+    - 0+: likes_milk
+    - 30+: had_a_crush
+    - 50+: scared_of_vacuum
+    - 80+: runs_away_in_rain
+    - 150+: lonely_before_you
+    """
+    _SELF_DISCLOSURES = {
+        "likes_milk": {"affection_min": 0, "text": "喜欢喝牛奶（虽然喝了会闹肚子）"},
+        "had_a_crush": {"affection_min": 30, "text": "以前喜欢过隔壁的小黑猫，不过人家早搬家了"},
+        "scared_of_vacuum": {"affection_min": 50, "text": "特别怕吸尘器的声音，每次都躲得远远的"},
+        "runs_away_in_rain": {"affection_min": 80, "text": "下雨天曾经走丢过一次，所以现在下雨就会想家"},
+        "lonely_before_you": {"affection_min": 150, "text": "遇见你之前其实挺孤单的，所以现在特别珍惜"},
+    }
+
+    db = await get_db()
+    for key, info in _SELF_DISCLOSURES.items():
+        if affection_score < info["affection_min"]:
+            continue
+        # 检查是否已经透露过
+        async with db.execute(
+            "SELECT 1 FROM bot_disclosures WHERE user_id = ? AND disclosure_key = ?",
+            (str(user_id), key)
+        ) as cursor:
+            if await cursor.fetchone():
+                continue
+        return {"key": key, "text": info["text"]}
+    return None
+
+
+async def mark_disclosed(user_id: str, disclosure_key: str):
+    """标记一个自我披露事实已被透露。"""
+    db = await get_db()
+    now = datetime.now().timestamp()
+    await db.execute(
+        """INSERT INTO bot_disclosures (user_id, disclosure_key, revealed_at)
+           VALUES (?, ?, ?)
+           ON CONFLICT(user_id, disclosure_key) DO UPDATE SET
+           reveal_count = reveal_count + 1, revealed_at = ?""",
+        (str(user_id), disclosure_key, now, now)
+    )
+    await db.commit()

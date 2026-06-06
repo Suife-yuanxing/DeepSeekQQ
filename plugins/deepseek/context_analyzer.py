@@ -44,6 +44,8 @@ class EmotionState:
     dominant: str = "平静"     # 主导情绪标签
     confidence: float = 0.5   # 分析置信度
     intensity: float = 0.0    # 情绪强度 0~1
+    secondary: str = ""       # 复合情绪标签（如"害羞"）
+    is_compound: bool = False # 是否复合情绪
 
 
 @dataclass
@@ -75,11 +77,53 @@ EMOTION_VA_MAP = {
     "无语": (-0.2, 0.2),
 }
 
+# 复合情绪VA调和值（Phase 3）
+COMPOUND_EMOTION_BLENDS = {
+    "开心但害羞": (0.5, 0.6, "明明高兴但不好意思表现出来"),
+    "生气又委屈": (-0.65, 0.55, "又气又想哭的感觉"),
+    "期待但紧张": (0.3, 0.7, "既期待又有点怕"),
+    "感动又心酸": (0.2, 0.45, "被感动到了但又有点酸酸的"),
+    "嫌弃但好笑": (-0.1, 0.4, "嘴上嫌弃但其实想笑"),
+    "担心又无奈": (-0.35, 0.35, "担心但又没办法"),
+}
+
 # 情绪惯性系数：保留旧情绪的比例
 EMOTION_INERTIA = 0.65
 
 # 情绪衰减配置
 DECAY_HALF_LIFE_SECONDS = 1800  # 30分钟半衰期（激动情绪衰减到一半）
+
+
+def apply_environmental_modifiers(emotion: 'EmotionState') -> 'EmotionState':
+    """根据时间/星期施加微妙的情绪修正（Phase 3）。
+
+    修正量很小（±0.05），不影响主要情绪，只是增加真实感。
+    """
+    from datetime import datetime
+    hour = datetime.now().hour
+    weekday = datetime.now().weekday()
+
+    v_mod, a_mod = 0.0, 0.0
+
+    # 深夜：唤醒度降低（困了）
+    if hour >= 23 or hour <= 3:
+        a_mod -= 0.05
+    # 清晨：唤醒度稍高但效价中性
+    elif 5 <= hour <= 7:
+        a_mod += 0.02
+    # 周一早上：轻微负面
+    if weekday == 0 and hour < 10:
+        v_mod -= 0.03
+    # 周五晚上/周六：情绪更好
+    if weekday in [4, 5] and hour >= 18:
+        v_mod += 0.03
+    # 周末懒散
+    if weekday in [5, 6] and hour < 10:
+        a_mod -= 0.02
+
+    emotion.valence = max(-1.0, min(1.0, emotion.valence + v_mod))
+    emotion.arousal = max(0.0, min(1.0, emotion.arousal + a_mod))
+    return emotion
 
 
 # ============================================================
@@ -118,7 +162,8 @@ def _build_analysis_prompt(user_msg: str, history: List[Dict[str, Any]]) -> str:
     "arousal": 0.0到1.0,
     "type": "开心/兴奋/害羞/傲娇/平静/无聊/难过/生气/担心/害怕/嫌弃/期待/感动/无语",
     "confidence": 0.0到1.0,
-    "intensity": 0.0到1.0
+    "intensity": 0.0到1.0,
+    "secondary": "如果有复合情绪(如开心但害羞、生气又委屈)填次情绪，否则留空"
   }}
 }}```"""
 
@@ -207,21 +252,34 @@ async def analyze_context_and_emotion(
         final_valence = max(-1.0, min(1.0, final_valence))
         final_arousal = max(0.0, min(1.0, final_arousal))
 
+        # 复合情绪检测（Phase 3）
+        secondary = emo_data.get("secondary", "")
+        is_compound = bool(secondary)
+
         emotion = EmotionState(
             valence=final_valence,
             arousal=final_arousal,
             dominant=emo_type,
             confidence=confidence,
             intensity=intensity,
+            secondary=secondary,
+            is_compound=is_compound,
         )
+
+        # Phase 3：应用环境情绪修正
+        emotion = apply_environmental_modifiers(emotion)
 
         # 持久化用户情绪
         await update_user_mood(user_id, final_valence, final_arousal, emo_type)
 
+        # Phase 3：异步记录情绪日志
+        asyncio_create_task = __import__('asyncio').create_task
+        asyncio_create_task(_log_emotion(user_id, "private_" + user_id, emo_type, final_valence, final_arousal, user_msg))
+
         logger.info(
             f"[分析] 用户={user_id[:6]} 意图={context.user_intent} "
             f"话题延续={context.is_topic_continuation} "
-            f"情绪={emo_type}(V={final_valence:.2f} A={final_arousal:.2f} conf={confidence:.2f})"
+            f"情绪={emo_type}{'+'+secondary if secondary else ''}(V={final_valence:.2f} A={final_arousal:.2f} conf={confidence:.2f})"
         )
 
         return AnalysisResult(context=context, emotion=emotion, raw_response=data)
@@ -236,6 +294,48 @@ def _decay_factor(dt_seconds: float) -> float:
     return math.exp(-0.693 * dt_seconds / DECAY_HALF_LIFE_SECONDS)
 
 
+async def _log_emotion(user_id: str, session_id: str, emotion_label: str,
+                       valence: float, arousal: float, trigger_text: str):
+    """异步记录情绪快照到 emotion_log 表（Phase 3）。"""
+    try:
+        from .database import get_db
+        db = await get_db()
+        await db.execute(
+            """INSERT INTO emotion_log (user_id, session_id, emotion_label, valence, arousal, trigger_text, cause_chain, timestamp)
+               VALUES (?, ?, ?, ?, ?, ?, '', ?)""",
+            (user_id, session_id, emotion_label, valence, arousal, trigger_text[:100], time.time())
+        )
+        await db.commit()
+    except Exception:
+        pass  # 情绪日志失败不影响主流程
+
+
+async def get_emotion_cause_chain(user_id: str, lookback: int = 10) -> str:
+    """查询最近 N 条情绪日志，生成简单因果链（Phase 3）。"""
+    try:
+        from .database import get_db
+        db = await get_db()
+        async with db.execute(
+            """SELECT emotion_label, trigger_text, timestamp FROM emotion_log
+               WHERE user_id = ? ORDER BY timestamp DESC LIMIT ?""",
+            (user_id, lookback)
+        ) as cursor:
+            rows = await cursor.fetchall()
+        if not rows or len(rows) < 3:
+            return ""
+        # 构建简单因果链：最近的情绪变化
+        labels = [r["emotion_label"] for r in reversed(rows)]
+        unique_labels = []
+        for l in labels:
+            if not unique_labels or l != unique_labels[-1]:
+                unique_labels.append(l)
+        if len(unique_labels) >= 3:
+            return "→".join(unique_labels[-5:])
+        return ""
+    except Exception:
+        return ""
+
+
 # ============================================================
 # 情绪 → Prompt 映射
 # ============================================================
@@ -244,6 +344,16 @@ def emotion_to_prompt_hint(emotion: EmotionState) -> str:
     """将 VA 情绪状态转化为 prompt 中的语气提示"""
     if emotion.confidence < 0.4:
         return ""  # 置信度太低不注入
+
+    v, a = emotion.valence, emotion.arousal
+    dominant = emotion.dominant
+
+    # Phase 3：复合情绪提示
+    if emotion.is_compound and emotion.secondary:
+        compound_key = f"{dominant}但{emotion.secondary}" if "但" not in emotion.secondary else emotion.secondary
+        blend = COMPOUND_EMOTION_BLENDS.get(compound_key)
+        if blend:
+            return f"你现在是复合情绪：{compound_key}——{blend[2]}。语气要有层次感。"
 
     v, a = emotion.valence, emotion.arousal
     dominant = emotion.dominant
@@ -309,25 +419,66 @@ BOT_MOOD_DURATION = {
 # 触发bot情绪变化的关键词
 _BOT_EMOTION_TRIGGERS = {
     "生气": {
-        "keywords": ["滚", "烦死了", "闭嘴", "讨厌", "你烦不烦", "别说了", "不想理你", "无语", "sb", "傻逼"],
+        "keywords": [
+            "滚", "烦死了", "闭嘴", "讨厌", "你烦不烦", "别说了", "不想理你",
+            "无语", "sb", "傻逼", "闭嘴吧", "别吵", "吵死了", "好烦",
+            "离我远点", "不想和你说话", "你很啰嗦", "你是不是有病", "废话真多",
+        ],
         "valence": -0.7, "arousal": 0.8, "reason": "被用户凶了",
     },
     "难过": {
-        "keywords": ["不想聊了", "没意思", "算了", "无所谓", "随便吧", "你走吧", "不想说"],
+        "keywords": [
+            "不想聊了", "没意思", "算了", "无所谓", "随便吧", "你走吧",
+            "不想说", "无聊", "你不懂", "行吧行吧", "随你便", "当我没说",
+        ],
         "valence": -0.6, "arousal": 0.3, "reason": "感觉被冷落了",
     },
     "开心": {
-        "keywords": ["喜欢你", "你真好", "可爱", "乖", "想你了", "爱你", "宝贝", "最棒了", "辛苦了"],
+        "keywords": [
+            "喜欢你", "你真好", "可爱", "乖", "想你了", "爱你", "宝贝",
+            "最棒了", "辛苦了", "最爱你了", "你最强", "有你在真好",
+            "你真聪明", "你真可爱", "不愧是你", "好喵", "厉害",
+        ],
         "valence": 0.7, "arousal": 0.6, "reason": "被夸奖了",
     },
     "害羞": {
-        "keywords": ["好看", "漂亮", "美女", "心动", "表白", "在一起", "亲一个", "抱抱我"],
+        "keywords": [
+            "好看", "漂亮", "美女", "心动", "表白", "在一起", "亲一个",
+            "抱抱我", "今晚有空吗", "约会", "想你", "你真美", "想抱你",
+            "想牵你的手", "你身材真好",
+        ],
         "valence": 0.3, "arousal": 0.65, "reason": "被撩了",
+    },
+    "吃醋": {
+        "keywords": [
+            "她是谁", "那个女的", "和谁聊", "挺亲密的", "也不找我",
+            "只回我", "和别人聊天", "群里那个", "新来的谁",
+        ],
+        "valence": -0.3, "arousal": 0.5, "reason": "看到主人和别人聊天，吃醋了",
+    },
+    "担心": {
+        "keywords": [
+            "病了", "不舒服", "医院", "头疼", "发烧", "感冒", "难受",
+            "不开心", "心情不好", "要死了", "好累", "没睡好",
+        ],
+        "valence": -0.4, "arousal": 0.55, "reason": "担心主人的状态",
+    },
+    "得意": {
+        "keywords": [
+            "你还挺厉害", "可以啊", "真棒", "最强", "就靠你了",
+            "还是你懂", "有道理", "你说得对", "竟然被你猜到了",
+        ],
+        "valence": 0.5, "arousal": 0.4, "reason": "被夸了，得意起来",
     },
 }
 
 # 安抚关键词（可以加速消解负面情绪）
-_COMFORT_KEYWORDS = ["对不起", "抱歉", "别生气", "我错了", "抱抱", "乖", "不生气了", "心疼", "安慰", "好了好了"]
+_COMFORT_KEYWORDS = [
+    "对不起", "抱歉", "别生气", "我错了", "抱抱", "乖", "不生气了",
+    "心疼", "安慰", "好了好了", "好啦好啦", "你最好了", "不气不气",
+    "我逗你的", "开个玩笑", "真的错了", "原谅我", "给你买",
+    "请你吃", "乖啦", "听话", "么么哒", "mua",
+]
 
 
 async def update_bot_emotion(user_msg: str, user_emotion: EmotionState) -> Dict[str, Any]:

@@ -18,7 +18,7 @@ from nonebot import logger
 from .config import REPLY_LENGTH_CONFIG, RANDOM_REPLY_CHANCE, ANALYSIS_HISTORY_LIMIT, CHAT_HISTORY_MULTIPLIER, PHONE_CONTROL_ENABLED, MY_QQ, STT_ENABLED
 from .prompt import _build_system_prompt, estimate_reply_length
 from .utils import split_long_reply, calc_message_delay, get_session_id, check_rate_limit, filter_novel_actions
-from .memory import save_and_get_context, save_reply, apply_affection_delta, save_and_get_context_with_history, get_user_pref_hints
+from .memory import save_and_get_context, save_reply, apply_affection_delta, save_and_get_context_with_history, get_user_pref_hints, recover_session_context
 from .share_parser import extract_and_cache_shares, get_recent_shares
 from .share_prompt import build_analysis_prompt
 from .api import call_deepseek_api
@@ -121,6 +121,14 @@ class ChatContext:
     user_prefs: dict = field(default_factory=dict)
     # 图片生成（功能④）
     image_path: str = ""
+    # 跨会话恢复
+    session_recovery: Optional[dict] = None
+    # 渐进式自我披露
+    disclosure_hint: Optional[str] = None
+    # 好感度衰减提示
+    affection_decay_hint: Optional[str] = None
+    # 关系里程碑
+    milestone_hint: Optional[str] = None
 
 
 def _is_multi_topic(msg: str) -> bool:
@@ -311,6 +319,13 @@ async def _stage_security(ctx: ChatContext) -> Optional[str]:
     return None
 
 
+@stage("session_recovery")
+async def _stage_session_recovery(ctx: ChatContext) -> Optional[str]:
+    """跨会话上下文恢复：在新会话首条消息时恢复上次话题。"""
+    ctx.session_recovery = await recover_session_context(ctx.session_id, ctx.user_id)
+    return None
+
+
 @stage("voice_recognition")
 async def _stage_voice(ctx: ChatContext) -> Optional[str]:
     """语音识别：将语音消息转为文字。"""
@@ -483,6 +498,24 @@ async def _stage_context(ctx: ChatContext) -> Optional[str]:
     ctx.emotion_params = get_emotion_params(ctx.analysis.emotion)
     # 功能③：获取用户偏好
     ctx.user_prefs = await get_user_pref_hints(ctx.user_id)
+    # Phase 6：渐进式自我披露（15%概率）
+    if ctx.affection and random.random() < 0.15:
+        from .database import get_undisclosed_facts
+        ctx.disclosure_hint = await get_undisclosed_facts(ctx.user_id, ctx.affection.get("score", 0))
+        if ctx.disclosure_hint:
+            from .database import mark_disclosed
+            asyncio.create_task(mark_disclosed(ctx.user_id, ctx.disclosure_hint["key"]))
+
+    # Phase 5：好感度衰减提示（用户回归时注入）
+    if ctx.affection and ctx.session_recovery:
+        from .database import get_affection_decay_hint
+        ctx.affection_decay_hint = await get_affection_decay_hint(ctx.user_id)
+    else:
+        ctx.affection_decay_hint = None
+
+    # Phase 5：关系里程碑检查
+    from .database import check_and_trigger_milestone
+    ctx.milestone_hint = await check_and_trigger_milestone(ctx.user_id)
 
     if ctx.analysis.context.referenced_entity:
         logger.info(f"[指代消解] 检测到指代: {ctx.analysis.context.referenced_entity}")
@@ -536,7 +569,10 @@ async def _stage_llm(ctx: ChatContext) -> Optional[str]:
             context_analysis=ctx.analysis.context, emotion_state=ctx.analysis.emotion,
             search_context=search_ctx, reminder_context=ctx.reminder_context,
             world_context=ctx.world_context, bot_mood=ctx.bot_mood_result,
-            user_prefs=ctx.user_prefs,
+            user_prefs=ctx.user_prefs, session_recovery=ctx.session_recovery,
+            disclosure_hint=ctx.disclosure_hint["text"] if ctx.disclosure_hint else None,
+            affection_decay_hint=ctx.affection_decay_hint,
+            milestone_hint=ctx.milestone_hint,
         )
         sys_prompt += "\n回复风格：专业分析+个性点评。分析部分结构化、有深度，点评部分保持你的猫娘语气。绝对禁止括号动作描写。"
         messages = [{"role": "system", "content": sys_prompt}]
@@ -560,7 +596,10 @@ async def _stage_llm(ctx: ChatContext) -> Optional[str]:
             context_analysis=ctx.analysis.context, emotion_state=ctx.analysis.emotion,
             search_context=search_ctx, reminder_context=ctx.reminder_context,
             world_context=ctx.world_context, bot_mood=ctx.bot_mood_result,
-            user_prefs=ctx.user_prefs,
+            user_prefs=ctx.user_prefs, session_recovery=ctx.session_recovery,
+            disclosure_hint=ctx.disclosure_hint["text"] if ctx.disclosure_hint else None,
+            affection_decay_hint=ctx.affection_decay_hint,
+            milestone_hint=ctx.milestone_hint,
         )
 
         # 问候感知：注入时间上下文和回复约束
@@ -634,6 +673,93 @@ async def _stage_plugins(ctx: ChatContext) -> Optional[str]:
     return None
 
 
+@stage("humanize")
+async def _stage_humanize(ctx: ChatContext) -> Optional[str]:
+    """拟人化处理：偶尔加入错别字纠正、改变主意、不确定表达。
+
+    这些微小的「不完美」让 bot 更像真人——真人会犯错、会矛盾、会不确定。
+    概率都很低，不影响正常对话质量。
+    """
+    if not ctx.reply_text:
+        return None
+
+    text = ctx.reply_text
+
+    # 3% 概率插入错别字并自我纠正
+    if random.random() < 0.03:
+        text = _introduce_typo(text)
+
+    # 2% 概率插入「改变主意」
+    if random.random() < 0.02:
+        text = _introduce_mind_change(text)
+
+    # 1% 概率插入不确定前缀
+    if random.random() < 0.01 and len(text) > 10:
+        text = _introduce_uncertainty(text)
+
+    ctx.reply_text = text
+    return None
+
+
+# ---------- humanize 辅助函数 ----------
+
+_TYPO_PAIRS = [
+    ("的", "地"), ("怎么", "这么"), ("觉得", "决得"),
+    ("好像", "号像"), ("不是", "不四"), ("真的", "真地"),
+    ("可以", "可一"), ("有点", "有点电"),
+]
+
+
+def _introduce_typo(text: str) -> str:
+    """插入一个错别字并自我纠正：「...决得...啊不对，觉得...」"""
+    if len(text) < 8:
+        return text
+    random.shuffle(_TYPO_PAIRS)
+    for correct, typo in _TYPO_PAIRS:
+        if correct in text:
+            text = text.replace(correct, typo, 1)
+            # 偶尔用不同方式纠正
+            correctors = [
+                f" 啊不对，{correct}",
+                f" ...打错了，{correct}",
+                f" 呃不是，{correct}",
+            ]
+            text += random.choice(correctors)
+            return text
+    return text
+
+
+_MIND_CHANGE_PIVOTS = [
+    "等等，其实...",
+    "算了不说了，",
+    "嗯让我想想...",
+    "不对不对，",
+    "等下，",
+    "啊算了，",
+]
+
+
+def _introduce_mind_change(text: str) -> str:
+    """模拟改变主意或犹豫。"""
+    if len(text) < 10:
+        return text
+    return random.choice(_MIND_CHANGE_PIVOTS) + text[0].lower() + text[1:]
+
+
+_UNCERTAINTY_PREFIXES = [
+    "不太确定但...",
+    "好像是...",
+    "我记得大概是...",
+    "印象中...",
+    "感觉...",
+]
+
+
+def _introduce_uncertainty(text: str) -> str:
+    """添加自然的不确定前缀。"""
+    return random.choice(_UNCERTAINTY_PREFIXES) + text[0].lower() + text[1:]
+
+
 @stage("post_process")
 async def _stage_post(ctx: ChatContext) -> Optional[str]:
     """后处理：保存回复、表情包、发送。"""
@@ -662,6 +788,11 @@ async def _stage_post(ctx: ChatContext) -> Optional[str]:
     # 发送（根据场景决定是否引用回复）
     should_quote = _should_quote(ctx)
     first_sent = False
+
+    # 拟人化：15% 概率在发第一条消息前犹豫一下（模拟看消息+思考）
+    if random.random() < 0.15:
+        await asyncio.sleep(random.uniform(2.0, 5.0))
+
     send_as_voice = should_send_voice(ctx.raw_msg, clean_text, ctx.recent_memories)
     if send_as_voice:
         logger.warning(f"[决策] 上下文判断发语音，跳过文字: {clean_text[:30]}...")

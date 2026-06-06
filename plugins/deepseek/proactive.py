@@ -234,8 +234,59 @@ async def register_proactive_jobs(bot):
     if hg["enabled"]:
         _scheduler.add_job(_holiday_greeting, 'cron', hour=0, minute=1, args=[bot], id="holiday", replace_existing=True)
 
+    # Phase 7：随机「突然想到你」问候（每2小时检查，傍晚窗口触发）
+    _scheduler.add_job(_random_checkin, 'interval', hours=2, args=[bot], id="random_checkin", replace_existing=True)
+
     _scheduler.start()
-    logger.info(f"✅ 主动消息已启动 | 早安:{mg['hour']}:{mg['minute']:02d} | 晚安:{ng['hour']}:{ng['minute']:02d} | 沉默检查:每{sc['check_interval_hours']}h(阈值{sc['silence_threshold_hours']}h) | 节日:每天0:01")
+    logger.info(f"✅ 主动消息已启动 | 早安:{mg['hour']}:{mg['minute']:02d} | 晚安:{ng['hour']}:{ng['minute']:02d} | 沉默检查:每{sc['check_interval_hours']}h(阈值{sc['silence_threshold_hours']}h) | 节日:每天0:01 | 随机问候:每2h")
+
+
+# ---------- Phase 7：主动消息增强 ----------
+
+async def _get_proactive_targets() -> list:
+    """动态获取主动消息目标用户列表（Phase 7）。
+
+    从最近活跃的私聊会话中自动发现目标，而非硬编码 MY_QQ。
+    只对好感度 >= 20（认识的人）的用户发送，最多 10 人。
+    """
+    try:
+        from .database import get_active_sessions, get_affection
+        active = await get_active_sessions(hours=168)  # 最近一周
+        targets = []
+        for sid in active:
+            if not sid.startswith("private_"):
+                continue
+            user_id = sid.replace("private_", "")
+            aff = await get_affection(user_id)
+            if aff.get("score", 0) >= 20:
+                targets.append(user_id)
+        logger.info(f"[主动消息] 自动发现 {len(targets)} 个目标用户")
+        return targets[:10]
+    except Exception:
+        return [str(MY_QQ)] if MY_QQ else []
+
+
+async def _random_checkin(bot):
+    """「突然想到你」低频随机问候（Phase 7）。
+
+    傍晚时段 2% 概率触发，模拟真人突然想起对方的感觉。
+    """
+    from datetime import datetime
+    hour = datetime.now().hour
+    # 只在傍晚到晚间窗口触发
+    if not (18 <= hour <= 22):
+        return
+    if random.random() > 0.02:  # 2% 概率
+        return
+    try:
+        targets = await _get_proactive_targets()
+        if not targets:
+            return
+        user_id = random.choice(targets)
+        msg = await _generate_proactive_message("checkin", user_id)
+        await _send_proactive_message(bot, "private", user_id, msg)
+    except Exception as e:
+        logger.info(f"[随机问候] 失败（非关键）: {e}")
 
 
 async def shutdown_proactive():

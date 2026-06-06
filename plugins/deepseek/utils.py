@@ -57,19 +57,22 @@ def split_long_reply(text: str) -> List[str]:
 
 
 def calc_message_delay(text: str) -> float:
-    """根据消息长度计算发送延迟（模拟打字时间）。
+    """根据消息长度计算发送延迟（模拟真人打字+思考时间）。
 
-    短消息: 0.8~1.5秒
-    中等消息(10-30字): 1.5~3秒
-    长消息(30字+): 2.5~4.5秒
+    真人发消息不会秒回——有看消息、想回复、打字的过程。
+    增加随机波动范围，让延迟更自然不可预测。
+
+    短消息(<10字): 0.5~2.5秒（简单回应也有思考停顿）
+    中等消息(10-30字): 1.0~4.0秒
+    长消息(30字+): 2.0~6.0秒（打字需要时间）
     """
     length = len(text)
     if length < 10:
-        return random.uniform(0.8, 1.5)
+        return random.uniform(0.5, 2.5)
     elif length < 30:
-        return random.uniform(1.5, 3.0)
+        return random.uniform(1.0, 4.0)
     else:
-        return random.uniform(2.5, 4.5)
+        return random.uniform(2.0, 6.0)
 
 
 
