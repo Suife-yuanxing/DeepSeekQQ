@@ -79,7 +79,16 @@ def get_emotion_params(emotion) -> dict:
 # ============================================================
 
 def _reply(event: MessageEvent, msg: Message) -> Message:
-    """给消息加上引用回复 segment（仅第一条消息使用）。"""
+    """发送消息（不加引用回复）。
+
+    引用只用于群聊主回复的条件定位——安全拦截、语音错误、
+    提醒、分享回复、错误处理等系统消息一律不加引用。
+    """
+    return msg
+
+
+def _quote_reply(event: MessageEvent, msg: Message) -> Message:
+    """给主回复加引用（仅群聊条件引用场景使用）。"""
     return Message(MessageSegment.reply(event.message_id)) + msg
 
 
@@ -803,7 +812,7 @@ async def _stage_post(ctx: ChatContext) -> Optional[str]:
             if rich_msg:
                 await asyncio.sleep(1.5)
                 if should_quote:
-                    await ctx.bot.send(ctx.event, _reply(ctx.event, rich_msg))
+                    await ctx.bot.send(ctx.event, _quote_reply(ctx.event, rich_msg))
                 else:
                     await ctx.bot.send(ctx.event, rich_msg)
                 first_sent = True
@@ -816,7 +825,7 @@ async def _stage_post(ctx: ChatContext) -> Optional[str]:
                 if i > 0:
                     await asyncio.sleep(calc_message_delay(part))
                 if not first_sent and should_quote:
-                    await ctx.bot.send(ctx.event, _reply(ctx.event, Message(part)))
+                    await ctx.bot.send(ctx.event, _quote_reply(ctx.event, Message(part)))
                     first_sent = True
                 else:
                     await ctx.bot.send(ctx.event, Message(part))
@@ -827,7 +836,7 @@ async def _stage_post(ctx: ChatContext) -> Optional[str]:
                 if i > 0:
                     await asyncio.sleep(calc_message_delay(part))
                 if not first_sent and should_quote:
-                    await ctx.bot.send(ctx.event, _reply(ctx.event, Message(part)))
+                    await ctx.bot.send(ctx.event, _quote_reply(ctx.event, Message(part)))
                     first_sent = True
                 else:
                     await ctx.bot.send(ctx.event, Message(part))
