@@ -176,27 +176,27 @@ def _should_quote(ctx: ChatContext) -> bool:
     """模拟真人引用决策：只在需要定位上下文时引用。
 
     核心原则：引用是「定位器」，帮对方知道我在回哪句。
-    - 群聊多人 → 引用定位
-    - 长消息挑着回 → 引用那句
-    - 私聊连续对话 → 不引用（上下文天然清晰）
+    - 群聊 → 条件引用
+    - 私聊 → 永不引用（上下文天然清晰，两个人聊不需要定位）
     """
     msg = ctx.raw_msg.strip()
 
-    # ===== 始终引用的场景 =====
-    # 搜索/分析请求 → 引用原问题，方便用户对照
+    # 私聊不引用
+    if not ctx.is_group:
+        return False
+
+    # ===== 群聊：始终引用的场景 =====
     if ctx.is_explicit_search:
         return True
     analysis_keywords = ["怎么看", "分析", "评价", "观点", "说说", "讲讲", "详细介绍"]
     if any(kw in msg for kw in analysis_keywords):
         return True
 
-    # ===== 始终不引用的场景 =====
-    # 简单寒暄 → 不引用（引用"嗯嗯"很刻意）
+    # ===== 群聊：始终不引用的场景 =====
     if _is_greeting(msg):
         return False
 
-    # ===== 群聊逻辑 =====
-    if ctx.is_group:
+    # ===== 群聊：条件引用 =====
         # 被 @ → 引用（必须让对方知道在回谁）
         if _is_bot_at(ctx.event, ctx.bot.self_id):
             return True
@@ -211,16 +211,6 @@ def _should_quote(ctx: ChatContext) -> bool:
             return True
         # 连续聊天 → 不引用
         return False
-
-    # ===== 私聊逻辑 =====
-    # 话题切换 → 引用（表示"我看到你换话题了"）
-    if ctx.analysis and ctx.analysis.context.topic_shift_score > 0.6:
-        return True
-    # 明确提问 → 引用
-    if _is_question(msg):
-        return True
-    # 连续聊天 → 不引用
-    return False
 
 
 # ============================================================
