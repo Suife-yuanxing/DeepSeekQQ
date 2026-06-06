@@ -7,6 +7,7 @@ import os
 import asyncio
 import random
 import re
+from datetime import datetime
 from pathlib import Path
 from typing import List, Optional, Any, Callable, Coroutine
 from dataclasses import dataclass, field
@@ -145,6 +146,41 @@ def _is_greeting(msg: str) -> bool:
     greetings = ["嗯", "嗯嗯", "哈哈", "哦", "好的", "好吧", "行", "可以",
                  "ok", "OK", "收到", "了解", "知道了", "嗯好", "好嘞", "棒"]
     return msg.strip() in greetings
+
+
+def _detect_greeting_type(msg: str) -> Optional[str]:
+    """检测问候类型，返回 'morning'/'night'/None。"""
+    morning_kw = ["早安", "早", "早上好", "早呀", "早啊", "good morning", "起床"]
+    if any(kw in msg for kw in morning_kw):
+        return "morning"
+    night_kw = ["晚安", "睡了", "困了", "要睡了", "好困", "晚安安",
+                "good night", "拜拜", "明天见", "下了", "睡觉"]
+    if any(kw in msg for kw in night_kw):
+        return "night"
+    return None
+
+
+def _get_morning_time_hint(hour: int) -> str:
+    """根据时间返回差异化早安语气提示。"""
+    if 6 <= hour < 7:
+        return "用户起得很早，语气带点惊讶和关心，比如'这么早？'"
+    elif 7 <= hour < 8:
+        return "早上时段，语气元气、活泼"
+    elif 8 <= hour < 9:
+        return "正常早安时间，自然问候"
+    elif 9 <= hour < 10:
+        return "用户起得比较晚，可以调侃一句，比如'终于醒了？'"
+    return ""
+
+
+def _get_night_affection_hint(affection: dict) -> str:
+    """根据好感度返回晚安语气提示。"""
+    score = affection.get("score", 0) if affection else 0
+    if score >= 200:
+        return "关系亲密，可以暧昧一点，比如'梦里见~'"
+    elif score >= 50:
+        return "关系不错，温暖道别"
+    return "关系一般，简洁晚安即可"
 
 
 def _has_time_gap(ctx: ChatContext, threshold: int = 300) -> bool:
@@ -513,6 +549,27 @@ async def _stage_llm(ctx: ChatContext) -> Optional[str]:
             world_context=ctx.world_context, bot_mood=ctx.bot_mood_result,
             user_prefs=ctx.user_prefs,
         )
+
+        # 问候感知：注入时间上下文和回复约束
+        from .database import has_user_message_today
+        greeting_type = _detect_greeting_type(ctx.raw_msg)
+        if greeting_type == "morning":
+            hour = datetime.now().hour
+            time_hint = _get_morning_time_hint(hour)
+            is_first = not await has_user_message_today(ctx.session_id)
+            greet_hint = f"\n【问候感知】用户在跟你说早安。当前时间 {hour}:00。{time_hint}"
+            if is_first:
+                greet_hint += " 这是用户今天第一条消息，可以自然地问候一下。"
+            greet_hint += "\n回复要求：自然、口语化，不要每次都像客服一样'早安~今天也要元气满满哦'。根据时间调整语气。"
+            sys_prompt += greet_hint
+        elif greeting_type == "night":
+            affection_hint = _get_night_affection_hint(ctx.affection)
+            sys_prompt += (
+                f"\n【道别感知】用户在跟你说晚安/要睡了。{affection_hint}"
+                "\n回复要求：短、温暖、不要追问、不要开启新话题。"
+                "像关灯一样自然地道别。1句话就够了。"
+            )
+
         messages = [{"role": "system", "content": sys_prompt}]
         history_limit = REPLY_LENGTH_CONFIG["context_depth"] * CHAT_HISTORY_MULTIPLIER
         for mem in ctx.recent_memories[-history_limit:]:

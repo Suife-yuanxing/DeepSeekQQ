@@ -547,6 +547,46 @@ async def log_proactive(user_id: str, msg_type: str, content: str):
     await db.commit()
 
 
+async def has_user_message_today(session_id: str) -> bool:
+    """检查该 session 今天是否有用户消息（用于判断是否当天第一条）。"""
+    today = datetime.now().strftime("%Y-%m-%d")
+    db = await get_db()
+    async with db.execute(
+        """SELECT COUNT(*) as cnt FROM memories
+           WHERE session_id = ? AND role = 'user'
+           AND datetime(timestamp, 'unixepoch', 'localtime') LIKE ?""",
+        (session_id, f"{today}%")
+    ) as cursor:
+        row = await cursor.fetchone()
+        return (row["cnt"] if row else 0) > 0
+
+
+async def get_recent_greetings(scene: str, limit: int = 10) -> List[str]:
+    """获取最近的同类问候消息（用于去重）。scene: 'morning'/'night'/'sleep_nag'"""
+    db = await get_db()
+    pattern = f"%{scene}%"
+    async with db.execute(
+        """SELECT content FROM proactive_log
+           WHERE content LIKE ? ORDER BY timestamp DESC LIMIT ?""",
+        (pattern, limit)
+    ) as cursor:
+        rows = await cursor.fetchall()
+        return [r["content"] for r in rows]
+
+
+async def has_recent_message(session_id: str, minutes: int = 30) -> bool:
+    """检查该 session 最近 N 分钟内是否有用户消息（用于深夜催睡判断）。"""
+    cutoff = datetime.now().timestamp() - minutes * 60
+    db = await get_db()
+    async with db.execute(
+        """SELECT COUNT(*) as cnt FROM memories
+           WHERE session_id = ? AND role = 'user' AND timestamp > ?""",
+        (session_id, cutoff)
+    ) as cursor:
+        row = await cursor.fetchone()
+        return (row["cnt"] if row else 0) > 0
+
+
 # ---------- silence check ----------
 async def get_silent_private_users(threshold: float) -> List[str]:
     db = await get_db()

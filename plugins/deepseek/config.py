@@ -55,7 +55,7 @@ REPLY_LENGTH_CONFIG = {
 PROACTIVE_CONFIG = {
     "morning_greeting": {
         "enabled": True,
-        "hour": 8,
+        "hour": 9,
         "minute": 30,
         "messages": [
             "早呀~太阳都晒屁股了，你还在赖床吗？",
@@ -69,7 +69,7 @@ PROACTIVE_CONFIG = {
     },
     "night_greeting": {
         "enabled": True,
-        "hour": 23,
+        "hour": 0,
         "minute": 0,
         "messages": [
             "夜深了...还不睡吗？我都有点困了，虽然猫娘不用睡觉。",

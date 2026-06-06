@@ -9,7 +9,10 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from nonebot.adapters.onebot.v11 import Message as OBMessage
 
 from .config import PROACTIVE_CONFIG, MY_QQ
-from .database import get_today_proactive_count, log_proactive, get_silent_private_users, get_affection
+from .database import (
+    get_today_proactive_count, log_proactive, get_silent_private_users,
+    get_affection, has_recent_message, get_recent_greetings,
+)
 from .api import call_deepseek_api
 from .memory import save_reply
 from nonebot import logger
@@ -37,7 +40,7 @@ async def _send_proactive_message(bot, target_type: str, target_id: str, message
 async def _generate_proactive_message(scene: str, user_id: str = "") -> str:
     """用 LLM 基于猫娘人设生成个性化主动消息。
 
-    scene: morning/night/silence/holiday
+    scene: morning/night/sleep_nag/silence/holiday
     """
     # 获取好感度信息
     affection_info = ""
@@ -50,9 +53,16 @@ async def _generate_proactive_message(scene: str, user_id: str = "") -> str:
         except Exception:
             pass
 
+    # 获取最近同类消息用于去重
+    recent_same = await get_recent_greetings(scene, 10)
+    dedup_hint = ""
+    if recent_same:
+        dedup_hint = "\n最近发过的消息（绝对不要重复类似风格）：\n" + "\n".join(f"- {m}" for m in recent_same[:5])
+
     scene_prompts = {
-        "morning": "现在是早上，你要给主人发一条早安消息。",
-        "night": "现在是深夜，你要给主人发一条晚安消息。",
+        "morning": "现在是早上，你要给主人发一条早安消息。语气要自然，像刚睡醒一样，不要像客服。",
+        "night": "现在是深夜，主人还没睡，你要催他睡觉。语气关心但带点命令式，比如'快去睡！'。",
+        "sleep_nag": "现在是凌晨了，主人还在聊天。你要催他睡觉，语气要强势一点。",
         "silence": "你好久没和主人聊天了，想主动找他说话。",
         "holiday": "今天是个节日，要给主人发节日问候。",
     }
@@ -60,6 +70,8 @@ async def _generate_proactive_message(scene: str, user_id: str = "") -> str:
     prompt = scene_prompts.get(scene, "给主人发一条消息。")
     if affection_info:
         prompt += f"\n{affection_info}"
+    if dedup_hint:
+        prompt += dedup_hint
 
     sys_prompt = (
         "你是一只猫娘，正在QQ上给你的主人发主动消息。"
@@ -69,7 +81,7 @@ async def _generate_proactive_message(scene: str, user_id: str = "") -> str:
         "1. 1-2句话，短一点，像发QQ消息\n"
         "2. 口语化，自然，不要像写作文\n"
         "3. 不要加括号动作、不要旁白\n"
-        "4. 每次语气都不一样，不要重复\n"
+        "4. 每次语气都不一样，不要重复之前发过的\n"
         "5. 根据你们的关系远近调整语气（熟人更软更暧昧，生人更懒）\n"
         "6. 可以适当加一些猫娘特色的口癖（喵~、哼、呜）但不要每句都加\n"
         "7. 如果适合，在末尾加 [sticker:情绪]，大约20%概率。情绪必须用英文：happy/angry/shy/sad/tsundere/cute/funny/love/speechless/excited\n"
@@ -94,7 +106,8 @@ async def _generate_proactive_message(scene: str, user_id: str = "") -> str:
     # fallback
     fallbacks = {
         "morning": ["早呀~", "喵~早安", "起床了吗？"],
-        "night": ["晚安喵~", "该睡了哦", "晚安，做个好梦"],
+        "night": ["快去睡觉！", "都几点了还不睡？", "晚安，赶紧睡！"],
+        "sleep_nag": ["你怎么还没睡！！", "再不睡我要生气了", "熬夜对身体不好哦...快去睡"],
         "silence": ["你在干嘛呀~", "好久不见了喵", "想你了"],
         "holiday": ["节日快乐喵~", "今天过节呀~"],
     }
@@ -102,25 +115,44 @@ async def _generate_proactive_message(scene: str, user_id: str = "") -> str:
 
 
 async def _morning_greeting(bot):
+    """9:30 兜底早安：只有用户今天还没发过消息才发。"""
     cfg = PROACTIVE_CONFIG["morning_greeting"]
     if not cfg["enabled"]:
         return
     for uid in cfg["target_users"]:
+        session_id = f"private_{uid}"
+        # 如果用户今天已经发过消息（说明已经醒了），不主动发早安
+        # 感知式早安由 handler.py 在用户第一条消息时触发
+        from .database import has_user_message_today
+        if await has_user_message_today(session_id):
+            continue
         msg = await _generate_proactive_message("morning", str(uid))
         await _send_proactive_message(bot, "private", str(uid), msg)
     for gid in cfg["target_groups"]:
+        session_id = f"group_{gid}"
+        from .database import has_user_message_today
+        if await has_user_message_today(session_id):
+            continue
         msg = await _generate_proactive_message("morning")
         await _send_proactive_message(bot, "group", str(gid), msg)
 
 
 async def _night_greeting(bot):
+    """00:00 催睡：检查用户最近30分钟有消息才发。"""
     cfg = PROACTIVE_CONFIG["night_greeting"]
     if not cfg["enabled"]:
         return
     for uid in cfg["target_users"]:
+        # 只有用户最近30分钟还在聊天才催睡
+        session_id = f"private_{uid}"
+        if not await has_recent_message(session_id, minutes=30):
+            continue
         msg = await _generate_proactive_message("night", str(uid))
         await _send_proactive_message(bot, "private", str(uid), msg)
     for gid in cfg["target_groups"]:
+        session_id = f"group_{gid}"
+        if not await has_recent_message(session_id, minutes=30):
+            continue
         msg = await _generate_proactive_message("night")
         await _send_proactive_message(bot, "group", str(gid), msg)
 
