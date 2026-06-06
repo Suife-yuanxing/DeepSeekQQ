@@ -25,7 +25,6 @@ from .api import close_http_session
 from .proactive import register_proactive_jobs, shutdown_proactive
 from .share_parser import global_cleanup_shares
 from .reminder import check_and_fire_reminders
-from .hot_topics import check_and_push_topics
 from .sticker_search import cleanup_old_downloads
 from .plugin_manager import load_plugins_from_dir, startup_all_plugins, shutdown_all_plugins
 from .image_gen import cleanup_old_images
@@ -109,14 +108,6 @@ async def on_start():
             bot = list(bots.values())[0]
             await check_and_fire_reminders(bot)
 
-    async def _hot_topics():
-        import nonebot
-        await asyncio.sleep(60)
-        bots = nonebot.get_bots()
-        if bots:
-            bot = list(bots.values())[0]
-            await check_and_push_topics(bot)
-
     async def _memory_maintenance():
         await asyncio.sleep(300)
         # 分层衰减：短期记忆衰减快，长期记忆衰减慢
@@ -139,7 +130,6 @@ async def on_start():
     loop_manager.register("表情包缓存清理", _sticker_cleanup, 86400)
     loop_manager.register("WAL checkpoint", _db_checkpoint, 7200)
     loop_manager.register("提醒检查", _reminder_check, REMINDER_CHECK_INTERVAL)
-    loop_manager.register("热搜推送", _hot_topics, 14400)
     async def _affection_decay():
         from .database import decay_affection
         await decay_affection(inactive_days=7, decay_points=-1.0)
