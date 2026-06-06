@@ -27,6 +27,7 @@ from .database import (
     save_reply_quality, get_quality_stats,
     get_session_state, save_session_state,
 )
+from .context_analyzer import AnalysisResult
 
 # ---------- 记忆冷却控制 ----------
 _recently_used_memories: Dict[str, List[str]] = {}  # user_id -> [最近用过的记忆内容]
