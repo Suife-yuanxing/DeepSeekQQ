@@ -13,6 +13,7 @@ from .database import (
     get_today_proactive_count, log_proactive, get_silent_private_users,
     get_affection, has_recent_message, get_recent_greetings,
     has_proactive_today, get_today_proactive_count_by_scene,
+    get_bot_mood, get_last_conversation_context,
 )
 from .api import call_deepseek_api
 from .memory import save_reply
@@ -22,6 +23,46 @@ from nonebot import logger
 
 _scheduler: Optional[AsyncIOScheduler] = None
 _registered_bot_id: Optional[int] = None
+
+
+# ---------- P1: 情绪驱动概率调节 ----------
+
+async def _get_mood_driven_boost() -> float:
+    """根据 bot 当前情绪状态返回主动消息概率倍数（P1: 情绪驱动）。
+
+    高唤醒时 bot 更想找人说话，低唤醒时懒得动。
+    Returns:
+        概率倍数: 0.5 ~ 2.0
+    """
+    try:
+        mood = await get_bot_mood()
+        arousal = mood.get("arousal", 0.2)
+        valence = mood.get("valence", 0.0)
+        dominant = mood.get("dominant", "平静")
+
+        # 高唤醒 + 正面情绪 → 兴奋想找人聊天
+        if arousal > 0.6 and valence > 0.3:
+            logger.debug(f"[情绪驱动] boost=2.0 ({dominant}, arousal={arousal:.2f})")
+            return 2.0
+
+        # 高唤醒 + 负面情绪 → 生气/难过想找人倾诉
+        if arousal > 0.6 and valence < -0.3:
+            logger.debug(f"[情绪驱动] boost=1.5 ({dominant}, arousal={arousal:.2f})")
+            return 1.5
+
+        # 中等唤醒 + 正面 → 心情好，略增加
+        if arousal > 0.4 and valence > 0.2:
+            logger.debug(f"[情绪驱动] boost=1.3 ({dominant}, arousal={arousal:.2f})")
+            return 1.3
+
+        # 极低唤醒 → 懒洋洋不想动
+        if arousal < 0.15:
+            logger.debug(f"[情绪驱动] boost=0.5 ({dominant}, arousal={arousal:.2f})")
+            return 0.5
+
+        return 1.0
+    except Exception:
+        return 1.0
 
 
 async def _send_proactive_message(bot, target_type: str, target_id: str, message: str, scene: str = ""):
@@ -40,10 +81,11 @@ async def _send_proactive_message(bot, target_type: str, target_id: str, message
         logger.error(f"[主动消息] 发送失败 {target_id}: {e}")
 
 
-async def _generate_proactive_message(scene: str, user_id: str = "") -> str:
+async def _generate_proactive_message(scene: str, user_id: str = "", context: dict = None) -> str:
     """用 LLM 基于猫娘人设生成个性化主动消息。
 
-    scene: morning/night/sleep_nag/silence/holiday
+    scene: morning/night/sleep_nag/silence/holiday/checkin
+    context: 沉默上下文（P1），包含 topic/summary/tags/hours_ago
     """
     # 获取好感度信息
     affection_info = ""
@@ -62,11 +104,42 @@ async def _generate_proactive_message(scene: str, user_id: str = "") -> str:
     if recent_same:
         dedup_hint = "\n最近发过的消息（绝对不要重复类似风格）：\n" + "\n".join(f"- {m}" for m in recent_same[:5])
 
+    # P1: 沉默上下文 — 携带上次对话摘要
+    context_hint = ""
+    if scene == "silence" and context:
+        topic = context.get("topic", "")
+        summary = context.get("summary", "")
+        tags = context.get("tags", [])
+        hours = context.get("hours_ago", 0)
+
+        if hours < 1:
+            time_desc = "刚才"
+        elif hours < 8:
+            time_desc = f"{int(hours)}小时前"
+        elif hours < 24:
+            time_desc = "昨天"
+        elif hours < 48:
+            time_desc = "前天"
+        else:
+            time_desc = f"{int(hours / 24)}天前"
+
+        context_hint = f"\n你{time_desc}和他聊过「{topic}」。"
+        if summary:
+            # 从 summary 中提取关键信息
+            context_hint += f"上次对话摘要：{summary}。"
+        if tags:
+            context_hint += f"你知道他感兴趣：{'、'.join(tags[:3])}。"
+        context_hint += (
+            "\n请基于上次的对话内容自然地找他说话，"
+            "比如问问后续、关心一下进展。"
+            "不要说「上次」「之前」这样的词，要像自然而然想到的一样。"
+        )
+
     scene_prompts = {
         "morning": "现在是早上，你要给主人发一条早安消息。语气要自然，像刚睡醒一样，不要像客服。",
         "night": "现在是深夜，主人还没睡，你要催他睡觉。语气关心但带点命令式，比如'快去睡！'。",
         "sleep_nag": "现在是凌晨了，主人还在聊天。你要催他睡觉，语气要强势一点。",
-        "silence": "你好久没和主人聊天了，想主动找他说话。",
+        "silence": "你好久没和主人聊天了，想主动找他说话。" + (context_hint if context_hint else ""),
         "holiday": "今天是个节日，要给主人发节日问候。",
         "checkin": "你突然想起主人了，想找他说说话。语气随意、自然，像突然想到一样。",
     }
@@ -113,10 +186,21 @@ async def _generate_proactive_message(scene: str, user_id: str = "") -> str:
         "morning": ["早呀~", "喵~早安", "起床了吗？"],
         "night": ["快去睡觉！", "都几点了还不睡？", "晚安，赶紧睡！"],
         "sleep_nag": ["你怎么还没睡！！", "再不睡我要生气了", "熬夜对身体不好哦...快去睡"],
-        "silence": ["你在干嘛呀~", "好久不见了喵", "想你了"],
         "holiday": ["节日快乐喵~", "今天过节呀~"],
         "checkin": ["在干嘛呀~", "突然想到你了", "忙不忙呀"],
     }
+    # P1: 沉默 fallback 根据上下文动态生成
+    if scene == "silence" and context:
+        topic = context.get("topic", "")
+        if topic:
+            silence_fallbacks = [
+                f"那个{topic}后来怎么样了呀~",
+                f"上次聊的{topic}，有新进展吗？",
+                f"突然想到{topic}那件事，还好吗？",
+                f"在忙什么呀~对了{topic}怎样了？",
+            ]
+            return random.choice(silence_fallbacks)
+    fallbacks.setdefault("silence", ["你在干嘛呀~", "好久不见了喵", "想你了"])
     return random.choice(fallbacks.get(scene, ["喵~"]))
 
 
@@ -179,7 +263,22 @@ async def _check_silence_and_notify(bot):
             today_count = await get_today_proactive_count(user_id, today)
             if today_count >= cfg["max_daily_proactive"]:
                 continue
-            msg = await _generate_proactive_message("silence", user_id)
+
+            # P1: 沉默上下文 — 获取上次对话摘要
+            ctx = await get_last_conversation_context(user_id)
+            if ctx:
+                logger.info(
+                    f"[主动消息] 沉默上下文: 用户{user_id[:6]} 上次聊: {ctx['topic'][:20]} "
+                    f"({int(ctx['hours_ago'])}h前)"
+                )
+
+            # P1: 情绪驱动 — 检查 bot 情绪是否适合主动联系
+            mood_boost = await _get_mood_driven_boost()
+            if mood_boost < 1.0 and random.random() > mood_boost:
+                logger.debug(f"[情绪驱动] 沉默检查跳过 (boost={mood_boost})")
+                continue
+
+            msg = await _generate_proactive_message("silence", user_id, context=ctx)
             await _send_proactive_message(bot, "private", user_id, msg, scene="silence")
             await asyncio.sleep(random.uniform(2, 5))
     except Exception as e:
@@ -299,16 +398,22 @@ async def _get_proactive_targets() -> list:
 
 
 async def _random_checkin(bot):
-    """「突然想到你」低频随机问候（Phase 7）。
+    """「突然想到你」低频随机问候（Phase 7 + P1 情绪驱动）。
 
-    傍晚时段 2% 概率触发，模拟真人突然想起对方的感觉。
+    傍晚时段 2% 基础概率触发，bot 情绪高唤醒时概率翻倍。
     """
     from datetime import datetime
     hour = datetime.now().hour
     # 只在傍晚到晚间窗口触发
     if not (18 <= hour <= 22):
         return
-    if random.random() > 0.02:  # 2% 概率
+
+    # P1: 情绪驱动 — 基础概率 × mood_boost
+    mood_boost = await _get_mood_driven_boost()
+    base_prob = 0.02
+    effective_prob = min(base_prob * mood_boost, 0.10)  # 上限 10%
+
+    if random.random() > effective_prob:
         return
     try:
         targets = await _get_proactive_targets()

@@ -842,6 +842,53 @@ async def get_active_sessions(hours: float = 24.0) -> List[str]:
         return [r["session_id"] for r in rows]
 
 
+async def get_last_conversation_context(user_id: str) -> Optional[Dict[str, Any]]:
+    """获取用户最近一次对话的上下文摘要（P1: 沉默上下文）。
+
+    从 session_state 和 memory_tags 中提取：
+    - last_topic: 上次聊的话题
+    - context_summary: 对话摘要（用户说了什么、回复了什么）
+    - tags: 用户相关的记忆标签（兴趣/事实）
+    - hours_ago: 距上次对话的小时数
+    """
+    session_id = f"private_{user_id}"
+    try:
+        state = await get_session_state(session_id)
+        if not state or not state.get("last_topic"):
+            return None
+
+        last_interaction = state.get("last_interaction", 0)
+        if last_interaction == 0:
+            return None
+
+        hours_ago = (datetime.now().timestamp() - last_interaction) / 3600
+
+        # 超过 72 小时不携带上下文（太久了不自然）
+        if hours_ago > 72:
+            return None
+
+        topic = state.get("last_topic", "")
+        summary = state.get("context_summary", "")
+
+        # 获取用户记忆标签（兴趣/事实），增加上下文丰富度
+        tags = []
+        try:
+            tag_rows = await get_relevant_memory_tags(user_id, limit=3)
+            tags = [r["content"] for r in tag_rows if r["tag_type"] in ("preference", "fact")]
+        except Exception:
+            pass
+
+        return {
+            "topic": topic,
+            "summary": summary[:150],  # 截断防过长
+            "tags": tags,
+            "hours_ago": hours_ago,
+        }
+    except Exception as e:
+        logger.debug(f"[数据库] get_last_conversation_context 失败: {e}")
+        return None
+
+
 # ---------- user_preferences（功能③：用户偏好自学习）----------
 async def get_user_preferences(user_id: str) -> Dict[str, Dict[str, float]]:
     """获取用户所有偏好，返回 {pref_type: {pref_key: pref_value}}。"""
