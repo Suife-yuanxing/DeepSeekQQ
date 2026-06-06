@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 from nonebot.adapters.onebot.v11 import Bot, MessageEvent, GroupMessageEvent, Message, MessageSegment
 from nonebot import logger
 
-from .config import REPLY_LENGTH_CONFIG, RANDOM_REPLY_CHANCE, ANALYSIS_HISTORY_LIMIT, CHAT_HISTORY_MULTIPLIER, PHONE_CONTROL_ENABLED
+from .config import REPLY_LENGTH_CONFIG, RANDOM_REPLY_CHANCE, ANALYSIS_HISTORY_LIMIT, CHAT_HISTORY_MULTIPLIER, PHONE_CONTROL_ENABLED, MY_QQ, STT_ENABLED
 from .prompt import _build_system_prompt, estimate_reply_length
 from .utils import split_long_reply, calc_message_delay, get_session_id, check_rate_limit, filter_novel_actions
 from .memory import save_and_get_context, save_reply, apply_affection_delta, save_and_get_context_with_history, get_user_pref_hints
@@ -288,6 +288,15 @@ def stage(name: str):
 # Pipeline 阶段定义
 # ============================================================
 
+@stage("private_whitelist")
+async def _stage_private_whitelist(ctx: ChatContext) -> Optional[str]:
+    """私聊白名单：仅允许主人（MY_QQ）触发私聊对话。"""
+    if not ctx.is_group and ctx.user_id != MY_QQ:
+        logger.debug(f"[私聊白名单] 忽略非主人私聊: user={ctx.user_id[:6]}")
+        return _SKIP
+    return None
+
+
 @stage("security")
 async def _stage_security(ctx: ChatContext) -> Optional[str]:
     """安全扫描：检测 prompt injection 和滥用。"""
@@ -305,6 +314,8 @@ async def _stage_security(ctx: ChatContext) -> Optional[str]:
 @stage("voice_recognition")
 async def _stage_voice(ctx: ChatContext) -> Optional[str]:
     """语音识别：将语音消息转为文字。"""
+    if not STT_ENABLED:
+        return None
     has_voice = any(seg.type == "record" for seg in ctx.event.get_message())
     if has_voice and not ctx.raw_msg:
         recognized = await recognize_voice(ctx.event)
@@ -358,6 +369,8 @@ async def _stage_share_only(ctx: ChatContext) -> Optional[str]:
 async def _stage_phone(ctx: ChatContext) -> Optional[str]:
     """手机控制指令处理（仅 MY_QQ 可用）。"""
     if not PHONE_CONTROL_ENABLED:
+        return None
+    if ctx.user_id != MY_QQ:
         return None
     try:
         # 优先使用 ADB 直连（更稳定）

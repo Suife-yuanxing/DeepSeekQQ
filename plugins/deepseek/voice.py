@@ -116,18 +116,8 @@ async def _convert_mp3_to_silk(mp3_path: str) -> Optional[str]:
                 pass
         return None
 
-async def generate_voice_file(text: str, emotion: Optional[str] = None) -> Optional[str]:
-    """生成语音文件，返回本地路径。根据 TTS_ENGINE 自动路由。"""
-    if len(text) > VOICE_MAX_LENGTH:
-        logger.warning(f"[语音] 文本过长({len(text)}字)，跳过语音")
-        return None
-
-    # MiMo TTS 引擎
-    if TTS_ENGINE == "mimo":
-        from .voice_mimo import generate_mimo_voice
-        return await generate_mimo_voice(text, emotion)
-
-    # 百度 TTS 引擎（默认）
+async def _generate_baidu_voice(text: str) -> Optional[str]:
+    """百度 TTS 引擎。"""
     token = await _get_baidu_token()
     if not token:
         logger.warning("[语音] 百度 Token 获取失败")
@@ -160,6 +150,25 @@ async def generate_voice_file(text: str, emotion: Optional[str] = None) -> Optio
         logger.error(f"[语音] 百度TTS失败: {e}")
         return None
 
+
+async def generate_voice_file(text: str, emotion: Optional[str] = None) -> Optional[str]:
+    """生成语音文件，返回本地路径。支持引擎降级：MiMo 失败自动 fallback 百度。"""
+    if len(text) > VOICE_MAX_LENGTH:
+        logger.warning(f"[语音] 文本过长({len(text)}字)，跳过语音")
+        return None
+
+    # MiMo TTS 引擎
+    if TTS_ENGINE == "mimo":
+        from .voice_mimo import generate_mimo_voice
+        result = await generate_mimo_voice(text, emotion)
+        if result:
+            return result
+        logger.warning("[语音] MiMo TTS 失败，降级到百度 TTS")
+        return await _generate_baidu_voice(text)
+
+    # 百度 TTS 引擎（默认）
+    return await _generate_baidu_voice(text)
+
 async def _delayed_cleanup(path: str, delay: int = 300):
     await asyncio.sleep(delay)
     try:
@@ -180,16 +189,27 @@ async def send_voice(bot: Bot, event: MessageEvent, text: str, emotion: str = No
         logger.info("[语音] 无有效语音文件")
         return
 
+    send_path = voice_path
     try:
-        async with aiofiles.open(voice_path, "rb") as vf:
+        # 尝试 silk 转码（QQ 原生格式，兼容性最好）
+        silk_path = await _convert_mp3_to_silk(voice_path)
+        if silk_path and os.path.exists(silk_path):
+            send_path = silk_path
+            logger.info(f"[语音] 使用 silk 格式发送")
+        else:
+            logger.info("[语音] silk 转码不可用，使用 mp3 直发")
+
+        async with aiofiles.open(send_path, "rb") as vf:
             audio_bytes = await vf.read()
             b64 = base64.b64encode(audio_bytes).decode()
         await bot.send(event, MessageSegment.record(file=f"base64://{b64}"))
-        logger.info(f"[语音] base64 直发 ({len(audio_bytes)} bytes)")
+        logger.info(f"[语音] 发送成功 ({len(audio_bytes)} bytes, {'silk' if send_path.endswith('.silk') else 'mp3'})")
     except Exception as e:
         logger.error(f"[语音] 发送失败: {e}")
     finally:
         asyncio.create_task(_delayed_cleanup(voice_path))
+        if send_path != voice_path:
+            asyncio.create_task(_delayed_cleanup(send_path))
 
 def should_send_voice(user_msg: str, reply_text: str, history: List[Dict[str, Any]]) -> bool:
     import random

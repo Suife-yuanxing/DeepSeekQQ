@@ -15,6 +15,8 @@ from .database import (
 )
 from .api import call_deepseek_api
 from .memory import save_reply
+from .utils import filter_novel_actions
+from .sticker import parse_sticker_tag
 from nonebot import logger
 
 _scheduler: Optional[AsyncIOScheduler] = None
@@ -95,9 +97,10 @@ async def _generate_proactive_message(scene: str, user_id: str = "") -> str:
         ]
         msg = await call_deepseek_api(messages, temperature=1.0)
         msg = msg.strip().strip('"').strip("'")
-        # 去掉动作描写
-        import re
-        msg = re.sub(r'[（(][^）)]*[）)]', '', msg).strip()
+        # 去掉动作描写和QQ内置表情标签
+        msg = filter_novel_actions(msg)
+        # 去掉 [sticker:xxx] 标签（主动消息不发表情包，只保留文字）
+        msg, _, _ = parse_sticker_tag(msg)
         if len(msg) > 5:
             return msg
     except Exception as e:

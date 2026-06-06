@@ -25,37 +25,12 @@ from nonebot.adapters.onebot.v11 import MessageEvent, MessageSegment
 
 from .config import BAIDU_TTS_AK, BAIDU_TTS_SK
 from .api import get_http_session
-
-# 百度 STT Token（与 TTS 共用，但 STT 用的是 VOP 接口）
-_baidu_token: Optional[str] = None
-_baidu_token_expire: float = 0.0
+from .voice import _get_baidu_token
 
 
 async def _get_baidu_vop_token() -> str:
-    """获取百度语音识别 Token（与 TTS 共用 AK/SK）。"""
-    global _baidu_token, _baidu_token_expire
-    now = time.time()
-    if _baidu_token and now < _baidu_token_expire - 3600:
-        return _baidu_token
-
-    if not BAIDU_TTS_AK or not BAIDU_TTS_SK:
-        return ""
-
-    url = (
-        f"https://aip.baidubce.com/oauth/2.0/token?"
-        f"grant_type=client_credentials&client_id={BAIDU_TTS_AK}&client_secret={BAIDU_TTS_SK}"
-    )
-    try:
-        session = await get_http_session()
-        async with session.get(url) as resp:
-            data = await resp.json()
-            _baidu_token = data.get("access_token", "")
-            expires_in = data.get("expires_in", 2592000)
-            _baidu_token_expire = now + expires_in
-            return _baidu_token
-    except Exception as e:
-        logger.error(f"[STT] 获取百度Token失败: {e}")
-        return ""
+    """获取百度语音识别 Token（复用 voice.py 的 Token 管理）。"""
+    return await _get_baidu_token()
 
 
 def _extract_voice_url(event: MessageEvent) -> Optional[str]:
