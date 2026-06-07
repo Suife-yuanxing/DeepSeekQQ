@@ -760,13 +760,35 @@ async def _extract_important_dates(user_id: str, user_msg: str):
 # ---------- 记忆深化提示生成 ----------
 
 async def get_shared_memory_hint(user_id: str, current_msg: str) -> Optional[str]:
-    """获取共同回忆提示，供 prompt 注入。"""
+    """获取共同回忆提示，供 prompt 注入。
+
+    增强版：增加话题关联度检查，只在高关联时触发
+    """
     try:
-        from .db_memories_deep import get_recall_candidates
-        candidates = await get_recall_candidates(user_id, current_msg, limit=1)
+        from .db_memories_deep import get_recall_candidates, calculate_topic_relevance
+
+        # 提取当前话题关键词
+        current_keywords = re.findall(r'[一-鿿]{2,6}', current_msg)
+
+        candidates = await get_recall_candidates(user_id, current_msg, limit=3)
         if not candidates:
             return None
-        mem = candidates[0]
+
+        # 计算每个候选回忆的话题关联度
+        scored_candidates = []
+        for mem in candidates:
+            relevance = calculate_topic_relevance(current_keywords, mem)
+            if relevance >= 0.2:  # 最低关联度阈值
+                score = relevance * mem.get('importance', 0.5)
+                scored_candidates.append((score, mem))
+
+        if not scored_candidates:
+            return None
+
+        # 选择关联度最高的回忆
+        scored_candidates.sort(key=lambda x: x[0], reverse=True)
+        mem = scored_candidates[0][1]
+
         desc = mem["event_desc"]
         event_type = mem["event_type"]
         type_hints = {

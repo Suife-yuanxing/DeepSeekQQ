@@ -245,6 +245,19 @@ def _build_system_prompt(
     if emotion_memory_hint:
         parts.append(f"【情绪记忆】{emotion_memory_hint}")
 
+    # === 情绪表达变体（增强版）===
+    if bot_mood and bot_mood.get("dominant", "平静") != "平静":
+        dominant = bot_mood["dominant"]
+        # 尝试获取情绪表达变体
+        try:
+            from .emotion_deep import get_emotion_expression
+            affection_score = affection.get("score", 0)
+            expression_variant = get_emotion_expression(dominant, affection_score)
+            if expression_variant and expression_variant != "正常语气":
+                parts.append(f"【情绪表达】{expression_variant}")
+        except Exception:
+            pass
+
     # === 群聊社交：关系图 ===
     if group_social_hint:
         parts.append(f"【群内关系】{group_social_hint}")

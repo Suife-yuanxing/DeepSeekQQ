@@ -850,11 +850,18 @@ async def _stage_humanize(ctx: ChatContext) -> Optional[str]:
         return None
     text = ctx.reply_text
 
-    # 节奏增强：反应词前缀
+    # 节奏增强：反应词前缀（上下文感知版）
     from .handler_humanize import maybe_add_reaction_prefix
     emotion_v = ctx.analysis.emotion.valence if ctx.analysis else 0.0
     emotion_a = ctx.analysis.emotion.arousal if ctx.analysis else 0.5
-    text = maybe_add_reaction_prefix(text, emotion_v)
+    emotion_dom = ctx.analysis.emotion.dominant if ctx.analysis and ctx.analysis.emotion.confidence >= 0.4 else "平静"
+
+    # 传入用户消息和情绪，启用上下文感知反应词
+    text = maybe_add_reaction_prefix(
+        text, emotion_v,
+        user_message=ctx.raw_msg,
+        emotion=emotion_dom
+    )
 
     # 原有人性化处理
     if random.random() < 0.03:
@@ -865,7 +872,6 @@ async def _stage_humanize(ctx: ChatContext) -> Optional[str]:
         text = introduce_uncertainty(text)
 
     # 颜文字：根据情绪在句尾加表情符号
-    emotion_dom = ctx.analysis.emotion.dominant if ctx.analysis and ctx.analysis.emotion.confidence >= 0.4 else "平静"
     text = maybe_add_kaomoji(
         text,
         emotion_dominant=emotion_dom,

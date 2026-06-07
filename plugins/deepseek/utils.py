@@ -149,25 +149,49 @@ def calc_message_delay(text: str, context: dict = None) -> float:
 
 
 def calc_burst_delays(parts: List[str], base_context: dict = None) -> List[float]:
-    """计算连发消息的延迟列表。
+    """计算连发消息的延迟列表（带随机波动）。
 
     真人连发消息的节奏：
     - 第一条：正常延迟（阅读+思考+打字）
     - 第二条：等 2~5 秒（打完一条想起来又补一条）
     - 第三条：等 1~3 秒（越说越快，抢着说）
+
+    增强：引入随机波动，模拟真人打字速度不均匀
     """
     if not parts:
         return []
 
     delays = []
+    # 衰减系数范围（模拟真人打字节奏）
+    decay_ranges = [
+        (0.85, 1.15),   # 第一条：±15%波动
+        (0.65, 0.95),   # 第二条：减少5-35%
+        (0.50, 0.80),   # 第三条：减少20-50%
+    ]
+
     for i, part in enumerate(parts):
         if i == 0:
             # 第一条：正常延迟
             ctx = dict(base_context or {})
-            delays.append(calc_message_delay(part, ctx))
+            base_delay = calc_message_delay(part, ctx)
+            # 增加微小随机性
+            jitter = random.uniform(-0.1, 0.1)
+            delays.append(max(0.3, base_delay + jitter))
         else:
-            # 追加消息：固定范围随机，模拟"打完上条又想到要补"
-            delays.append(random.uniform(2.0, 5.0))
+            # 追加消息：随机衰减
+            if i < len(decay_ranges):
+                low, high = decay_ranges[i]
+            else:
+                # 更多消息：继续衰减但有下限
+                low, high = 0.4, 0.6
+
+            # 随机选择衰减系数
+            decay = random.uniform(low, high)
+            base_delay = 3.5 * decay  # 基础延迟3.5秒
+
+            # 增加微小随机性（模拟打字速度不均匀）
+            jitter = random.uniform(-0.2, 0.2)
+            delays.append(max(1.5, base_delay + jitter))
 
     return delays
 

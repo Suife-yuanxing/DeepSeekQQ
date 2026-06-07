@@ -1,10 +1,110 @@
 """群聊气氛分析 — 判断当前群聊是否适合插话、群聊角色定位。
 
 基于最近消息的密度、参与者数量、节奏间隔等判断。
+增强版：增加群活跃度感知和动态发言概率。
 """
 import time
 import random
 from typing import List, Dict, Any, Optional
+
+
+# ============================================================
+# 群活跃度感知 — 基于消息密度判断群聊状态
+# ============================================================
+
+def calculate_group_activity_level(
+    recent_messages_count: int,
+    time_window_minutes: int,
+    unique_users: int
+) -> str:
+    """计算群活跃度"""
+    messages_per_minute = recent_messages_count / max(time_window_minutes, 1)
+
+    if messages_per_minute > 2:
+        return 'very_active'  # 非常活跃
+    elif messages_per_minute > 0.5:
+        return 'active'  # 活跃
+    elif messages_per_minute > 0.1:
+        return 'normal'  # 正常
+    else:
+        return 'quiet'  # 安静
+
+
+def get_activity_aware_role(
+    group_size: int,
+    activity_level: str,
+    has_familiar_users: bool
+) -> str:
+    """基于活跃度的角色定位"""
+
+    # 矩阵：群大小 × 活跃度 → 角色
+    role_matrix = {
+        ('small', 'very_active'): 'participant',  # 人少但活跃：积极参与
+        ('small', 'active'): 'participant',
+        ('small', 'normal'): 'initiator',  # 人少且安静：主动发起
+        ('small', 'quiet'): 'initiator',
+
+        ('medium', 'very_active'): 'observer',  # 人多且活跃：观察为主
+        ('medium', 'active'): 'selective',  # 选择性参与
+        ('medium', 'normal'): 'participant',
+        ('medium', 'quiet'): 'initiator',
+
+        ('large', 'very_active'): 'observer',  # 人很多：观察
+        ('large', 'active'): 'observer',
+        ('large', 'normal'): 'selective',
+        ('large', 'quiet'): 'selective',
+    }
+
+    # 确定群大小类别
+    if group_size < 5:
+        size_category = 'small'
+    elif group_size < 10:
+        size_category = 'medium'
+    else:
+        size_category = 'large'
+
+    base_role = role_matrix.get((size_category, activity_level), 'observer')
+
+    # 有熟人时更活跃
+    if has_familiar_users and base_role == 'observer':
+        return 'selective'
+
+    return base_role
+
+
+def should_bot_speak(
+    activity_level: str,
+    role: str,
+    last_bot_message_turns_ago: int
+) -> bool:
+    """判断bot是否应该发言"""
+
+    # 角色发言概率
+    speak_probabilities = {
+        'initiator': 0.8,  # 主动发起者：高概率
+        'participant': 0.6,  # 参与者：中等概率
+        'selective': 0.3,  # 选择性：低概率
+        'observer': 0.1,  # 观察者：很低概率
+    }
+
+    base_prob = speak_probabilities.get(role, 0.3)
+
+    # 活跃度修正
+    activity_multipliers = {
+        'very_active': 0.5,  # 太活跃时减少发言
+        'active': 0.8,
+        'normal': 1.0,
+        'quiet': 1.5,  # 安静时更主动
+    }
+
+    multiplier = activity_multipliers.get(activity_level, 1.0)
+    final_prob = base_prob * multiplier
+
+    # 冷却修正：刚说过话，降低概率
+    if last_bot_message_turns_ago < 3:
+        final_prob *= 0.3
+
+    return random.random() < final_prob
 
 
 def should_join_conversation(recent_messages: List[Dict[str, Any]], bot_id: str) -> Dict[str, Any]:

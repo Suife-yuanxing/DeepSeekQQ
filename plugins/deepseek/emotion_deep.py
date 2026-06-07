@@ -14,6 +14,147 @@ from nonebot import logger
 
 
 # ============================================================
+# 情绪恢复随机分支 — 增加恢复路径的变化性
+# ============================================================
+
+# 恢复路径定义（每种情绪有多条可能的恢复路径）
+EMOTION_RECOVERY_PATHS = {
+    "生气": [
+        # 路径1：标准路径（概率50%）
+        {"steps": ["生气", "消气中", "傲娇", "平静"], "weight": 50},
+        # 路径2：快速消气（概率20%）
+        {"steps": ["生气", "平静"], "weight": 20},
+        # 路径3：持续傲娇（概率20%）
+        {"steps": ["生气", "消气中", "傲娇", "傲娇", "平静"], "weight": 20},
+        # 路径4：直接平静（概率10%）
+        {"steps": ["生气", "平静"], "weight": 10},
+    ],
+    "难过": [
+        {"steps": ["难过", "淡淡", "平静"], "weight": 60},
+        {"steps": ["难过", "平静"], "weight": 30},
+        {"steps": ["难过", "难过", "淡淡", "平静"], "weight": 10},
+    ],
+    "吃醋": [
+        {"steps": ["吃醋", "傲娇", "平静"], "weight": 50},
+        {"steps": ["吃醋", "平静"], "weight": 30},
+        {"steps": ["吃醋", "傲娇", "傲娇", "平静"], "weight": 20},
+    ],
+    "担心": [
+        {"steps": ["担心", "释然", "平静"], "weight": 60},
+        {"steps": ["担心", "平静"], "weight": 30},
+        {"steps": ["担心", "担心", "释然", "平静"], "weight": 10},
+    ]
+}
+
+
+def get_random_recovery_path(emotion: str) -> List[str]:
+    """获取随机恢复路径"""
+    paths = EMOTION_RECOVERY_PATHS.get(emotion, [])
+    if not paths:
+        return [emotion, "平静"]
+
+    # 按权重随机选择
+    weights = [p["weight"] for p in paths]
+    total = sum(weights)
+    r = random.random() * total
+
+    cumulative = 0
+    for path in paths:
+        cumulative += path["weight"]
+        if r <= cumulative:
+            return path["steps"]
+
+    return paths[0]["steps"]
+
+
+def get_next_recovery_state(current_state: str, recovery_path: List[str]) -> str:
+    """获取下一个恢复状态"""
+    try:
+        current_index = recovery_path.index(current_state)
+        if current_index < len(recovery_path) - 1:
+            return recovery_path[current_index + 1]
+    except ValueError:
+        pass
+
+    return "平静"  # 默认回到平静
+
+
+# ============================================================
+# 情绪表达变体 — 每种情绪有多种表达方式
+# ============================================================
+
+EMOTION_EXPRESSION_VARIANTS = {
+    "吃醋": [
+        # 变体1：酸溜溜
+        "语气酸酸的，回复变短，可能带点刺，但不是真的生气",
+        # 变体2：假装不在意
+        "表面说'随便你'，但语气明显在吃醋",
+        # 变体3：直接表达
+        "有点小吃醋，但用撒娇的方式说出来",
+        # 变体4：傲娇
+        "明明在意但嘴硬说'我才不在乎呢'"
+    ],
+    "担心": [
+        # 变体1：直接关心
+        "语气关心但有点急，想确认对方没事",
+        # 变体2：含蓄担心
+        "表面平静但问题变多了，想了解情况",
+        # 变体3：焦虑
+        "语气有点焦虑，重复确认细节"
+    ],
+    "得意": [
+        # 变体1：含蓄自夸
+        "语气轻快，含蓄地自夸但不明显",
+        # 变体2：直接炫耀
+        "开心地分享成就，期待夸奖",
+        # 变体3：傲娇
+        "表面说'也没什么啦'但明显很开心"
+    ],
+    "撒娇": [
+        # 变体1：直接撒娇
+        "语气变软变甜，想要陪伴",
+        # 变体2：间接暗示
+        "说'好无聊啊'但其实是想聊天",
+        # 变体3：小委屈
+        "有点小委屈，觉得被忽略了"
+    ],
+    "小脾气": [
+        # 变体1：哼哼
+        "回复变短，带点'哼'的语气",
+        # 变体2：假装生气
+        "假装生气但很容易哄好",
+        # 变体3：撒娇式
+        "是撒娇式的小脾气，不是真的生气"
+    ]
+}
+
+
+def get_emotion_expression(emotion: str, affection: float) -> str:
+    """获取情绪表达（考虑好感度和随机性）"""
+    variants = EMOTION_EXPRESSION_VARIANTS.get(emotion, [])
+
+    if not variants:
+        # 默认表达
+        from .handler_humanize import _EMOTION_EXPRESSION_MAP
+        return _EMOTION_EXPRESSION_MAP.get(emotion, "正常语气")
+
+    # 好感度影响：高好感度更直接，低好感度更含蓄
+    if affection > 150:
+        # 偏好直接表达
+        direct_variants = [v for v in variants if '直接' in v or '撒娇' in v]
+        if direct_variants:
+            return random.choice(direct_variants)
+    elif affection < 50:
+        # 偏好含蓄表达
+        subtle_variants = [v for v in variants if '含蓄' in v or '表面' in v]
+        if subtle_variants:
+            return random.choice(subtle_variants)
+
+    # 随机选择
+    return random.choice(variants)
+
+
+# ============================================================
 # 情绪传染 — 用户情绪影响 bot 情绪
 # ============================================================
 

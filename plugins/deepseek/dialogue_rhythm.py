@@ -10,6 +10,93 @@ from nonebot import logger
 
 
 # ============================================================
+# 智能破冰 — 基于用户最近活跃话题
+# ============================================================
+
+async def get_smart_icebreaker(
+    user_id: str,
+    bot_mood: Dict[str, Any] = None,
+    schedule_period: str = "afternoon"
+) -> Optional[str]:
+    """智能破冰内容生成（基于用户兴趣）"""
+    try:
+        from .db_preferences import get_user_preferences
+        from .db_memories_deep import get_shared_memories
+
+        # 策略1：基于用户最近话题
+        prefs = await get_user_preferences(user_id)
+        topic_interests = prefs.get("topic_interest", {})
+
+        if topic_interests:
+            # 找到用户最感兴趣的话题
+            top_topic = max(topic_interests.keys(), key=lambda t: topic_interests[t])
+            icebreakers = _generate_topic_icebreaker(top_topic)
+            if icebreakers and random.random() < 0.6:
+                return random.choice(icebreakers)
+
+        # 策略2：基于共同回忆
+        memories = await get_shared_memories(user_id, limit=3)
+        if memories and random.random() < 0.3:
+            memory = random.choice(memories)
+            return f"诶，突然想到{memory['event_desc']}~"
+
+        # 策略3：基于季节/时间（原有逻辑）
+        return None
+
+    except Exception as e:
+        logger.debug(f"[智能破冰] 失败: {e}")
+        return None
+
+
+def _generate_topic_icebreaker(topic: str) -> List[str]:
+    """基于话题生成破冰内容"""
+    templates = {
+        '游戏': [
+            "你之前说的那个游戏，后来怎么样了？",
+            "突然想起来，你最近还在玩游戏吗？",
+            "诶，你游戏打得怎么样了~"
+        ],
+        '美食': [
+            "你上次说的那家店，去吃了吗？",
+            "突然好饿...你最近有吃到什么好吃的吗？",
+            "想到你之前发的美食照片，馋了~"
+        ],
+        '工作': [
+            "最近工作忙吗？",
+            "你之前说的那个项目，进展怎么样？",
+            "想到你之前加班，最近好点了吗？"
+        ],
+        '宠物': [
+            "你家猫/狗最近怎么样？",
+            "突然想到你之前发的宠物照片，好可爱~",
+            "你家毛孩子有没有想我呀~"
+        ],
+        '音乐': [
+            "最近有听什么好歌吗？",
+            "突然想到你之前说的那首歌，还在听吗？",
+            "有没有新歌推荐呀~"
+        ],
+        '学习': [
+            "最近学习怎么样？",
+            "考试考得怎么样？",
+            "作业写完了吗？"
+        ]
+    }
+
+    # 匹配话题关键词
+    for key, icebreakers in templates.items():
+        if key in topic:
+            return icebreakers
+
+    # 通用模板
+    return [
+        f"诶，你之前说的{topic}，后来怎么样了？",
+        f"突然想到{topic}，你还感兴趣吗？",
+        f"最近有{topic}相关的新鲜事吗？"
+    ]
+
+
+# ============================================================
 # 话题桥接 — 用户换话题时的自然过渡
 # ============================================================
 

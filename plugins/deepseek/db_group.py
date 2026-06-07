@@ -6,6 +6,46 @@ from typing import Dict, Any, Optional, List
 from .db_core import get_db
 
 
+# ============================================================
+# 动态群聊梗冷却 — 根据梗的热度调整冷却时间
+# ============================================================
+
+def get_dynamic_cooldown(meme: Dict[str, Any]) -> int:
+    """获取动态冷却时间（秒）"""
+    base_cooldown = 3600  # 1小时
+
+    # 热度因子（使用次数越多，冷却越短）
+    usage_count = meme.get('usage_count', 0)
+    if usage_count > 10:
+        heat_factor = 0.5  # 热门梗：30分钟
+    elif usage_count > 5:
+        heat_factor = 0.7  # 中等：42分钟
+    else:
+        heat_factor = 1.0  # 冷门：60分钟
+
+    # 反馈因子（正面反馈多，冷却更短）
+    positive_ratio = meme.get('positive_feedback_ratio', 0.5)
+    if positive_ratio > 0.7:
+        feedback_factor = 0.8
+    elif positive_ratio < 0.3:
+        feedback_factor = 1.5  # 负面反馈多，延长冷却
+    else:
+        feedback_factor = 1.0
+
+    # 时间因子（最近用过，冷却更长）
+    last_used = meme.get('last_used', 0)
+    hours_since_use = (time.time() - last_used) / 3600
+    if hours_since_use < 1:
+        time_factor = 1.5
+    elif hours_since_use < 3:
+        time_factor = 1.0
+    else:
+        time_factor = 0.8  # 很久没用，可以再用
+
+    cooldown = base_cooldown * heat_factor * feedback_factor * time_factor
+    return int(max(600, min(7200, cooldown)))  # 限制在10分钟到2小时
+
+
 async def get_or_create_member(group_id: str, member_id: str, nickname: str = "") -> Dict[str, Any]:
     """获取或创建群成员记录。"""
     db = await get_db()

@@ -1,7 +1,7 @@
 """拟人化处理 — 错别字纠正、改变主意、不确定表达、节奏增强、颜文字。"""
 import random
 import re
-from typing import List, Optional
+from typing import List, Optional, Dict
 
 
 _TYPO_PAIRS = [
@@ -70,9 +70,58 @@ _REACTION_PREFIXES_POSITIVE = ["诶", "哦？", "嗯~", "噢", "诶嘿"]
 _REACTION_PREFIXES_NEGATIVE = ["呃", "啊...", "嗯。", "噢。"]
 _REACTION_PREFIXES_NEUTRAL = ["哦", "嗯", "噢", "啊"]
 
+# 上下文感知反应词（根据语义选择）
+REACTION_WORDS = {
+    'question': ['诶？', '嗯？', '哦？', '啊？'],
+    'surprise': ['哇', '诶嘿', '哦~', '天哪'],
+    'thinking': ['嗯...', '唔...', '这个嘛...', '我想想...'],
+    'agreement': ['嗯嗯', '对对', '是呢', '没错'],
+    'realization': ['哦~', '原来如此', '懂了', '这样啊'],
+    'hesitation': ['emmm', '额...', '那个...', '怎么说呢...'],
+}
 
-def maybe_add_reaction_prefix(text: str, emotion_valence: float = 0.0) -> str:
-    """10% 概率在回复前加一个反应词前缀。
+
+def select_contextual_reaction(
+    user_message: str,
+    bot_reply: str,
+    emotion: str
+) -> Optional[str]:
+    """根据上下文选择反应词"""
+    # 检测用户消息类型
+    is_question = '?' in user_message or '？' in user_message
+    is_surprise = any(kw in user_message for kw in ['居然', '竟然', '没想到', '天哪'])
+    is_sharing = len(user_message) > 30  # 长消息通常是分享
+
+    # 检测bot回复内容
+    reply_is_answer = any(kw in bot_reply for kw in ['因为', '所以', '其实', '就是'])
+    reply_is_agreement = any(kw in bot_reply for kw in ['对', '没错', '是的', '嗯'])
+
+    # 选择反应词
+    if is_question and reply_is_answer:
+        category = 'thinking'
+    elif is_surprise:
+        category = 'surprise'
+    elif is_sharing:
+        category = 'realization'
+    elif reply_is_agreement:
+        category = 'agreement'
+    elif emotion in ('hesitant', 'confused'):
+        category = 'hesitation'
+    else:
+        # 默认：不加反应词
+        return None
+
+    # 从对应类别随机选择
+    reactions = REACTION_WORDS.get(category, [])
+    if reactions:
+        return random.choice(reactions)
+
+    return None
+
+
+def maybe_add_reaction_prefix(text: str, emotion_valence: float = 0.0,
+                               user_message: str = "", emotion: str = "平静") -> str:
+    """10% 概率在回复前加一个反应词前缀（上下文感知版）。
 
     模拟真人看到消息后的第一反应：
     - "诶？你怎么知道的"
@@ -84,6 +133,14 @@ def maybe_add_reaction_prefix(text: str, emotion_valence: float = 0.0) -> str:
     if len(text) < 5:
         return text
 
+    # 优先使用上下文感知反应词
+    if user_message:
+        contextual = select_contextual_reaction(user_message, text, emotion)
+        if contextual:
+            sep = random.choice([" ", "，"])
+            return contextual + sep + text
+
+    # 回退到原有逻辑
     if emotion_valence > 0.2:
         prefix = random.choice(_REACTION_PREFIXES_POSITIVE)
     elif emotion_valence < -0.2:

@@ -7,11 +7,162 @@
 """
 import re
 import random
+import time
 from datetime import datetime
 from typing import List, Dict, Any, Optional
 
 from nonebot import logger
 from .db_core import get_db
+
+
+# ============================================================
+# 话题关联度计算 — 提升回忆触发的相关性
+# ============================================================
+
+def calculate_topic_relevance(
+    current_topic_keywords: List[str],
+    memory: Dict[str, Any]
+) -> float:
+    """计算当前话题与回忆的关联度（0-1）"""
+    memory_desc = memory.get('event_desc', '')
+    memory_keywords = set(re.findall(r'[一-鿿]{2,6}', memory_desc))
+    current_keywords = set(current_topic_keywords)
+
+    if not memory_keywords or not current_keywords:
+        return 0.0
+
+    # Jaccard 相似度
+    intersection = memory_keywords & current_keywords
+    union = memory_keywords | current_keywords
+
+    jaccard = len(intersection) / len(union) if union else 0.0
+
+    # 关键词权重（情感词权重更高）
+    emotional_keywords = {'开心', '难过', '生气', '喜欢', '讨厌', '第一次', '重要'}
+    emotional_intersection = intersection & emotional_keywords
+    emotional_boost = len(emotional_intersection) * 0.1
+
+    return min(1.0, jaccard + emotional_boost)
+
+
+# ============================================================
+# 私人梗反馈循环 — 根据用户反应调整权重
+# ============================================================
+
+def update_meme_feedback(
+    meme_id: int,
+    user_reaction: str  # 'positive', 'negative', 'neutral'
+):
+    """更新私人梗的用户反馈"""
+    weights = {
+        'positive': 1.2,   # 正面反应，提升权重
+        'negative': 0.7,   # 负面反应，降低权重
+        'neutral': 1.0     # 无反应，保持
+    }
+
+    try:
+        db = get_db()
+        db.execute("""
+            UPDATE private_memes
+            SET frequency = frequency * ?,
+                usage_count = usage_count + 1
+            WHERE id = ?
+        """, (weights.get(user_reaction, 1.0), meme_id))
+        db.commit()
+    except Exception as e:
+        logger.debug(f"[私人梗反馈] 更新失败: {e}")
+
+
+def detect_user_reaction(response_text: str) -> str:
+    """检测用户对梗的反应"""
+    positive_indicators = ['哈哈', '笑死', '可爱', '喜欢', '❤️', '😊', 'lol', '666']
+    negative_indicators = ['尬', '无聊', '别说了', '够了', '🙄', '无语']
+
+    text_lower = response_text.lower()
+
+    pos_count = sum(1 for kw in positive_indicators if kw in text_lower)
+    neg_count = sum(1 for kw in negative_indicators if kw in text_lower)
+
+    if pos_count > neg_count:
+        return 'positive'
+    if neg_count > pos_count:
+        return 'negative'
+    return 'neutral'
+
+
+def get_meme_to_use(
+    user_id: str,
+    current_msg: str,
+    context_keywords: List[str] = None
+) -> Optional[Dict[str, Any]]:
+    """获取适合使用的私人梗（考虑权重）"""
+    try:
+        db = get_db()
+        now = time.time()
+
+        # 获取匹配的梗
+        cursor = db.execute("""
+            SELECT id, meme_type, content, trigger_keywords, frequency, usage_count, last_used
+            FROM private_memes WHERE user_id = ?
+            ORDER BY frequency DESC
+        """, (str(user_id),))
+        rows = cursor.fetchall()
+
+        if not rows:
+            return None
+
+        # 筛选可用的梗
+        available = []
+        for row in rows:
+            row_dict = dict(row)
+            keywords = row_dict.get('trigger_keywords') or ''
+            if not keywords:
+                continue
+
+            # 检查关键词匹配
+            keyword_list = [k.strip() for k in keywords.split(',') if k.strip()]
+            matched = any(kw in current_msg for kw in keyword_list)
+            if not matched:
+                continue
+
+            # 冷却检查：最近 1 小时内用过的梗不重复
+            if row_dict.get('last_used'):
+                hours_since = (now - row_dict['last_used']) / 3600
+                if hours_since < 1:
+                    continue
+
+            available.append(row_dict)
+
+        if not available:
+            return None
+
+        # 加权随机选择
+        weights = [max(0.1, m.get('frequency', 0.3)) for m in available]
+        total_weight = sum(weights)
+
+        if total_weight == 0:
+            return None
+
+        # 按权重随机选择
+        r = random.random() * total_weight
+        cumulative = 0
+        for meme, weight in zip(available, weights):
+            cumulative += weight
+            if r <= cumulative:
+                # 更新使用记录
+                db.execute("""
+                    UPDATE private_memes
+                    SET usage_count = usage_count + 1, last_used = ?
+                    WHERE id = ?
+                """, (now, meme['id']))
+                db.commit()
+                return meme
+
+        return available[-1] if available else None
+
+    except Exception as e:
+        logger.debug(f"[私人梗选择] 失败: {e}")
+        return None
 
 
 # ============================================================
