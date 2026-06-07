@@ -48,16 +48,53 @@ def is_greeting(msg: str) -> bool:
     return msg.strip() in greetings
 
 
-def detect_greeting_type(msg: str) -> Optional[str]:
-    """检测问候类型，返回 'morning'/'night'/None。"""
+def detect_greeting_type(msg: str, recent_memories: list = None) -> Optional[str]:
+    """检测问候类型，返回 'morning'/'night'/'night_uncertain'/None。
+
+    增强版：结合上下文判断晚安置信度。
+    - 'night': 高置信度道别（晚安、睡了、明天见）
+    - 'night_uncertain': 低置信度（困了、好困，可能是抱怨）
+    """
     morning_kw = ["早安", "早", "早上好", "早呀", "早啊", "good morning", "起床"]
     if any(kw in msg for kw in morning_kw):
         return "morning"
-    night_kw = ["晚安", "睡了", "困了", "要睡了", "好困", "晚安安",
-                "good night", "拜拜", "明天见", "下了", "睡觉"]
-    if any(kw in msg for kw in night_kw):
+
+    # 高置信度晚安关键词
+    night_high = ["晚安", "晚安安", "good night", "明天见", "拜拜", "睡了", "去睡了", "睡觉了"]
+    if any(kw in msg for kw in night_high):
         return "night"
+
+    # 低置信度关键词：需要上下文辅助判断
+    night_low = ["困了", "好困", "要睡了", "下了", "睡觉"]
+
+    if any(kw in msg for kw in night_low):
+        # 上下文辅助判断
+        if recent_memories and len(recent_memories) >= 2:
+            # 检查最近消息：如果用户刚发了很多消息，可能只是抱怨
+            recent_user_msgs = [m for m in recent_memories[-6:] if m.get("role") == "user"]
+            # 如果最近5分钟内有3条以上用户消息，说明还在活跃聊天
+            if len(recent_user_msgs) >= 3:
+                return "night_uncertain"
+        return "night"
+
     return None
+
+
+def is_night_farewell(msg: str, recent_memories: list = None) -> dict:
+    """判断是否是真正的晚安道别。
+
+    Returns:
+        {"is_farewell": bool, "confidence": float, "reason": str}
+    """
+    greeting_type = detect_greeting_type(msg, recent_memories)
+
+    if greeting_type == "night":
+        return {"is_farewell": True, "confidence": 0.9, "reason": "明确道别关键词"}
+
+    if greeting_type == "night_uncertain":
+        return {"is_farewell": False, "confidence": 0.3, "reason": "可能是抱怨，不是真要睡"}
+
+    return {"is_farewell": False, "confidence": 0.0, "reason": "非道别消息"}
 
 
 def get_morning_time_hint(hour: int) -> str:

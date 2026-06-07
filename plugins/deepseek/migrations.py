@@ -230,3 +230,63 @@ async def migrate_v9_add_proactive_scene(db: aiosqlite.Connection):
     if "scene" not in columns:
         await db.execute("ALTER TABLE proactive_log ADD COLUMN scene TEXT DEFAULT ''")
     await db.commit()
+
+
+@migration(10)
+async def migrate_v10_add_mood_snapshots(db: aiosqlite.Connection):
+    """添加情绪快照表（情绪记忆功能）。"""
+    await db.execute("""
+        CREATE TABLE IF NOT EXISTS mood_snapshots (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id TEXT NOT NULL,
+            session_id TEXT NOT NULL,
+            valence REAL,
+            arousal REAL,
+            dominant TEXT,
+            snapshot_time REAL
+        )
+    """)
+    await db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_mood_snap_user ON mood_snapshots(user_id, snapshot_time)"
+    )
+    await db.commit()
+
+
+@migration(11)
+async def migrate_v11_add_bot_personality(db: aiosqlite.Connection):
+    """添加 bot 个性特征表（口头禅/话题偏好/习惯）。"""
+    await db.execute("""
+        CREATE TABLE IF NOT EXISTS bot_personality (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            trait_type TEXT NOT NULL,
+            content TEXT NOT NULL,
+            frequency REAL DEFAULT 0.5,
+            context TEXT DEFAULT '',
+            created_at REAL,
+            usage_count INTEGER DEFAULT 0,
+            last_used REAL DEFAULT 0
+        )
+    """)
+    await db.commit()
+
+
+@migration(12)
+async def migrate_v12_add_group_members(db: aiosqlite.Connection):
+    """添加群聊成员画像表。"""
+    await db.execute("""
+        CREATE TABLE IF NOT EXISTS group_members (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            group_id TEXT NOT NULL,
+            member_id TEXT NOT NULL,
+            nickname TEXT DEFAULT '',
+            last_active REAL,
+            relationship TEXT DEFAULT 'stranger',
+            personality_tags TEXT DEFAULT '',
+            talk_frequency REAL DEFAULT 0,
+            UNIQUE(group_id, member_id)
+        )
+    """)
+    await db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_group_members_group ON group_members(group_id, last_active)"
+    )
+    await db.commit()

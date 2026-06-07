@@ -3,6 +3,7 @@
 所有外部代码继续 `from .database import xxx`，无需修改。
 """
 from datetime import datetime
+from typing import Optional
 from nonebot import logger
 
 from .db_core import get_db, checkpoint_db, close_db
@@ -48,6 +49,115 @@ from .db_proactive import (
 from .db_cache import get_article_cache, save_article_cache
 
 from .config import AFFECTION_LEVELS
+
+
+# ============================================================
+# 早晚安优化：昨晚聊天结束时间查询
+# ============================================================
+
+async def get_last_night_end_time(session_id: str) -> Optional[float]:
+    """获取昨晚聊天结束时间（最后一条消息的时间戳）。
+
+    用于动态调整早安时间：如果昨晚聊到很晚，第二天早安推迟。
+    """
+    from .db_core import get_db
+    from datetime import datetime, timedelta
+    db = await get_db()
+    now = datetime.now()
+    # 昨天 18:00 到今天 06:00 的消息
+    yesterday_6pm = (now - timedelta(days=1)).replace(hour=18, minute=0, second=0).timestamp()
+    today_6am = now.replace(hour=6, minute=0, second=0).timestamp()
+    async with db.execute(
+        "SELECT MAX(timestamp) FROM memories WHERE session_id = ? AND timestamp BETWEEN ? AND ?",
+        (session_id, yesterday_6pm, today_6am)
+    ) as cursor:
+        row = await cursor.fetchone()
+        if row and row[0]:
+            return float(row[0])
+    return None
+
+
+async def get_last_night_mood_summary(session_id: str) -> Optional[str]:
+    """获取昨晚对话的情绪摘要（用于早安时携带上下文）。
+
+    返回：'positive'/'negative'/'neutral'/None
+    """
+    from .db_core import get_db
+    from datetime import datetime, timedelta
+    db = await get_db()
+    now = datetime.now()
+    yesterday_6pm = (now - timedelta(days=1)).replace(hour=18, minute=0, second=0).timestamp()
+    today_6am = now.replace(hour=6, minute=0, second=0).timestamp()
+
+    # 查找昨晚最后几条 bot 回复
+    async with db.execute(
+        "SELECT content FROM memories WHERE session_id = ? AND role = 'assistant' AND timestamp BETWEEN ? AND ? ORDER BY timestamp DESC LIMIT 5",
+        (session_id, yesterday_6pm, today_6am)
+    ) as cursor:
+        rows = await cursor.fetchall()
+        if not rows:
+            return None
+        # 简单情绪判断
+        last_msgs = " ".join(r[0] for r in rows)
+        negative_kw = ["难过", "伤心", "不开心", "生气", "烦", "累", "焦虑", "担心", "害怕"]
+        positive_kw = ["开心", "高兴", "哈哈", "笑", "棒", "好", "喜欢", "爱"]
+        neg_count = sum(1 for kw in negative_kw if kw in last_msgs)
+        pos_count = sum(1 for kw in positive_kw if kw in last_msgs)
+        if neg_count > pos_count:
+            return "negative"
+        elif pos_count > neg_count:
+            return "positive"
+        return "neutral"
+
+
+async def get_last_greeting_time(user_id: str, greeting_type: str) -> Optional[float]:
+    """获取上一次发送早安/晚安的时间戳。
+
+    用于控制问候频率，避免每天机械发送。
+    """
+    from .db_core import get_db
+    db = await get_db()
+    scene = "morning" if greeting_type == "morning" else "night"
+    async with db.execute(
+        "SELECT MAX(timestamp) FROM proactive_log WHERE user_id = ? AND scene IN (?, ?) AND type = 'private'",
+        (user_id, scene, f"{scene}_triggered")
+    ) as cursor:
+        row = await cursor.fetchone()
+        if row and row[0]:
+            return float(row[0])
+    return None
+
+
+async def record_farewell(user_id: str, session_id: str):
+    """记录用户道别时间（用于晚安后调侃逻辑）。"""
+    from .db_core import get_db
+    import time
+    db = await get_db()
+    # 使用 session_state 表记录道别时间
+    await db.execute(
+        "UPDATE session_state SET bot_mood_snapshot = ? WHERE session_id = ?",
+        (f'{{"farewell_time": {time.time()}}}', session_id)
+    )
+    await db.commit()
+
+
+async def get_last_farewell_time(session_id: str) -> Optional[float]:
+    """获取上次道别时间。"""
+    from .db_core import get_db
+    import json
+    db = await get_db()
+    async with db.execute(
+        "SELECT bot_mood_snapshot FROM session_state WHERE session_id = ?",
+        (session_id,)
+    ) as cursor:
+        row = await cursor.fetchone()
+        if row and row[0]:
+            try:
+                data = json.loads(row[0])
+                return data.get("farewell_time")
+            except (json.JSONDecodeError, TypeError):
+                pass
+    return None
 
 
 async def init_db():

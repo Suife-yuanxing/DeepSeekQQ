@@ -56,23 +56,57 @@ def split_long_reply(text: str) -> List[str]:
     return result if result else [text.strip()]
 
 
-def calc_message_delay(text: str) -> float:
-    """根据消息长度计算发送延迟（模拟真人打字+思考时间）。
+def calc_message_delay(text: str, context: dict = None) -> float:
+    """增强版打字延迟：考虑内容复杂度、情绪、时段、消息类型。
 
     真人发消息不会秒回——有看消息、想回复、打字的过程。
-    增加随机波动范围，让延迟更自然不可预测。
 
-    短消息(<10字): 0.5~2.5秒（简单回应也有思考停顿）
-    中等消息(10-30字): 1.0~4.0秒
-    长消息(30字+): 2.0~6.0秒（打字需要时间）
+    context 可选字段:
+      - emotion_arousal: float (唤醒度 0~1, 低=慵懒)
+      - is_night: bool (深夜模式)
+      - is_question: bool (问题需要思考)
+      - is_first_reply: bool (首条回复需"阅读+思考")
+      - schedule_speed: float (作息状态的速度系数)
     """
     length = len(text)
-    if length < 10:
-        return random.uniform(0.5, 2.5)
-    elif length < 30:
-        return random.uniform(1.0, 4.0)
+    ctx = context or {}
+
+    # 基础延迟：按字数，非线性
+    if length <= 5:
+        base = random.uniform(0.8, 2.0)    # "哈哈" 也需要反应时间
+    elif length <= 15:
+        base = random.uniform(1.5, 3.5)
+    elif length <= 40:
+        base = random.uniform(2.5, 5.0)
     else:
-        return random.uniform(2.0, 6.0)
+        extra_chars = length - 40
+        base = random.uniform(3.0, 5.0) + extra_chars * random.uniform(0.05, 0.12)
+        base = min(base, 12.0)
+
+    # 首条回复：需要"阅读用户消息+思考"
+    if ctx.get("is_first_reply"):
+        base += random.uniform(1.0, 3.0)
+
+    # 问题类消息：需要思考
+    if ctx.get("is_question"):
+        base += random.uniform(0.5, 2.0)
+
+    # 作息状态速度系数
+    schedule_speed = ctx.get("schedule_speed", 1.0)
+    base *= schedule_speed
+
+    # 情绪修正：兴奋时打得快，难过时打得慢
+    arousal = ctx.get("emotion_arousal", 0.5)
+    if arousal > 0.7:
+        base *= random.uniform(0.7, 0.9)  # 兴奋时快
+    elif arousal < 0.3:
+        base *= random.uniform(1.3, 1.8)  # 慵懒时慢
+
+    # 打字节奏抖动：模拟真人不匀速打字
+    jitter = random.gauss(0, base * 0.15)
+    base += jitter
+
+    return max(0.5, min(base, 15.0))
 
 
 

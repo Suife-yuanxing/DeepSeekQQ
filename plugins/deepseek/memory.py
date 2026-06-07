@@ -494,13 +494,26 @@ async def recover_session_context(session_id: str, user_id: str) -> Optional[Dic
                 "不用说「上次聊到」「之前说过」之类的废话，就像一直在聊一样自然接话。"
             )
 
+        # 检查情绪快照（情绪记忆功能）
+        mood_care_hint = None
+        try:
+            from .db_mood import get_last_mood_snapshot, get_mood_care_hint
+            snapshot = await get_last_mood_snapshot(user_id)
+            if snapshot:
+                mood_care_hint = get_mood_care_hint(snapshot)
+        except Exception:
+            pass
+
         logger.info(f"[会话恢复] {session_id[:20]}... 上次: {topic[:30] if topic else '无'} ({time_hint})")
-        return {
+        result = {
             "last_topic": topic,
             "last_emotion": emotion,
             "time_hint": time_hint,
             "recall_prompt": recall_prompt,
         }
+        if mood_care_hint:
+            result["mood_care_hint"] = mood_care_hint
+        return result
     except Exception as e:
         logger.info(f"[会话恢复] 失败（非关键）: {e}")
         return None

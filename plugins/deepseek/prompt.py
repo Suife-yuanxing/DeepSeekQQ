@@ -95,6 +95,8 @@ def _build_system_prompt(
     disclosure_hint: str = None,
     affection_decay_hint: str = None,
     milestone_hint: str = None,
+    schedule: Any = None,
+    voice_features: Dict[str, Any] = None,
 ) -> str:
     time_context = _get_time_context()
 
@@ -123,6 +125,10 @@ def _build_system_prompt(
     if session_recovery and session_recovery.get("recall_prompt"):
         parts.append(f"【历史记忆】{session_recovery['recall_prompt']}")
 
+    # === 情绪关心（P1）===
+    if session_recovery and session_recovery.get("mood_care_hint"):
+        parts.append(f"【情绪记忆】{session_recovery['mood_care_hint']}")
+
     # === 好感度衰减提示（Phase 5）===
     if affection_decay_hint:
         parts.append(f"【回归感受】{affection_decay_hint}")
@@ -130,6 +136,21 @@ def _build_system_prompt(
     # === 关系里程碑（Phase 5）===
     if milestone_hint:
         parts.append(f"【关系里程碑】{milestone_hint}")
+
+    # === 作息状态 ===
+    if schedule and schedule.period in ("sleeping", "waking", "meal", "lazy", "night_owl"):
+        parts.append(f"【作息状态】{schedule.description}")
+
+    # === 个性特征（口头禅/话题偏好）===
+    from .personality import get_personality_hint
+    personality_hint = get_personality_hint()
+    if personality_hint:
+        parts.append(f"【个性】{personality_hint}")
+
+    # === 语音情绪感知（P1）===
+    if voice_features and voice_features.get("estimated_emotion", "正常") != "正常":
+        emotion = voice_features["estimated_emotion"]
+        parts.append(f"【语音感知】用户刚才是发语音说的，听起来{emotion}。根据语气回应。")
 
     # === 关系风格（Phase 4）===
     if user_prefs and user_prefs.get("relationship_style"):

@@ -139,8 +139,21 @@ async def _generate_proactive_message(scene: str, user_id: str = "", context: di
             "不要说「上次」「之前」这样的词，要像自然而然想到的一样。"
         )
 
+    # 早安场景：携带昨晚上下文
+    morning_prompt = "现在是早上，你要给主人发一条早安消息。语气要自然，像刚睡醒一样，不要像客服。"
+    if scene == "morning" and context:
+        mood_hint = context.get("mood_hint", "")
+        if mood_hint:
+            morning_prompt += f"\n{mood_hint}。"
+        # 根据当前时间调整语气
+        hour = datetime.now().hour
+        if hour < 9:
+            morning_prompt += "\n现在比较早，语气可以慵懒一点。"
+        elif hour >= 10:
+            morning_prompt += "\n现在比较晚了，可以调侃一句'终于醒了？'之类的。"
+
     scene_prompts = {
-        "morning": "现在是早上，你要给主人发一条早安消息。语气要自然，像刚睡醒一样，不要像客服。",
+        "morning": morning_prompt,
         "night": "现在是深夜，主人还没睡，你要催他睡觉。语气关心但带点命令式，比如'快去睡！'。",
         "sleep_nag": "现在是凌晨了，主人还在聊天。你要催他睡觉，语气要强势一点。",
         "silence": "你好久没和主人聊天了，想主动找他说话。" + (context_hint if context_hint else ""),
@@ -208,22 +221,99 @@ async def _generate_proactive_message(scene: str, user_id: str = "", context: di
     return random.choice(fallbacks.get(scene, ["喵~"]))
 
 
+async def _should_send_morning(uid: str) -> dict:
+    """判断是否应该发送早安。
+
+    智能逻辑：
+    1. 检查昨晚聊天结束时间 → 动态调整
+    2. 加入"忘记概率" → 真人不会天天发
+    3. 检查上次早安间隔 → 避免过于频繁
+
+    Returns:
+        {"should_send": bool, "reason": str, "context": str}
+    """
+    from .database import (
+        get_last_night_end_time, get_last_night_mood_summary,
+        get_last_greeting_time, has_user_message_today, has_proactive_today
+    )
+    from datetime import datetime, timedelta
+
+    session_id = f"private_{uid}"
+
+    # 已发过早安或已被感知式触发，跳过
+    if await has_proactive_today(str(uid), "morning") or \
+       await has_proactive_today(str(uid), "morning_triggered"):
+        return {"should_send": False, "reason": "今日已发过早安", "context": ""}
+
+    # 用户今天已经发消息了，不需要主动早安
+    if await has_user_message_today(session_id):
+        return {"should_send": False, "reason": "用户已活跃", "context": ""}
+
+    # 检查上次早安间隔（至少间隔20小时）
+    last_greeting = await get_last_greeting_time(str(uid), "morning")
+    if last_greeting:
+        hours_since = (datetime.now().timestamp() - last_greeting) / 3600
+        if hours_since < 20:
+            return {"should_send": False, "reason": f"距上次早安仅{hours_since:.1f}h", "context": ""}
+
+    # 获取昨晚聊天结束时间
+    last_night_end = await get_last_night_end_time(session_id)
+    context = ""
+    now = datetime.now()
+
+    if last_night_end:
+        end_hour = datetime.fromtimestamp(last_night_end).hour
+        end_minute = datetime.fromtimestamp(last_night_end).minute
+        hours_since_end = (now.timestamp() - last_night_end) / 3600
+
+        # 昨晚聊到很晚（凌晨2点后）→ 今天不主动发早安
+        if end_hour >= 2 or (end_hour < 6):
+            if hours_since_end < 6:
+                return {"should_send": False, "reason": f"昨晚聊到{end_hour}:{end_minute:02d}，太晚了不打扰", "context": ""}
+
+        # 昨晚聊到较晚（0点-2点）→ 早安推迟到10点后
+        if 0 <= end_hour < 2:
+            if now.hour < 10:
+                return {"should_send": False, "reason": f"昨晚聊到{end_hour}:{end_minute:02d}，等晚点再发", "context": ""}
+
+        # 获取昨晚情绪摘要
+        mood = await get_last_night_mood_summary(session_id)
+        if mood == "negative":
+            context = "昨晚用户情绪不太好，早安时可以关心一下"
+        elif mood == "positive":
+            context = "昨晚聊得开心，早安可以延续好心情"
+
+    # 忘记概率：工作日30%，周末50%
+    is_weekend = now.weekday() >= 5
+    forget_chance = 0.5 if is_weekend else 0.3
+    if random.random() < forget_chance:
+        return {"should_send": False, "reason": "随机跳过（模拟忘记）", "context": ""}
+
+    return {"should_send": True, "reason": "条件满足", "context": context}
+
+
 async def _morning_greeting(bot):
-    """9:30 兜底早安：如果用户今天已被感知式早安覆盖，跳过。"""
+    """智能早安：根据昨晚聊天时间动态调整，加入随机性。"""
     cfg = PROACTIVE_CONFIG["morning_greeting"]
     if not cfg["enabled"]:
         return
+
+    now = datetime.now()
+    # 只在合理时间窗口发送（8:00-11:30）
+    if not (8 <= now.hour < 12):
+        return
+
     for uid in cfg["target_users"]:
-        # 已发过早安或已被感知式触发，跳过
-        if await has_proactive_today(str(uid), "morning") or \
-           await has_proactive_today(str(uid), "morning_triggered"):
+        decision = await _should_send_morning(str(uid))
+        if not decision["should_send"]:
+            logger.debug(f"[早安] 跳过 {str(uid)[:6]}: {decision['reason']}")
             continue
-        session_id = f"private_{uid}"
-        from .database import has_user_message_today
-        if await has_user_message_today(session_id):
-            continue
-        msg = await _generate_proactive_message("morning", str(uid))
+
+        # 生成早安消息（携带昨晚上下文）
+        msg = await _generate_proactive_message("morning", str(uid), context={"mood_hint": decision["context"]})
         await _send_proactive_message(bot, "private", str(uid), msg, scene="morning")
+        logger.info(f"[早安] 发送 {str(uid)[:6]}: {msg[:30]}...")
+
     for gid in cfg["target_groups"]:
         if await has_proactive_today(str(gid), "morning"):
             continue
@@ -486,7 +576,11 @@ async def register_proactive_jobs(bot):
 
     mg = PROACTIVE_CONFIG["morning_greeting"]
     if mg["enabled"]:
-        _scheduler.add_job(_morning_greeting, 'cron', hour=mg["hour"], minute=mg["minute"], args=[bot], id="morning", replace_existing=True, jitter=300)
+        # 智能早安：在多个时间点检查，增加随机性
+        # 8:30, 9:30, 10:30 各检查一次，由 _should_send_morning 决定是否发送
+        _scheduler.add_job(_morning_greeting, 'cron', hour=8, minute=30, args=[bot], id="morning_1", replace_existing=True, jitter=300)
+        _scheduler.add_job(_morning_greeting, 'cron', hour=9, minute=30, args=[bot], id="morning_2", replace_existing=True, jitter=300)
+        _scheduler.add_job(_morning_greeting, 'cron', hour=10, minute=30, args=[bot], id="morning_3", replace_existing=True, jitter=300)
 
     ng = PROACTIVE_CONFIG["night_greeting"]
     if ng["enabled"]:

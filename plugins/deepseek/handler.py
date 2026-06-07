@@ -4,6 +4,7 @@
 每个阶段可短路（返回 SKIP 跳过后续），新增功能只需注册一个阶段。
 """
 import os
+import time
 import asyncio
 import random
 import re
@@ -39,6 +40,7 @@ from .handler_helpers import (
     make_reply, make_quote_reply, is_bot_at, is_multi_topic,
     is_question, is_greeting, detect_greeting_type, get_morning_time_hint,
     get_night_affection_hint, has_time_gap, should_quote, parse_target_lines,
+    is_night_farewell,
 )
 from .handler_humanize import introduce_typo, introduce_mind_change, introduce_uncertainty
 
@@ -111,6 +113,8 @@ class ChatContext:
     affection_decay_hint: Optional[str] = None
     milestone_hint: Optional[str] = None
     is_first_today: bool = False
+    schedule: Any = None  # ScheduleState from schedule.py
+    voice_features: dict = field(default_factory=dict)  # 语音情绪特征
 
 
 # ============================================================
@@ -169,6 +173,18 @@ async def _stage_voice(ctx: ChatContext) -> Optional[str]:
         if recognized:
             ctx.raw_msg = recognized
             logger.info(f"[STT] 语音识别结果: {ctx.raw_msg[:50]}")
+
+            # 语音情绪识别（P1）：异步提取音频特征
+            from .stt import _extract_voice_url, _download_voice
+            voice_url = _extract_voice_url(ctx.event)
+            if voice_url:
+                local_path = await _download_voice(voice_url)
+                if local_path:
+                    from .voice_emotion import extract_voice_features
+                    features = await extract_voice_features(local_path)
+                    if features:
+                        ctx.voice_features = features
+                        logger.info(f"[语音情绪] {features.get('estimated_emotion', '未知')} | 音量:{features.get('rms_volume', 0):.0f}")
         else:
             logger.info("[STT] 语音识别失败或无内容")
             try:
@@ -235,18 +251,38 @@ async def _stage_phone(ctx: ChatContext) -> Optional[str]:
 
 @stage("group_filter")
 async def _stage_group_filter(ctx: ChatContext) -> Optional[str]:
-    if ctx.is_group:
-        is_at_me = ctx.event.is_tome()
-        nicknames = ["猫娘", "kitty", "喵喵", "在吗", "bot", "机器人"]
-        has_nickname = any(nick in ctx.raw_msg for nick in nicknames)
-        should_reply_flag = is_at_me or has_nickname or (random.random() < RANDOM_REPLY_CHANCE)
-        if not should_reply_flag:
-            return _SKIP
-        if is_at_me:
-            ctx.raw_msg = re.sub(r'\[CQ:at,qq=\d+\]', '', ctx.raw_msg).strip()
-            if not ctx.raw_msg:
-                ctx.raw_msg = "在吗"
-    return None
+    if not ctx.is_group:
+        return None
+
+    # 始终响应: @我
+    is_at_me = ctx.event.is_tome()
+    if is_at_me:
+        ctx.raw_msg = re.sub(r'\[CQ:at,qq=\d+\]', '', ctx.raw_msg).strip()
+        if not ctx.raw_msg:
+            ctx.raw_msg = "在吗"
+        return None
+
+    # 昵称匹配
+    nicknames = ["猫娘", "kitty", "喵喵", "在吗", "bot", "机器人"]
+    if any(nick in ctx.raw_msg for nick in nicknames):
+        return None
+
+    # 气氛感知（替代简单的随机回复）
+    from .group_atmosphere import should_join_conversation
+    # 构造最近消息列表（简化版，从 session 获取）
+    recent = [{"user_id": ctx.user_id, "timestamp": time.time()}]
+    decision = should_join_conversation(recent, ctx.bot.self_id)
+
+    if decision["should_reply"]:
+        # 根据置信度决定是否回复
+        if random.random() < decision["confidence"] * 0.5:
+            logger.info(f"[群聊] 参与对话: {decision['reason']}")
+            return None
+    elif random.random() < RANDOM_REPLY_CHANCE:
+        # 保留原有的小概率随机回复
+        return None
+
+    return _SKIP
 
 
 @stage("xiaohaihe")
@@ -336,6 +372,32 @@ async def _stage_context(ctx: ChatContext) -> Optional[str]:
 
     if ctx.analysis.context.referenced_entity:
         logger.info(f"[指代消解] 检测到指代: {ctx.analysis.context.referenced_entity}")
+
+    # 填充作息状态
+    from .schedule import get_schedule_state
+    ctx.schedule = get_schedule_state()
+    return None
+
+
+@stage("schedule_interrupt")
+async def _stage_schedule_interrupt(ctx: ChatContext) -> Optional[str]:
+    """作息规律：根据时间决定是否中断消息处理。"""
+    if not ctx.schedule:
+        return None
+    schedule = ctx.schedule
+
+    # 凌晨 sleeping：30% 概率不回复
+    if schedule.period == "sleeping" and random.random() < 0.3:
+        logger.info("[作息] 深夜不回复（sleeping）")
+        return _SKIP
+
+    # 吃饭时间：15% 概率回"在吃饭"
+    if schedule.period == "meal" and random.random() < 0.15:
+        meal_msgs = ["在吃饭呢~等下聊", "先吃饭！", "等我吃完~", "正吃着呢~"]
+        await ctx.bot.send(ctx.event, make_reply(ctx.event, Message(random.choice(meal_msgs))))
+        logger.info("[作息] 吃饭中断")
+        return _SKIP
+
     return None
 
 
@@ -388,6 +450,8 @@ async def _stage_llm(ctx: ChatContext) -> Optional[str]:
             disclosure_hint=ctx.disclosure_hint["text"] if ctx.disclosure_hint else None,
             affection_decay_hint=ctx.affection_decay_hint,
             milestone_hint=ctx.milestone_hint,
+            schedule=ctx.schedule,
+            voice_features=ctx.voice_features,
         )
         sys_prompt += "\n回复风格：专业分析+个性点评。分析部分结构化、有深度，点评部分保持你的猫娘语气。绝对禁止括号动作描写。"
         messages = [{"role": "system", "content": sys_prompt}]
@@ -414,10 +478,23 @@ async def _stage_llm(ctx: ChatContext) -> Optional[str]:
             disclosure_hint=ctx.disclosure_hint["text"] if ctx.disclosure_hint else None,
             affection_decay_hint=ctx.affection_decay_hint,
             milestone_hint=ctx.milestone_hint,
+            schedule=ctx.schedule,
+            voice_features=ctx.voice_features,
         )
 
         from .database import has_user_message_today
-        greeting_type = detect_greeting_type(ctx.raw_msg)
+        greeting_type = detect_greeting_type(ctx.raw_msg, ctx.recent_memories)
+
+        # 检查是否是晚安后又来聊天（5分钟内）
+        is_comeback_after_farewell = False
+        if greeting_type is None and greeting_type != "morning":
+            from .database import get_last_farewell_time
+            farewell_time = await get_last_farewell_time(ctx.session_id)
+            if farewell_time:
+                minutes_since = (time.time() - farewell_time) / 60
+                if 0 < minutes_since < 5:
+                    is_comeback_after_farewell = True
+
         if greeting_type == "morning":
             hour = datetime.now().hour
             time_hint = get_morning_time_hint(hour)
@@ -429,10 +506,32 @@ async def _stage_llm(ctx: ChatContext) -> Optional[str]:
             sys_prompt += greet_hint
         elif greeting_type == "night":
             affection_hint = get_night_affection_hint(ctx.affection)
+            farewell_confidence = is_night_farewell(ctx.raw_msg, ctx.recent_memories)["confidence"]
+
+            if farewell_confidence >= 0.8:
+                # 高置信度道别
+                sys_prompt += (
+                    f"\n【道别感知】用户在跟你说晚安/要睡了。{affection_hint}"
+                    "\n回复要求：短、温暖、不要追问、不要开启新话题。"
+                    "像关灯一样自然地道别。1句话就够了。"
+                )
+                # 记录道别时间
+                from .database import record_farewell
+                asyncio.create_task(record_farewell(ctx.user_id, ctx.session_id))
+            else:
+                # 低置信度（可能是抱怨）
+                sys_prompt += (
+                    f"\n【可能道别】用户说'困了'之类的，但不确定是否真要睡。{affection_hint}"
+                    "\n回复要求：可以关心一下，但不要直接说晚安。"
+                    "比如'那就早点休息呀~'、'困了就睡呗~'。如果他真要睡会再说的。"
+                )
+        elif is_comeback_after_farewell:
+            # 晚安后又来聊天！
             sys_prompt += (
-                f"\n【道别感知】用户在跟你说晚安/要睡了。{affection_hint}"
-                "\n回复要求：短、温暖、不要追问、不要开启新话题。"
-                "像关灯一样自然地道别。1句话就够了。"
+                "\n【调侃机会】用户刚才说了晚安/要睡了，结果又发消息了！"
+                "这是一个很好的调侃机会。语气要调皮、得意。"
+                "比如：'怎么还没睡？'、'不是说困了吗~'、'嘴上说睡了身体很诚实嘛~'"
+                "\n回复要求：简短、调侃、不要太长。1-2句话。"
             )
         elif ctx.is_first_today:
             hour = datetime.now().hour
@@ -533,8 +632,13 @@ async def _stage_post(ctx: ChatContext) -> Optional[str]:
     )
     first_sent = False
 
-    if random.random() < 0.15:
-        await asyncio.sleep(random.uniform(2.0, 5.0))
+    # 打字延迟上下文
+    typing_ctx = {
+        "is_first_reply": True,
+        "is_question": "?" in ctx.raw_msg or "？" in ctx.raw_msg,
+        "emotion_arousal": ctx.analysis.emotion.arousal if ctx.analysis else 0.5,
+        "schedule_speed": ctx.schedule.reply_speed if ctx.schedule else 1.0,
+    }
 
     send_as_voice = should_send_voice(ctx.raw_msg, clean_text, ctx.recent_memories)
     if send_as_voice:
@@ -557,7 +661,10 @@ async def _stage_post(ctx: ChatContext) -> Optional[str]:
             parts = split_long_reply(str(rich_msg))
             for i, part in enumerate(parts):
                 if i > 0:
-                    await asyncio.sleep(calc_message_delay(part))
+                    typing_ctx["is_first_reply"] = False
+                    await asyncio.sleep(calc_message_delay(part, typing_ctx))
+                else:
+                    await asyncio.sleep(calc_message_delay(part, typing_ctx))
                 if not first_sent and use_quote:
                     await ctx.bot.send(ctx.event, make_quote_reply(ctx.event, Message(part)))
                     first_sent = True
@@ -568,7 +675,10 @@ async def _stage_post(ctx: ChatContext) -> Optional[str]:
             parts = split_long_reply(clean_text)
             for i, part in enumerate(parts):
                 if i > 0:
-                    await asyncio.sleep(calc_message_delay(part))
+                    typing_ctx["is_first_reply"] = False
+                    await asyncio.sleep(calc_message_delay(part, typing_ctx))
+                else:
+                    await asyncio.sleep(calc_message_delay(part, typing_ctx))
                 if not first_sent and use_quote:
                     await ctx.bot.send(ctx.event, make_quote_reply(ctx.event, Message(part)))
                     first_sent = True
@@ -587,6 +697,14 @@ async def _stage_post(ctx: ChatContext) -> Optional[str]:
         await asyncio.sleep(1.0)
         await ctx.bot.send(ctx.event, MessageSegment.image(file=Path(ctx.image_path)))
         logger.info(f"[图片] 发送: {os.path.basename(ctx.image_path)}")
+
+    # 随机行为（P2）：3% 概率突然分享点什么
+    from .message_actions import maybe_share_something
+    asyncio.create_task(maybe_share_something(ctx.bot, ctx.event, share_chance=0.03))
+
+    # 情绪快照保存（P1）：会话结束时保存用户情绪供下次关心
+    from .db_mood import save_mood_snapshot
+    asyncio.create_task(save_mood_snapshot(ctx.user_id, ctx.session_id))
 
     return None
 
