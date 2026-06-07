@@ -18,6 +18,7 @@ from .config import SHARE_TTL, URL_FETCH_COOLDOWN
 from .database import get_article_cache, save_article_cache
 from .api import get_http_session
 from .vision import recognize_sticker, analyze_image
+from .image_reply import classify_image, IMAGE_TYPE_STICKER
 from nonebot import logger
 
 _recent_shares: Dict[str, List[Dict[str, Any]]] = {}
@@ -446,7 +447,7 @@ async def extract_and_cache_shares(event, session_id: str) -> bool:
                 elif user_text and any(kw in user_text for kw in ["这是什么", "看看", "帮我", "识别", "什么"]):
                     img_prompt = "请详细描述这张图片的内容，包括主要物体、场景、文字等，用中文回答，3-4句话"
                 else:
-                    img_prompt = "请用中文简洁描述这张图片的主要内容，2-3句话，如果有文字请提取出来"
+                    img_prompt = "请用中文简洁描述这张图片的主要内容，2-3句话，如果有文字请提取出来。特别注意：如果图片中有人物、动物、食物、风景、代码、聊天记录、文档等，请明确指出类型。"
                 # 三层降级识别图片：视觉模型 → OCR → 占位
                 img_desc = "[图片内容暂无法直接识别]"
                 try:
@@ -456,7 +457,20 @@ async def extract_and_cache_shares(event, session_id: str) -> bool:
                             img_desc = f"[图片内容: {vision_result}]"
                 except Exception as e:
                     logger.warning(f"[图片识别] 异常: {e}")
-                shares.append({"type": "图片", "source": img_url, "summary": img_desc, "time": datetime.now().timestamp()})
+
+                # 图片分类（用于个性化回复）
+                vision_text = img_desc.replace("[图片内容: ", "").replace("]", "")
+                image_type = classify_image(vision_text, user_text)
+                logger.info(f"[图片分类] {image_type} | {vision_text[:50]}...")
+
+                shares.append({
+                    "type": "图片",
+                    "source": img_url,
+                    "summary": img_desc,
+                    "image_type": image_type,
+                    "vision_text": vision_text,
+                    "time": datetime.now().timestamp()
+                })
         elif seg.type == "face":
             face_id = str(seg.data.get("id", seg.data.get("faceIndex", "")))
             face_text = seg.data.get("text", "") or seg.data.get("faceText", "")

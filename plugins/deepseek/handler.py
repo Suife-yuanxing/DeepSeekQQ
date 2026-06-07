@@ -546,6 +546,20 @@ async def _stage_llm(ctx: ChatContext) -> Optional[str]:
                     ctx.user_id, "private", "[感知式早安]", scene="morning_triggered"
                 ))
 
+        # 图片回复策略（P2）：基于人设的个性化图片回应（独立于上述条件）
+        from .image_reply import get_image_reply_prompt
+        image_shares = [s for s in shares_now if s.get("type") == "图片" and s.get("vision_text")]
+        if image_shares:
+            latest_image = image_shares[-1]
+            image_type = latest_image.get("image_type", "unknown")
+            vision_text = latest_image.get("vision_text", "")
+            affection_score = ctx.affection.get("score", 0)
+            image_prompt = get_image_reply_prompt(
+                image_type, vision_text, affection_score, ctx.raw_msg, ctx.bot_mood_result
+            )
+            if image_prompt:
+                sys_prompt += f"\n{image_prompt}"
+
         messages = [{"role": "system", "content": sys_prompt}]
         history_limit = REPLY_LENGTH_CONFIG["context_depth"] * CHAT_HISTORY_MULTIPLIER
         for mem in ctx.recent_memories[-history_limit:]:
