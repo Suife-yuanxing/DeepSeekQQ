@@ -910,13 +910,16 @@ async def _stage_post(ctx: ChatContext) -> Optional[str]:
     )
     first_sent = False
 
-    # 打字延迟上下文
+    # 打字延迟上下文（真人化：传入对方消息和复杂度）
     typing_ctx = {
         "is_first_reply": True,
         "is_question": "?" in ctx.raw_msg or "？" in ctx.raw_msg,
         "emotion_arousal": ctx.analysis.emotion.arousal if ctx.analysis else 0.5,
         "schedule_speed": ctx.schedule.reply_speed if ctx.schedule else 1.0,
         "is_quick_reply": ctx.complexity == "simple",
+        "user_msg": ctx.raw_msg,                    # 对方消息，用于计算阅读时间
+        "complexity": ctx.complexity,                # simple/normal/complex
+        "is_night": ctx.schedule.period == "sleeping" if ctx.schedule else False,
     }
     # 图片快速反应已发过，首条延迟缩短
     if ctx.image_quick_sent:
@@ -942,11 +945,13 @@ async def _stage_post(ctx: ChatContext) -> Optional[str]:
             rich_msg = build_rich_message(clean_text, reply_urls, search_items, show_links=ctx.is_explicit_search)
             parts = split_long_reply(str(rich_msg))
             for i, part in enumerate(parts):
-                if i > 0:
-                    typing_ctx["is_first_reply"] = False
+                if i == 0:
+                    # 首条：完整延迟（阅读+思考+打字）
                     await asyncio.sleep(calc_message_delay(part, typing_ctx))
                 else:
-                    await asyncio.sleep(calc_message_delay(part, typing_ctx))
+                    # 追加：burst 延迟（2~5秒，模拟打完又想到要补）
+                    typing_ctx["is_first_reply"] = False
+                    await asyncio.sleep(random.uniform(2.0, 5.0))
                 if not first_sent and use_quote:
                     await ctx.bot.send(ctx.event, make_quote_reply(ctx.event, Message(part)))
                     first_sent = True
@@ -956,11 +961,13 @@ async def _stage_post(ctx: ChatContext) -> Optional[str]:
         else:
             parts = split_long_reply(clean_text)
             for i, part in enumerate(parts):
-                if i > 0:
-                    typing_ctx["is_first_reply"] = False
+                if i == 0:
+                    # 首条：完整延迟（阅读+思考+打字）
                     await asyncio.sleep(calc_message_delay(part, typing_ctx))
                 else:
-                    await asyncio.sleep(calc_message_delay(part, typing_ctx))
+                    # 追加：burst 延迟（2~5秒）
+                    typing_ctx["is_first_reply"] = False
+                    await asyncio.sleep(random.uniform(2.0, 5.0))
                 if not first_sent and use_quote:
                     await ctx.bot.send(ctx.event, make_quote_reply(ctx.event, Message(part)))
                     first_sent = True
@@ -1024,7 +1031,7 @@ async def _handle_emoji_share(ctx: ChatContext, last_share: dict):
         parts = split_long_reply(send_text)
         for i, part in enumerate(parts):
             if i > 0:
-                await asyncio.sleep(random.uniform(0.8, 1.5))
+                await asyncio.sleep(random.uniform(2.0, 5.0))
             if i == 0:
                 await ctx.bot.send(ctx.event, make_reply(ctx.event, Message(part)))
             else:
@@ -1032,7 +1039,7 @@ async def _handle_emoji_share(ctx: ChatContext, last_share: dict):
     if sticker_emotion:
         sticker_path = await select_sticker_with_search(sticker_emotion, emoji_scene)
         if sticker_path:
-            await asyncio.sleep(0.8)
+            await asyncio.sleep(random.uniform(1.0, 2.0))
             await ctx.bot.send(ctx.event, MessageSegment.image(file=Path(sticker_path)))
             logger.info(f"[表情包] 回应表情: {sticker_emotion} -> {os.path.basename(sticker_path)}")
     await save_reply(ctx.session_id, ctx.user_id, f"[表情:{emoji_name}]", send_text)

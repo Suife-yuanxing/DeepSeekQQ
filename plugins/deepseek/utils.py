@@ -57,88 +57,117 @@ def split_long_reply(text: str) -> List[str]:
 
 
 def calc_message_delay(text: str, context: dict = None) -> float:
-    """增强版打字延迟：考虑内容复杂度、情绪、时段、消息类型。
+    """真人化延迟：模拟"看到消息→想回复→打字"的全过程。
 
-    真人发消息不会秒回——有看消息、想回复、打字的过程。
+    核心思路：延迟取决于对方说了什么（阅读量），而非自己回了什么。
+    短消息如"嗯"反而要更久（因为要先看完对方说的），
+    长消息反而可能更快（因为对方说了很多你有话要说）。
 
     context 可选字段:
+      - user_msg: str (对方发的消息，用于计算阅读时间)
+      - complexity: str (simple/normal/complex)
       - emotion_arousal: float (唤醒度 0~1, 低=慵懒)
+      - is_question: bool (对方在提问)
+      - is_first_reply: bool (首条回复)
+      - schedule_speed: float (作息速度系数)
+      - is_quick_reply: bool (简单消息快速通道)
       - is_night: bool (深夜模式)
-      - is_question: bool (问题需要思考)
-      - is_first_reply: bool (首条回复需"阅读+思考")
-      - schedule_speed: float (作息状态的速度系数)
     """
-    length = len(text)
+    reply_len = len(text)
     ctx = context or {}
 
-    # 基础延迟：按字数，非线性
-    if length <= 5:
-        base = random.uniform(0.8, 2.0)    # "哈哈" 也需要反应时间
-    elif length <= 15:
-        base = random.uniform(1.5, 3.5)
-    elif length <= 40:
-        base = random.uniform(2.5, 5.0)
+    # === 1. 阅读时间：取决于对方消息长度 ===
+    user_msg_len = len(ctx.get("user_msg", ""))
+    if user_msg_len <= 3:
+        read_time = random.uniform(0.5, 1.5)     # "嗯" → 快速扫一眼
+    elif user_msg_len <= 15:
+        read_time = random.uniform(1.0, 3.0)     # 一句话 → 正常看
+    elif user_msg_len <= 50:
+        read_time = random.uniform(2.0, 4.5)     # 一段话 → 仔细看
     else:
-        extra_chars = length - 40
-        base = random.uniform(3.0, 5.0) + extra_chars * random.uniform(0.05, 0.12)
-        base = min(base, 12.0)
+        read_time = random.uniform(3.0, 6.0)     # 长消息 → 认真看，最多6秒
 
-    # 首条回复：需要"阅读用户消息+思考"
-    if ctx.get("is_first_reply"):
-        base += random.uniform(1.0, 3.0)
+    # 首条回复需要阅读，非首条（连发的后续）跳过阅读
+    if not ctx.get("is_first_reply", True):
+        read_time = 0.0
 
-    # 问题类消息：需要思考
+    # === 2. 思考时间：取决于消息复杂度 ===
+    complexity = ctx.get("complexity", "normal")
+    if complexity == "simple":
+        # "哈哈"、"好的" → 不用想，直接回
+        think_time = random.uniform(0.3, 1.5)
+    elif complexity == "complex":
+        # 提问、分析、需要搜索 → 要想一下
+        think_time = random.uniform(2.0, 6.0)
+    else:
+        # 一般消息 → 正常想
+        think_time = random.uniform(1.0, 3.0)
+
+    # 问题需要额外思考
     if ctx.get("is_question"):
-        base += random.uniform(0.5, 2.0)
+        think_time += random.uniform(1.0, 3.0)
 
-    # 作息状态速度系数
+    # === 3. 打字时间：基于自己回复长度 ===
+    if reply_len <= 5:
+        type_time = random.uniform(0.3, 0.8)     # "嗯" → 打得快
+    elif reply_len <= 15:
+        type_time = random.uniform(0.8, 1.5)
+    elif reply_len <= 40:
+        type_time = random.uniform(1.5, 3.0)
+    else:
+        type_time = random.uniform(2.5, 4.0) + (reply_len - 40) * random.uniform(0.03, 0.08)
+        type_time = min(type_time, 8.0)
+
+    # === 4. 合并 + 修正 ===
+    total = read_time + think_time + type_time
+
+    # 作息速度系数
     schedule_speed = ctx.get("schedule_speed", 1.0)
-    base *= schedule_speed
+    total *= schedule_speed
 
-    # 情绪修正：兴奋时打得快，难过时打得慢
+    # 情绪修正：兴奋时手快脑子快，低落时慢悠悠
     arousal = ctx.get("emotion_arousal", 0.5)
     if arousal > 0.7:
-        base *= random.uniform(0.7, 0.9)  # 兴奋时快
+        total *= random.uniform(0.6, 0.85)   # 兴奋 → 快
     elif arousal < 0.3:
-        base *= random.uniform(1.3, 1.8)  # 慵懒时慢
+        total *= random.uniform(1.2, 1.6)    # 低落 → 慢
 
-    # 快回模式：简单消息的回复，延迟大幅缩短
+    # 深夜模式：整体慢一拍
+    if ctx.get("is_night"):
+        total *= random.uniform(1.3, 1.8)
+
+    # 快回模式：简单消息通道，大幅压缩
     if ctx.get("is_quick_reply"):
-        base *= 0.4
-        if ctx.get("is_first_reply"):
-            base = min(base, 1.0)
+        total *= 0.4
 
-    # 打字节奏抖动：模拟真人不匀速打字
-    jitter = random.gauss(0, base * 0.15)
-    base += jitter
+    # 随机抖动：真人不是匀速的，±15%
+    jitter = random.gauss(0, total * 0.15)
+    total += jitter
 
-    return max(0.3, min(base, 15.0))
+    # 边界：最少1.5秒（不可能比这更快），最多30秒
+    return max(1.5, min(total, 30.0))
 
 
 def calc_burst_delays(parts: List[str], base_context: dict = None) -> List[float]:
     """计算连发消息的延迟列表。
 
-    连发节奏：
-    - 第一条：正常延迟（阅读+思考）
-    - 第二条：延迟缩短 30%（快速追加）
-    - 第三条：延迟缩短 50%（抢着说）
+    真人连发消息的节奏：
+    - 第一条：正常延迟（阅读+思考+打字）
+    - 第二条：等 2~5 秒（打完一条想起来又补一条）
+    - 第三条：等 1~3 秒（越说越快，抢着说）
     """
     if not parts:
         return []
 
     delays = []
     for i, part in enumerate(parts):
-        ctx = dict(base_context or {})
-        if i > 0:
-            ctx["is_first_reply"] = False
-            # 追加消息延迟递减
-            decay = max(0.3, 1.0 - i * 0.25)
-            delay = calc_message_delay(part, ctx) * decay
-            # 追加消息最低 0.3s
-            delay = max(0.3, delay)
+        if i == 0:
+            # 第一条：正常延迟
+            ctx = dict(base_context or {})
+            delays.append(calc_message_delay(part, ctx))
         else:
-            delay = calc_message_delay(part, ctx)
-        delays.append(delay)
+            # 追加消息：固定范围随机，模拟"打完上条又想到要补"
+            delays.append(random.uniform(2.0, 5.0))
 
     return delays
 
