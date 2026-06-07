@@ -263,9 +263,12 @@ async def _stage_share(ctx: ChatContext) -> Optional[str]:
 @stage("share_only_reply")
 async def _stage_share_only(ctx: ChatContext) -> Optional[str]:
     if not ctx.raw_msg and ctx.has_share:
+        recent = get_recent_shares(ctx.session_id)
+        last_share = recent[-1] if recent else None
+        # 图片分享走LLM回复流程，不在此阶段跳过
+        if last_share and last_share.get("type") == "图片":
+            return None
         if not ctx.is_group or ctx.event.is_tome() or random.random() < 0.3:
-            recent = get_recent_shares(ctx.session_id)
-            last_share = recent[-1] if recent else None
             if last_share and last_share.get("type") == "表情":
                 await _handle_emoji_share(ctx, last_share)
             else:
