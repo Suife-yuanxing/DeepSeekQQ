@@ -124,23 +124,34 @@ def get_image_reply_prompt(
 
     # 根据图片类型和好感度生成策略
     if image_type == IMAGE_TYPE_PHOTO_PET:
-        return _build_pet_reply(vision_result, affection_score, intent)
+        base_prompt = _build_pet_reply(vision_result, affection_score, intent)
     elif image_type == IMAGE_TYPE_PHOTO_FOOD:
-        return _build_food_reply(vision_result, affection_score, intent)
+        base_prompt = _build_food_reply(vision_result, affection_score, intent)
     elif image_type == IMAGE_TYPE_PHOTO_PERSON:
-        return _build_person_reply(vision_result, affection_score, intent)
+        base_prompt = _build_person_reply(vision_result, affection_score, intent)
     elif image_type == IMAGE_TYPE_PHOTO_SCENERY:
-        return _build_scenery_reply(vision_result, affection_score, intent)
+        base_prompt = _build_scenery_reply(vision_result, affection_score, intent)
     elif image_type == IMAGE_TYPE_SCREENSHOT_CHAT:
-        return _build_chat_screenshot_reply(vision_result, intent)
+        base_prompt = _build_chat_screenshot_reply(vision_result, intent)
     elif image_type == IMAGE_TYPE_SCREENSHOT_WEB:
-        return _build_web_screenshot_reply(vision_result, intent)
+        base_prompt = _build_web_screenshot_reply(vision_result, intent)
     elif image_type == IMAGE_TYPE_SCREENSHOT_OTHER:
-        return _build_other_screenshot_reply(vision_result, intent)
+        base_prompt = _build_other_screenshot_reply(vision_result, intent)
     elif image_type == IMAGE_TYPE_DOCUMENT:
-        return _build_document_reply(vision_result, intent)
+        base_prompt = _build_document_reply(vision_result, intent)
     else:
-        return _build_unknown_reply(vision_result, intent)
+        base_prompt = _build_unknown_reply(vision_result, intent)
+
+    # 全局约束：禁止模板化反应，只生成一条自然回复
+    global_constraint = (
+        "\n【重要约束】"
+        "1. 你只需要回复一条消息，不要拆成多条\n"
+        "2. 禁止使用「我看看~」「这是什么呀？」「让我看看」等常见模板反应\n"
+        "3. 根据图片实际内容给出有信息量的回复，不要泛泛而谈\n"
+        "4. 像真人朋友聊天一样自然，可以先说感受再提问，也可以只说感受不提问"
+    )
+
+    return base_prompt + global_constraint
 
 
 def _detect_user_intent(user_msg: str) -> str:

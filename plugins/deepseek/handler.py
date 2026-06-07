@@ -99,17 +99,6 @@ def classify_message_complexity(raw_msg: str, has_image: bool, has_voice: bool) 
     return "normal"
 
 
-# 图片快速反应池（不等识别，立刻发）
-IMAGE_QUICK_REACTIONS = {
-    "photo_pet": ["啊啊啊猫猫！", "好可爱！让我看看~", "这是什么小可爱！"],
-    "photo_food": ["饿了...让我看看", "馋了馋了", "看起来好好吃！"],
-    "photo_person": ["我看看~", "哦？拍得不错嘛", "哟~"],
-    "photo_scenery": ["哇好好看！", "这是哪呀？好漂亮", "好美~"],
-    "screenshot_chat": ["我看看...", "这是什么呀？", "怎么了？"],
-    "screenshot_web": ["这是什么网站？", "我看看~"],
-    "document": ["让我看看~", "这是什么呀？"],
-    "unknown": ["我看看~", "这是什么呀？"],
-}
 
 
 # ============================================================
@@ -175,7 +164,6 @@ class ChatContext:
     catchphrase_hint: str = ""
     # 真人化优化
     complexity: str = "normal"        # simple / normal / complex
-    image_quick_sent: bool = False    # 图片快速反应是否已发送
 
 
 # ============================================================
@@ -370,22 +358,6 @@ async def _stage_affection(ctx: ChatContext) -> Optional[str]:
 
 @stage("context_analysis")
 async def _stage_context(ctx: ChatContext) -> Optional[str]:
-    # === 图片快速反应：不等识别，先发本能反应 ===
-    if not ctx.image_quick_sent:
-        shares_now = get_recent_shares(ctx.session_id)
-        image_shares = [s for s in shares_now if s.get("type") == "图片"]
-        if image_shares:
-            latest = image_shares[-1]
-            img_type = latest.get("image_type", "unknown")
-            reactions = IMAGE_QUICK_REACTIONS.get(img_type, IMAGE_QUICK_REACTIONS["unknown"])
-            quick_reply = random.choice(reactions)
-            try:
-                await ctx.bot.send(ctx.event, make_reply(ctx.event, Message(quick_reply)))
-                ctx.image_quick_sent = True
-                logger.info(f"[图片快速反应] {quick_reply}")
-            except Exception:
-                pass
-
     ctx.recent_memories, ctx.relevant_tags, ctx.affection, ctx.mood, history_for_analysis = \
         await save_and_get_context_with_history(ctx.session_id, ctx.user_id, ctx.raw_msg)
 
@@ -931,9 +903,6 @@ async def _stage_post(ctx: ChatContext) -> Optional[str]:
         "complexity": ctx.complexity,                # simple/normal/complex
         "is_night": ctx.schedule.period == "sleeping" if ctx.schedule else False,
     }
-    # 图片快速反应已发过，首条延迟缩短
-    if ctx.image_quick_sent:
-        typing_ctx["is_first_reply"] = False
 
     send_as_voice = should_send_voice(ctx.raw_msg, clean_text, ctx.recent_memories)
     # === 发消息前取消"正在输入"状态（更自然：打完字→取消输入→发送）===
