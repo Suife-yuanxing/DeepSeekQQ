@@ -173,7 +173,8 @@ class TestReactionPrefix:
 # ============================================================
 
 class TestBurstDelay:
-    def test_burst_delays_decrease(self):
+    def test_burst_delays_realistic(self):
+        """首条延迟完整（阅读+思考+打字），后续 2~5 秒 burst 延迟。"""
         from plugins.deepseek.utils import calc_burst_delays
         parts = ["第一条消息", "第二条消息", "第三条消息"]
         # 多次取平均消除随机性
@@ -185,9 +186,11 @@ class TestBurstDelay:
             for j in range(3):
                 totals[j] += delays[j]
         avg = [t / runs for t in totals]
-        # 平均延迟应该递减
-        assert avg[1] <= avg[0]
-        assert avg[2] <= avg[1]
+        # 首条延迟应明显大于后续（首条有阅读+思考时间）
+        assert avg[0] > avg[1]
+        # 后续 burst 延迟在 2~5 秒范围
+        assert 2.0 <= avg[1] <= 5.0
+        assert 2.0 <= avg[2] <= 5.0
 
     def test_burst_delays_empty(self):
         from plugins.deepseek.utils import calc_burst_delays

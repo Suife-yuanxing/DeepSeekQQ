@@ -1,4 +1,4 @@
-"""拟人化处理 — 错别字纠正、改变主意、不确定表达、节奏增强。"""
+"""拟人化处理 — 错别字纠正、改变主意、不确定表达、节奏增强、颜文字。"""
 import random
 import re
 from typing import List, Optional
@@ -105,3 +105,71 @@ def maybe_split_to_bursts(text: str, emotion_arousal: float = 0.5,
     """
     from .dialogue_rhythm import should_split_to_bursts
     return should_split_to_bursts(text, emotion_arousal, emotion_valence)
+
+
+# ============================================================
+# 颜文字系统 — 根据情绪添加表情符号
+# ============================================================
+
+_KAOMOJI_HAPPY = ["qwq", "owo", ">w<", "嘻嘻", "嘿嘿", "哈哈", "开心~"]
+_KAOMOJI_EXCITED = ["啊啊啊", "！！！", "好耶", "冲冲冲", "芜湖~", "耶！"]
+_KAOMOJI_SHY = [">_<", "///", "呜呜", "嗯...", "害羞", "qwq"]
+_KAOMOJI_ANGRY = ["哼！", "气死", "(╯‵□′)╯︵┻━┻", "可恶", "啊啊啊气死了"]
+_KAOMOJI_SAD = ["呜呜呜", "qwq", "唉...", "难过", "T_T", "委屈"]
+_KAOMOJI_TSUNDERE = ["才不是呢", "哼~", "别瞎说", "谁要你管", "切~"]
+_KAOMOJI_CUTE = ["喵~", "呜喵", "嗷呜", "蹭蹭", "呼噜呼噜~"]
+_KAOMOJI_TEASE = ["嘿嘿~", "哟~", "诶嘿", "嘻嘻", "♡", "w"]
+
+
+def maybe_add_kaomoji(text: str, emotion_dominant: str = "平静",
+                      emotion_valence: float = 0.0,
+                      emotion_arousal: float = 0.5,
+                      affection_score: float = 0.0) -> str:
+    """根据情绪状态在回复末尾添加颜文字。
+
+    概率：8%（平静）~ 15%（高情绪）
+    颜文字加在句尾，用空格或直接拼接。
+    """
+    # 已经有颜文字/表情符号就不加了
+    if re.search(r'[><_╱╲╯︵┻━♡qwQWOPop]{2,}', text):
+        return text
+
+    # 根据情绪选词库
+    if emotion_dominant in ("开心", "得意"):
+        pool = _KAOMOJI_HAPPY
+        chance = 0.12
+    elif emotion_dominant == "兴奋":
+        pool = _KAOMOJI_EXCITED
+        chance = 0.15
+    elif emotion_dominant in ("害羞", "撒娇"):
+        pool = _KAOMOJI_SHY
+        chance = 0.12
+    elif emotion_dominant == "生气":
+        pool = _KAOMOJI_ANGRY
+        chance = 0.10
+    elif emotion_dominant in ("难过", "担心"):
+        pool = _KAOMOJI_SAD
+        chance = 0.10
+    elif emotion_dominant in ("傲娇", "冷淡"):
+        pool = _KAOMOJI_TSUNDERE
+        chance = 0.10
+    elif affection_score >= 200 and emotion_valence > 0:
+        # 高好感度 + 正面情绪 → 撩人/可爱
+        pool = _KAOMOJI_TEASE + _KAOMOJI_CUTE
+        chance = 0.12
+    else:
+        pool = _KAOMOJI_HAPPY
+        chance = 0.08
+
+    if random.random() > chance:
+        return text
+
+    kaomoji = random.choice(pool)
+
+    # 加在句尾：如果以标点结尾，替换标点；否则直接拼接
+    if text and text[-1] in "。！？~…":
+        text = text[:-1] + kaomoji
+    else:
+        text = text + " " + kaomoji
+
+    return text

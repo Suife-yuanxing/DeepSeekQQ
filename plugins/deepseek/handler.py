@@ -42,7 +42,7 @@ from .handler_helpers import (
     get_night_affection_hint, has_time_gap, should_quote, parse_target_lines,
     is_night_farewell,
 )
-from .handler_humanize import introduce_typo, introduce_mind_change, introduce_uncertainty
+from .handler_humanize import introduce_typo, introduce_mind_change, introduce_uncertainty, maybe_add_kaomoji
 
 # 向后兼容：现有测试引用的内部函数名
 _parse_target_lines = parse_target_lines
@@ -871,6 +871,16 @@ async def _stage_humanize(ctx: ChatContext) -> Optional[str]:
     if random.random() < 0.01 and len(text) > 10:
         text = introduce_uncertainty(text)
 
+    # 颜文字：根据情绪在句尾加表情符号
+    emotion_dom = ctx.analysis.emotion.dominant if ctx.analysis and ctx.analysis.emotion.confidence >= 0.4 else "平静"
+    text = maybe_add_kaomoji(
+        text,
+        emotion_dominant=emotion_dom,
+        emotion_valence=emotion_v,
+        emotion_arousal=emotion_a,
+        affection_score=ctx.affection.get("score", 0),
+    )
+
     # 节奏增强：连发拆分
     from .handler_humanize import maybe_split_to_bursts
     emotion_a = ctx.analysis.emotion.arousal if ctx.analysis else 0.5
@@ -1070,10 +1080,27 @@ async def _handle_link_share(ctx: ChatContext):
 # 入口函数（执行 Pipeline）
 # ============================================================
 
+async def _set_typing_status(bot: Bot, event: MessageEvent, status: bool):
+    """设置"正在输入"状态。NapCat 扩展接口。"""
+    try:
+        user_id = event.user_id
+        params = {"user_id": int(user_id), "status": status}
+        # 群聊需要额外传 group_id
+        if isinstance(event, GroupMessageEvent):
+            params["group_id"] = event.group_id
+        await bot.call_api("set_input_status", **params)
+    except Exception:
+        pass  # 不支持就静默失败
+
+
 async def handle_chat(bot: Bot, event: MessageEvent):
     """主入口：构建上下文并执行 Pipeline。"""
     from .performance_monitor import StageTimer, track_response
     start_time = time.time()
+
+    # === 立刻发"正在输入"状态（不等延迟）===
+    asyncio.create_task(_set_typing_status(bot, event, True))
+
     try:
         # 预检测消息中的图片和语音（用于消息分级）
         _msg_segments = event.get_message()
@@ -1106,5 +1133,7 @@ async def handle_chat(bot: Bot, event: MessageEvent):
         except Exception:
             pass
     finally:
+        # === 取消"正在输入"状态 ===
+        asyncio.create_task(_set_typing_status(bot, event, False))
         total_ms = (time.time() - start_time) * 1000
         track_response(total_ms)
