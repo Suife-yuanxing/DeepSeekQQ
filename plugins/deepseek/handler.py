@@ -861,6 +861,7 @@ async def _stage_humanize(ctx: ChatContext) -> Optional[str]:
     # 节奏增强：反应词前缀
     from .handler_humanize import maybe_add_reaction_prefix
     emotion_v = ctx.analysis.emotion.valence if ctx.analysis else 0.0
+    emotion_a = ctx.analysis.emotion.arousal if ctx.analysis else 0.5
     text = maybe_add_reaction_prefix(text, emotion_v)
 
     # 原有人性化处理
@@ -883,7 +884,6 @@ async def _stage_humanize(ctx: ChatContext) -> Optional[str]:
 
     # 节奏增强：连发拆分
     from .handler_humanize import maybe_split_to_bursts
-    emotion_a = ctx.analysis.emotion.arousal if ctx.analysis else 0.5
     bursts = maybe_split_to_bursts(text, emotion_a, emotion_v)
     if bursts:
         # 用换行连接，后续 split_long_reply 会拆成多条消息
