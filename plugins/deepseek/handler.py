@@ -781,8 +781,13 @@ async def _stage_llm(ctx: ChatContext) -> Optional[str]:
         selected_memories = select_context_messages(ctx.recent_memories, ctx.raw_msg, history_limit)
         for mem in selected_memories:
             messages.append({"role": mem["role"], "content": mem["content"]})
+        # 构造用户消息：纯图片时用图片描述代替空消息
+        user_msg_content = ctx.raw_msg
+        if not user_msg_content and image_shares:
+            vision_desc = image_shares[-1].get("vision_text", "")
+            user_msg_content = f"[发送了一张图片：{vision_desc[:200]}]"
         if not messages or messages[-1]["role"] != "user":
-            messages.append({"role": "user", "content": ctx.raw_msg})
+            messages.append({"role": "user", "content": user_msg_content})
 
         # Token 预算管理：确保不超出上下文窗口
         messages = fit_messages_to_budget(messages, sys_prompt)
