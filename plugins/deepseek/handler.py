@@ -361,6 +361,10 @@ async def _stage_affection(ctx: ChatContext) -> Optional[str]:
 
 @stage("context_analysis")
 async def _stage_context(ctx: ChatContext) -> Optional[str]:
+    # 用户回复了，取消追问状态
+    from .follow_up import record_user_reply
+    record_user_reply(ctx.session_id)
+
     ctx.recent_memories, ctx.relevant_tags, ctx.affection, ctx.mood, history_for_analysis = \
         await save_and_get_context_with_history(ctx.session_id, ctx.user_id, ctx.raw_msg)
 
@@ -975,6 +979,12 @@ async def _stage_post(ctx: ChatContext) -> Optional[str]:
         await asyncio.sleep(1.0)
         await ctx.bot.send(ctx.event, MessageSegment.image(file=Path(ctx.image_path)))
         logger.info(f"[图片] 发送: {os.path.basename(ctx.image_path)}")
+
+    # 记录bot消息类型，用于追问系统
+    from .follow_up import classify_bot_message, record_bot_message
+    if ctx.reply_text and not ctx.is_group:
+        msg_type = classify_bot_message(ctx.reply_text)
+        record_bot_message(ctx.session_id, ctx.reply_text, msg_type)
 
     # 随机行为（P2）：3% 概率突然分享点什么
     from .message_actions import maybe_share_something

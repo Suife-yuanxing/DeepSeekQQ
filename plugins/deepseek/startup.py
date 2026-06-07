@@ -10,6 +10,7 @@ import asyncio
 import shutil
 from pathlib import Path
 
+import nonebot
 from nonebot import get_driver, logger
 from fastapi import FastAPI
 from fastapi.responses import FileResponse
@@ -137,6 +138,13 @@ async def on_start():
     loop_manager.register("记忆维护", _memory_maintenance, 86400)
     loop_manager.register("好感度衰减", _affection_decay, 86400)
     loop_manager.register("图片缓存清理", _image_cleanup, 3600)
+
+    # 追问系统：每2分钟检查超时未回复的会话
+    async def _follow_up_check():
+        from .follow_up import check_follow_ups
+        bot = nonebot.get_bot()
+        await check_follow_ups(bot)
+    loop_manager.register("追问检查", _follow_up_check, 120)
 
     # 启动所有任务
     await loop_manager.start_all()
