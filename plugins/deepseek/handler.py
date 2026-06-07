@@ -936,6 +936,8 @@ async def _stage_post(ctx: ChatContext) -> Optional[str]:
         typing_ctx["is_first_reply"] = False
 
     send_as_voice = should_send_voice(ctx.raw_msg, clean_text, ctx.recent_memories)
+    # === 发消息前取消"正在输入"状态（更自然：打完字→取消输入→发送）===
+    await _set_typing_status(ctx.bot, ctx.event, False)
     if send_as_voice:
         logger.warning(f"[决策] 上下文判断发语音，跳过文字: {clean_text[:30]}...")
         voice_emotion = ctx.analysis.emotion.dominant if ctx.analysis and ctx.analysis.emotion.confidence >= 0.4 else None
@@ -1133,7 +1135,5 @@ async def handle_chat(bot: Bot, event: MessageEvent):
         except Exception:
             pass
     finally:
-        # === 取消"正在输入"状态 ===
-        asyncio.create_task(_set_typing_status(bot, event, False))
         total_ms = (time.time() - start_time) * 1000
         track_response(total_ms)
