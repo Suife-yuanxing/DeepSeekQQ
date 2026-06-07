@@ -81,20 +81,43 @@ async def maybe_share_something(bot: Bot, event: MessageEvent, share_chance: flo
             await bot.send(event, Message(random.choice(thoughts)))
 
         elif share_type == "song":
-            # 让 LLM 生成一句"突然想分享歌"的话
-            from .api import call_deepseek_api
-            prompt = (
-                "你突然想到一首歌想分享给对方。"
-                "只输出一句话，比如'突然想到这首歌'或'这首歌好好听'。"
-                "不要加括号。1句话就好。"
-            )
-            msg = await call_deepseek_api(
-                [{"role": "user", "content": prompt}], temperature=1.0
-            )
-            if msg and len(msg) > 3:
-                from .utils import filter_novel_actions
-                msg = filter_novel_actions(msg)
-                await bot.send(event, Message(msg))
+            # 搜索一首随机歌曲并发送音乐卡片
+            from .music_api import search_song, get_lyrics, extract_lyrics_snippet
+            from .music_card import send_music_card
+            queries = ["热歌", "经典", "华语流行", "周杰伦", "林俊杰", "陈奕迅", "薛之谦", "邓紫棋", "周深", "毛不易"]
+            query = random.choice(queries)
+            results = await search_song(query, limit=5)
+            if results:
+                song = random.choice(results[:3])
+                intros = ["突然想到这首歌~", "来听听这个！", "这首不错哦~", "给你推荐一首~"]
+                await bot.send(event, Message(random.choice(intros)))
+                await asyncio.sleep(random.uniform(0.5, 1.0))
+                sent = await send_music_card(bot, event, song)
+                if sent:
+                    try:
+                        lyrics = await get_lyrics(song.id)
+                        if lyrics and len(lyrics) >= 3:
+                            snippet = extract_lyrics_snippet(lyrics, max_lines=2)
+                            if snippet:
+                                await asyncio.sleep(random.uniform(1.0, 2.0))
+                                await bot.send(event, Message(snippet))
+                    except Exception:
+                        pass  # 歌词获取失败不影响
+            else:
+                # API 不可用时 fallback 为纯文字
+                from .api import call_deepseek_api
+                prompt = (
+                    "你突然想到一首歌想分享给对方。"
+                    "只输出一句话，比如'突然想到这首歌'或'这首歌好好听'。"
+                    "不要加括号。1句话就好。"
+                )
+                msg = await call_deepseek_api(
+                    [{"role": "user", "content": prompt}], temperature=1.0
+                )
+                if msg and len(msg) > 3:
+                    from .utils import filter_novel_actions
+                    msg = filter_novel_actions(msg)
+                    await bot.send(event, Message(msg))
 
         elif share_type == "meme":
             # 手滑发表情包

@@ -611,6 +611,14 @@ async def _stage_reminder(ctx: ChatContext) -> Optional[str]:
     return None
 
 
+@stage("music")
+async def _stage_music(ctx: ChatContext) -> Optional[str]:
+    """音乐意图检测与处理（点歌、推荐、歌词展示）。"""
+    from .music import handle_music_stage
+    result = await handle_music_stage(ctx)
+    return _SKIP if result == "SKIP" else None
+
+
 @stage("llm_call")
 async def _stage_llm(ctx: ChatContext) -> Optional[str]:
     shares_now = get_recent_shares(ctx.session_id)
