@@ -102,11 +102,17 @@ def calc_message_delay(text: str, context: dict = None) -> float:
     elif arousal < 0.3:
         base *= random.uniform(1.3, 1.8)  # 慵懒时慢
 
+    # 快回模式：简单消息的回复，延迟大幅缩短
+    if ctx.get("is_quick_reply"):
+        base *= 0.4
+        if ctx.get("is_first_reply"):
+            base = min(base, 1.0)
+
     # 打字节奏抖动：模拟真人不匀速打字
     jitter = random.gauss(0, base * 0.15)
     base += jitter
 
-    return max(0.5, min(base, 15.0))
+    return max(0.3, min(base, 15.0))
 
 
 def calc_burst_delays(parts: List[str], base_context: dict = None) -> List[float]:

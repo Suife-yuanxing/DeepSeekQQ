@@ -78,6 +78,41 @@ def get_emotion_params(emotion) -> dict:
 
 
 # ============================================================
+# 消息分级（真人化：简单消息快速响应）
+# ============================================================
+
+def classify_message_complexity(raw_msg: str, has_image: bool, has_voice: bool) -> str:
+    """判断消息复杂度：simple / normal / complex。
+
+    simple: 短文本（"嗯"、"哈哈"、"好的"）→ 跳过深度分析，快速回复
+    normal: 一般消息 → 完整 pipeline
+    complex: 图片/长文/明确提问 → 完整 pipeline + 可能搜索
+    """
+    msg = raw_msg.strip()
+    if len(msg) <= 5 and not has_image and not has_voice:
+        return "simple"
+    if has_image or len(msg) > 50 or any(kw in msg for kw in [
+        "详细", "分析", "解释", "为什么", "怎么弄", "帮我", "教我",
+        "介绍", "具体", "怎么说", "什么意思",
+    ]):
+        return "complex"
+    return "normal"
+
+
+# 图片快速反应池（不等识别，立刻发）
+IMAGE_QUICK_REACTIONS = {
+    "photo_pet": ["啊啊啊猫猫！", "好可爱！让我看看~", "这是什么小可爱！"],
+    "photo_food": ["饿了...让我看看", "馋了馋了", "看起来好好吃！"],
+    "photo_person": ["我看看~", "哦？拍得不错嘛", "哟~"],
+    "photo_scenery": ["哇好好看！", "这是哪呀？好漂亮", "好美~"],
+    "screenshot_chat": ["我看看...", "这是什么呀？", "怎么了？"],
+    "screenshot_web": ["这是什么网站？", "我看看~"],
+    "document": ["让我看看~", "这是什么呀？"],
+    "unknown": ["我看看~", "这是什么呀？"],
+}
+
+
+# ============================================================
 # Pipeline 数据结构
 # ============================================================
 
@@ -138,6 +173,9 @@ class ChatContext:
     interest_hint: str = ""
     growth_hint: str = ""
     catchphrase_hint: str = ""
+    # 真人化优化
+    complexity: str = "normal"        # simple / normal / complex
+    image_quick_sent: bool = False    # 图片快速反应是否已发送
 
 
 # ============================================================
@@ -332,165 +370,220 @@ async def _stage_affection(ctx: ChatContext) -> Optional[str]:
 
 @stage("context_analysis")
 async def _stage_context(ctx: ChatContext) -> Optional[str]:
+    # === 图片快速反应：不等识别，先发本能反应 ===
+    if not ctx.image_quick_sent:
+        shares_now = get_recent_shares(ctx.session_id)
+        image_shares = [s for s in shares_now if s.get("type") == "图片"]
+        if image_shares:
+            latest = image_shares[-1]
+            img_type = latest.get("image_type", "unknown")
+            reactions = IMAGE_QUICK_REACTIONS.get(img_type, IMAGE_QUICK_REACTIONS["unknown"])
+            quick_reply = random.choice(reactions)
+            try:
+                await ctx.bot.send(ctx.event, make_reply(ctx.event, Message(quick_reply)))
+                ctx.image_quick_sent = True
+                logger.info(f"[图片快速反应] {quick_reply}")
+            except Exception:
+                pass
+
     ctx.recent_memories, ctx.relevant_tags, ctx.affection, ctx.mood, history_for_analysis = \
         await save_and_get_context_with_history(ctx.session_id, ctx.user_id, ctx.raw_msg)
 
-    async def _do_analysis():
-        return await analyze_context_and_emotion(ctx.raw_msg, history_for_analysis, ctx.user_id)
+    # === 简单消息：跳过深度分析，直接用默认值 ===
+    if ctx.complexity == "simple":
+        from .context_analyzer import ContextAnalysis, EmotionState
+        ctx.analysis = AnalysisResult(context=ContextAnalysis(), emotion=EmotionState())
+        ctx.search_result = None
+        ctx.world_context = ""
+        ctx.bot_mood_result = {"dominant": "平静", "reason": ""}
+        ctx.emotion_params = get_emotion_params(None)
+        ctx.schedule = get_schedule_state()
+        logger.info(f"[快速通道] 简单消息，跳过深度分析: {ctx.raw_msg[:20]}")
+    else:
+        # === 完整分析流程 ===
+        async def _do_analysis():
+            return await analyze_context_and_emotion(ctx.raw_msg, history_for_analysis, ctx.user_id)
 
-    async def _do_search():
-        search_decision = should_search(ctx.raw_msg)
-        if search_decision.get("need_search"):
-            ctx.is_explicit_search = search_decision.get("is_explicit", False)
-            query = extract_search_query(ctx.raw_msg)
-            result = await search(query)
-            if result:
-                logger.info(f"[搜索] 找到 {len(result.results)} 条结果 | 显式={ctx.is_explicit_search}")
-            return result
-        return None
+        async def _do_search():
+            search_decision = should_search(ctx.raw_msg)
+            if search_decision.get("need_search"):
+                ctx.is_explicit_search = search_decision.get("is_explicit", False)
+                query = extract_search_query(ctx.raw_msg)
+                result = await search(query)
+                if result:
+                    logger.info(f"[搜索] 找到 {len(result.results)} 条结果 | 显式={ctx.is_explicit_search}")
+                return result
+            return None
 
-    async def _do_weather():
-        ctx.reminder_context = await get_pending_reminders_context(ctx.user_id)
-        user_city = extract_city_from_message(ctx.raw_msg)
-        if not user_city:
-            for tag in ctx.relevant_tags:
-                tag_str = str(tag)
-                for city_name in ["上海", "北京", "广州", "深圳", "杭州", "成都", "武汉", "南京", "重庆", "西安", "苏州", "天津"]:
-                    if city_name in tag_str:
-                        user_city = city_name
+        async def _do_weather():
+            user_city = extract_city_from_message(ctx.raw_msg)
+            if not user_city:
+                for tag in ctx.relevant_tags:
+                    tag_str = str(tag)
+                    for city_name in ["上海", "北京", "广州", "深圳", "杭州", "成都", "武汉", "南京", "重庆", "西安", "苏州", "天津"]:
+                        if city_name in tag_str:
+                            user_city = city_name
+                            break
+                    if user_city:
                         break
-                if user_city:
-                    break
-        return await build_world_context_prompt(user_city)
+            return await build_world_context_prompt(user_city)
 
-    analysis, search_result, world_ctx = await asyncio.gather(
-        _do_analysis(), _do_search(), _do_weather()
-    )
+        # 并行：分析 + 搜索 + 天气 + 提醒
+        async def _do_reminders():
+            return await get_pending_reminders_context(ctx.user_id)
 
-    ctx.analysis = analysis
-    ctx.search_result = search_result
-    ctx.world_context = world_ctx
-    ctx.bot_mood_result = await update_bot_emotion(ctx.raw_msg, ctx.analysis.emotion)
-    ctx.emotion_params = get_emotion_params(ctx.analysis.emotion)
+        analysis, search_result, world_ctx, reminder_ctx = await asyncio.gather(
+            _do_analysis(), _do_search(), _do_weather(), _do_reminders()
+        )
 
-    # 情绪系统深化：渐进恢复提示、情绪传染、情绪记忆
-    if ctx.bot_mood_result.get("recovery_stage"):
-        ctx.emotion_recovery_hint = ctx.bot_mood_result["recovery_stage"]
-    if ctx.bot_mood_result.get("swing_hint"):
-        ctx.emotion_recovery_hint = ctx.bot_mood_result["swing_hint"]
-    if ctx.bot_mood_result.get("contagion"):
-        ctx.contagion_result = ctx.bot_mood_result["contagion"]
-        # 将传染效果叠加到 bot_mood_result 中
-        ctx.bot_mood_result["valence"] = ctx.bot_mood_result.get("valence", 0) + ctx.contagion_result.get("valence_delta", 0)
-        ctx.bot_mood_result["arousal"] = ctx.bot_mood_result.get("arousal", 0.2) + ctx.contagion_result.get("arousal_delta", 0)
-    from .emotion_deep import get_emotion_memory_hint
-    ctx.emotion_memory_hint = await get_emotion_memory_hint(ctx.user_id, ctx.raw_msg) or ""
-    ctx.user_prefs = await get_user_pref_hints(ctx.user_id)
+        ctx.analysis = analysis
+        ctx.search_result = search_result
+        ctx.world_context = world_ctx
+        ctx.reminder_context = reminder_ctx
+        ctx.emotion_params = get_emotion_params(ctx.analysis.emotion)
 
-    from .database import has_user_message_today
-    ctx.is_first_today = not await has_user_message_today(ctx.session_id)
+        if ctx.analysis.context.referenced_entity:
+            logger.info(f"[指代消解] 检测到指代: {ctx.analysis.context.referenced_entity}")
 
-    if ctx.affection and random.random() < 0.15:
-        from .database import get_undisclosed_facts
-        ctx.disclosure_hint = await get_undisclosed_facts(ctx.user_id, ctx.affection.get("score", 0))
+        # === 第一批并行：无依赖的 DB/状态查询 ===
+        from .emotion_deep import get_emotion_memory_hint
+        from .memory import get_shared_memory_hint, get_private_meme_hint, get_date_hint
+        from .database import has_user_message_today, check_and_trigger_milestone
+
+        async def _get_affection_decay():
+            if ctx.affection and ctx.session_recovery:
+                from .db_affection import get_affection_decay_hint
+                return await get_affection_decay_hint(ctx.user_id)
+            return None
+
+        async def _get_undisclosed():
+            if ctx.affection and random.random() < 0.15:
+                from .db_session import get_undisclosed_facts
+                return await get_undisclosed_facts(ctx.user_id, ctx.affection.get("score", 0))
+            return None
+
+        batch1_results = await asyncio.gather(
+            update_bot_emotion(ctx.raw_msg, ctx.analysis.emotion),          # [0]
+            get_emotion_memory_hint(ctx.user_id, ctx.raw_msg),              # [1]
+            get_user_pref_hints(ctx.user_id),                               # [2]
+            has_user_message_today(ctx.session_id),                         # [3]
+            get_shared_memory_hint(ctx.user_id, ctx.raw_msg),               # [4]
+            get_private_meme_hint(ctx.user_id, ctx.raw_msg),                # [5]
+            get_date_hint(ctx.user_id),                                     # [6]
+            check_and_trigger_milestone(ctx.user_id),                       # [7]
+            _get_affection_decay(),                                         # [8]
+            _get_undisclosed(),                                             # [9]
+        )
+
+        # 解包 batch1 结果
+        ctx.bot_mood_result = batch1_results[0]
+        ctx.emotion_memory_hint = batch1_results[1] or ""
+        ctx.user_prefs = batch1_results[2]
+        ctx.is_first_today = not batch1_results[3]
+        ctx.shared_memory_hint = batch1_results[4] or ""
+        ctx.private_meme_hint = batch1_results[5] or ""
+        ctx.date_hint = batch1_results[6] or ""
+        ctx.milestone_hint = batch1_results[7]
+        ctx.affection_decay_hint = batch1_results[8]
+        ctx.disclosure_hint = batch1_results[9]
         if ctx.disclosure_hint:
             from .database import mark_disclosed
             asyncio.create_task(mark_disclosed(ctx.user_id, ctx.disclosure_hint["key"]))
 
-    if ctx.affection and ctx.session_recovery:
-        from .database import get_affection_decay_hint
-        ctx.affection_decay_hint = await get_affection_decay_hint(ctx.user_id)
-    else:
-        ctx.affection_decay_hint = None
+        # 情绪系统深化
+        if ctx.bot_mood_result.get("recovery_stage"):
+            ctx.emotion_recovery_hint = ctx.bot_mood_result["recovery_stage"]
+        if ctx.bot_mood_result.get("swing_hint"):
+            ctx.emotion_recovery_hint = ctx.bot_mood_result["swing_hint"]
+        if ctx.bot_mood_result.get("contagion"):
+            ctx.contagion_result = ctx.bot_mood_result["contagion"]
+            ctx.bot_mood_result["valence"] = ctx.bot_mood_result.get("valence", 0) + ctx.contagion_result.get("valence_delta", 0)
+            ctx.bot_mood_result["arousal"] = ctx.bot_mood_result.get("arousal", 0.2) + ctx.contagion_result.get("arousal_delta", 0)
 
-    from .database import check_and_trigger_milestone
-    ctx.milestone_hint = await check_and_trigger_milestone(ctx.user_id)
+        # === 同步计算（依赖 batch1 结果）===
+        from .schedule import get_schedule_state
+        ctx.schedule = get_schedule_state()
 
-    if ctx.analysis.context.referenced_entity:
-        logger.info(f"[指代消解] 检测到指代: {ctx.analysis.context.referenced_entity}")
+        bot_mood_dominant = ctx.bot_mood_result.get("dominant", "平静") if ctx.bot_mood_result else "平静"
 
-    # 填充作息状态
-    from .schedule import get_schedule_state
-    ctx.schedule = get_schedule_state()
+        # 对话节奏：话题桥接/过渡
+        from .dialogue_rhythm import get_topic_bridge, get_topic_transition_hint
+        prev_topic = ""
+        if ctx.session_recovery:
+            prev_topic = ctx.session_recovery.get("last_topic", "")
+        if ctx.analysis.context.topic_shift_score > 0.5 and prev_topic:
+            ctx.topic_bridge = get_topic_bridge(
+                prev_topic, ctx.analysis.context.topic_summary,
+                ctx.analysis.context.topic_shift_score
+            )
+            ctx.topic_transition = get_topic_transition_hint(
+                prev_topic, ctx.analysis.context.topic_summary,
+                ctx.analysis.context.topic_shift_score,
+                ctx.analysis.context.user_intent,
+            )
 
-    # 记忆系统深化：共同回忆、私人梗、重要日期
-    from .memory import get_shared_memory_hint, get_private_meme_hint, get_date_hint
-    ctx.shared_memory_hint = await get_shared_memory_hint(ctx.user_id, ctx.raw_msg) or ""
-    ctx.private_meme_hint = await get_private_meme_hint(ctx.user_id, ctx.raw_msg) or ""
-    ctx.date_hint = await get_date_hint(ctx.user_id) or ""
+        # 行为模式
+        from .behavior_engine import get_behavior_hint
+        weather_condition = ""
+        weather_temp = ""
+        if ctx.world_context:
+            weather_match = re.search(r'天气：(\S+)', ctx.world_context)
+            if weather_match:
+                weather_condition = weather_match.group(1)
+            temp_match = re.search(r'(\d+)°C', ctx.world_context)
+            if temp_match:
+                weather_temp = temp_match.group(1)
+        schedule_period = ctx.schedule.period if ctx.schedule else "active"
+        ctx.behavior_hint = get_behavior_hint(weather_condition, weather_temp, schedule_period, bot_mood_dominant) or ""
 
-    # 对话节奏优化：话题桥接、破冰、换话题过渡
-    from .dialogue_rhythm import get_topic_bridge, get_icebreaker_context, get_topic_transition_hint
-    prev_topic = ""
-    if ctx.session_recovery:
-        prev_topic = ctx.session_recovery.get("last_topic", "")
-    if ctx.analysis.context.topic_shift_score > 0.5 and prev_topic:
-        ctx.topic_bridge = get_topic_bridge(
-            prev_topic, ctx.analysis.context.topic_summary,
-            ctx.analysis.context.topic_shift_score
+        # === 第二批并行：依赖 batch1 结果 ===
+        async def _get_icebreaker():
+            if ctx.is_first_today and ctx.session_recovery:
+                return await get_icebreaker_context(ctx.session_recovery, ctx.bot_mood_result) or ""
+            return ""
+
+        async def _get_group_social():
+            if ctx.is_group:
+                group_id = ctx.session_id.replace("group_", "")
+                from .group_atmosphere import get_group_social_context
+                from .db_group import update_member_activity
+                social_ctx = await get_group_social_context(group_id, ctx.raw_msg)
+                asyncio.create_task(update_member_activity(group_id, ctx.user_id))
+                return social_ctx
+            return {}
+
+        async def _get_personalization():
+            from .personalization import get_personalization_hints
+            from .db_session import get_or_create_user_profile
+            profile = await get_or_create_user_profile(ctx.user_id)
+            custom_nickname = profile.get("nickname", "") if profile else ""
+            affection_score = ctx.affection.get("score", 0)
+            relationship_style = ctx.user_prefs.get("relationship_style", "")
+            total_chats = ctx.affection.get("total_chats", 0)
+            streak_days = ctx.affection.get("streak_days", 0)
+            first_interaction = ctx.affection.get("first_interaction", 0) if "first_interaction" in ctx.affection else 0
+            return await get_personalization_hints(
+                ctx.user_id, affection_score, relationship_style, custom_nickname,
+                bot_mood_dominant, total_chats, streak_days, first_interaction,
+            )
+
+        batch2_results = await asyncio.gather(
+            _get_icebreaker(),       # [0]
+            _get_group_social(),     # [1]
+            _get_personalization(),  # [2]
         )
 
-    # 破冰内容：沉默后首条消息
-    if ctx.is_first_today and ctx.session_recovery:
-        ctx.icebreaker_hint = await get_icebreaker_context(
-            ctx.session_recovery, ctx.bot_mood_result
-        ) or ""
-
-    # 换话题过渡
-    if ctx.analysis.context.topic_shift_score > 0.5 and prev_topic:
-        ctx.topic_transition = get_topic_transition_hint(
-            prev_topic, ctx.analysis.context.topic_summary,
-            ctx.analysis.context.topic_shift_score,
-            ctx.analysis.context.user_intent,
-        )
-
-    # 社交能力增强：群聊社交上下文
-    if ctx.is_group:
-        group_id = ctx.session_id.replace("group_", "")
-        from .group_atmosphere import get_group_social_context
-        social_ctx = await get_group_social_context(group_id, ctx.raw_msg)
-        ctx.group_social_hint = social_ctx.get("social_hint", "")
-        ctx.group_meme_hint = social_ctx.get("meme_hint", "")
-        ctx.group_role_hint = social_ctx.get("role_hint", "")
-        # 更新群成员活跃度
-        from .db_group import update_member_activity
-        await update_member_activity(group_id, ctx.user_id)
-
-    # 行为模式丰富：天气/季节/随机行为
-    from .behavior_engine import get_behavior_hint
-    weather_condition = ""
-    weather_temp = ""
-    if ctx.world_context:
-        # 从 world_context 中提取天气信息
-        import re
-        weather_match = re.search(r'天气：(\S+)', ctx.world_context)
-        if weather_match:
-            weather_condition = weather_match.group(1)
-        temp_match = re.search(r'(\d+)°C', ctx.world_context)
-        if temp_match:
-            weather_temp = temp_match.group(1)
-    schedule_period = ctx.schedule.period if ctx.schedule else "active"
-    bot_mood_dominant = ctx.bot_mood_result.get("dominant", "平静") if ctx.bot_mood_result else "平静"
-    ctx.behavior_hint = get_behavior_hint(weather_condition, weather_temp, schedule_period, bot_mood_dominant) or ""
-
-    # 个性化深化：昵称、共同兴趣、成长叙事、口头禅
-    from .personalization import get_personalization_hints
-    from .db_session import get_or_create_user_profile
-    profile = await get_or_create_user_profile(ctx.user_id)
-    custom_nickname = profile.get("nickname", "") if profile else ""
-    affection_score = ctx.affection.get("score", 0)
-    relationship_style = ctx.user_prefs.get("relationship_style", "")
-    total_chats = ctx.affection.get("total_chats", 0)
-    streak_days = ctx.affection.get("streak_days", 0)
-    first_interaction = ctx.affection.get("first_interaction", 0) if "first_interaction" in ctx.affection else 0
-    personal_hints = await get_personalization_hints(
-        ctx.user_id, affection_score, relationship_style, custom_nickname,
-        bot_mood_dominant, total_chats, streak_days, first_interaction,
-    )
-    ctx.nickname_hint = personal_hints.get("nickname_hint", "")
-    ctx.interest_hint = personal_hints.get("interest_hint", "")
-    ctx.growth_hint = personal_hints.get("growth_hint", "")
-    ctx.catchphrase_hint = personal_hints.get("catchphrase_hint", "")
+        ctx.icebreaker_hint = batch2_results[0]
+        social_ctx = batch2_results[1]
+        if social_ctx:
+            ctx.group_social_hint = social_ctx.get("social_hint", "")
+            ctx.group_meme_hint = social_ctx.get("meme_hint", "")
+            ctx.group_role_hint = social_ctx.get("role_hint", "")
+        personal_hints = batch2_results[2]
+        ctx.nickname_hint = personal_hints.get("nickname_hint", "")
+        ctx.interest_hint = personal_hints.get("interest_hint", "")
+        ctx.growth_hint = personal_hints.get("growth_hint", "")
+        ctx.catchphrase_hint = personal_hints.get("catchphrase_hint", "")
 
     return None
 
@@ -823,7 +916,11 @@ async def _stage_post(ctx: ChatContext) -> Optional[str]:
         "is_question": "?" in ctx.raw_msg or "？" in ctx.raw_msg,
         "emotion_arousal": ctx.analysis.emotion.arousal if ctx.analysis else 0.5,
         "schedule_speed": ctx.schedule.reply_speed if ctx.schedule else 1.0,
+        "is_quick_reply": ctx.complexity == "simple",
     }
+    # 图片快速反应已发过，首条延迟缩短
+    if ctx.image_quick_sent:
+        typing_ctx["is_first_reply"] = False
 
     send_as_voice = should_send_voice(ctx.raw_msg, clean_text, ctx.recent_memories)
     if send_as_voice:
@@ -971,13 +1068,20 @@ async def handle_chat(bot: Bot, event: MessageEvent):
     from .performance_monitor import StageTimer, track_response
     start_time = time.time()
     try:
+        # 预检测消息中的图片和语音（用于消息分级）
+        _msg_segments = event.get_message()
+        _has_image = any(seg.type == "image" and seg.data.get("sub_type", 0) != 1 for seg in _msg_segments)
+        _has_voice = any(seg.type == "record" for seg in _msg_segments)
+        _raw_msg = _msg_segments.extract_plain_text().strip()
+
         ctx = ChatContext(
             bot=bot,
             event=event,
-            raw_msg=event.get_message().extract_plain_text().strip(),
+            raw_msg=_raw_msg,
             session_id=get_session_id(event),
             user_id=str(event.user_id),
             is_group=isinstance(event, GroupMessageEvent),
+            complexity=classify_message_complexity(_raw_msg, _has_image, _has_voice),
         )
 
         for stage_name, stage_func in _PIPELINE:
