@@ -390,6 +390,7 @@ async def _stage_context(ctx: ChatContext) -> Optional[str]:
         await save_and_get_context_with_history(ctx.session_id, ctx.user_id, ctx.raw_msg)
 
     # === 简单消息：跳过深度分析，直接用默认值 ===
+    from .schedule import get_schedule_state
     if ctx.complexity == "simple":
         from .context_analyzer import ContextAnalysis, EmotionState
         ctx.analysis = AnalysisResult(context=ContextAnalysis(), emotion=EmotionState())
@@ -501,7 +502,6 @@ async def _stage_context(ctx: ChatContext) -> Optional[str]:
             ctx.bot_mood_result["arousal"] = ctx.bot_mood_result.get("arousal", 0.2) + ctx.contagion_result.get("arousal_delta", 0)
 
         # === 同步计算（依赖 batch1 结果）===
-        from .schedule import get_schedule_state
         ctx.schedule = get_schedule_state()
 
         bot_mood_dominant = ctx.bot_mood_result.get("dominant", "平静") if ctx.bot_mood_result else "平静"
