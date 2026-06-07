@@ -194,6 +194,7 @@ PHONE_CONTROL_USERS: str = str(getattr(cfg, "phone_control_users", MY_QQ))  # �
 
 # === 音乐功能 ===
 MUSIC_ENABLED: bool = str(getattr(cfg, "music_enabled", "true")).lower() == "true"
+MUSIC_VOICE_CHANCE: float = float(getattr(cfg, "music_voice_chance", 0.3))
 
 # === 记忆压缩 ===
 COMPRESS_TOKEN_THRESHOLD: int = int(getattr(cfg, "compress_token_threshold", 3000))

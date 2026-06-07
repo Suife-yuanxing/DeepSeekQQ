@@ -84,25 +84,19 @@ async def maybe_share_something(bot: Bot, event: MessageEvent, share_chance: flo
             # 搜索一首随机歌曲并发送音乐卡片
             from .music_api import search_song, get_lyrics, extract_lyrics_snippet
             from .music_card import send_music_card
+            from .music import _build_intro_message, _send_lyrics_snippet
             queries = ["热歌", "经典", "华语流行", "周杰伦", "林俊杰", "陈奕迅", "薛之谦", "邓紫棋", "周深", "毛不易"]
             query = random.choice(queries)
             results = await search_song(query, limit=5)
             if results:
                 song = random.choice(results[:3])
-                intros = ["突然想到这首歌~", "来听听这个！", "这首不错哦~", "给你推荐一首~"]
-                await bot.send(event, Message(random.choice(intros)))
+                intro = _build_intro_message(song, "recommend")
+                await bot.send(event, Message(intro))
                 await asyncio.sleep(random.uniform(0.5, 1.0))
                 sent = await send_music_card(bot, event, song)
                 if sent:
-                    try:
-                        lyrics = await get_lyrics(song.id)
-                        if lyrics and len(lyrics) >= 3:
-                            snippet = extract_lyrics_snippet(lyrics, max_lines=2)
-                            if snippet:
-                                await asyncio.sleep(random.uniform(1.0, 2.0))
-                                await bot.send(event, Message(snippet))
-                    except Exception:
-                        pass  # 歌词获取失败不影响
+                    await asyncio.sleep(random.uniform(1.0, 2.0))
+                    await _send_lyrics_snippet(bot, event, song)
             else:
                 # API 不可用时 fallback 为纯文字
                 from .api import call_deepseek_api
