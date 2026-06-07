@@ -1080,17 +1080,17 @@ async def _handle_link_share(ctx: ChatContext):
 # 入口函数（执行 Pipeline）
 # ============================================================
 
-async def _set_typing_status(bot: Bot, event: MessageEvent, status: bool):
-    """设置"正在输入"状态。NapCat 扩展接口。"""
+async def _set_typing_status(bot: Bot, event: MessageEvent, typing: bool):
+    """设置"正在输入"状态。NapCat 扩展接口。
+
+    event_type: 1=正在输入, 0=取消
+    """
     try:
         user_id = event.user_id
-        params = {"user_id": int(user_id), "status": status}
-        # 群聊需要额外传 group_id
-        if isinstance(event, GroupMessageEvent):
-            params["group_id"] = event.group_id
+        params = {"user_id": int(user_id), "event_type": 1 if typing else 0}
         await bot.call_api("set_input_status", **params)
-    except Exception:
-        pass  # 不支持就静默失败
+    except Exception as e:
+        logger.debug(f"[正在输入] 设置失败（可能不支持）: {e}")
 
 
 async def handle_chat(bot: Bot, event: MessageEvent):
