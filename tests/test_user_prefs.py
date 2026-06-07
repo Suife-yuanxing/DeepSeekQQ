@@ -1,10 +1,41 @@
-"""功能③⑦：用户偏好 + 回复质量 — 测试。"""
+"""用户偏好 + 回复质量 — 测试。"""
 import pytest
 import asyncio
+import tempfile
 import os
 
-# 使用内存数据库测试
-os.environ.setdefault("DEEPSEEK_DB_PATH", ":memory:")
+import plugins.deepseek.db_core as db_core_mod
+
+
+async def _fresh_db():
+    """关闭旧连接，创建新的临时数据库，返回 database 模块。"""
+    if db_core_mod._db:
+        try:
+            await db_core_mod._db.close()
+        except Exception:
+            pass
+    db_core_mod._db = None
+    # 每次用新的临时文件，避免文件锁冲突
+    fd, path = tempfile.mkstemp(suffix=".db")
+    os.close(fd)
+    db_core_mod.DB_PATH = path
+    from plugins.deepseek import database
+    await database.init_db()
+    return database, path
+
+
+async def _cleanup(path):
+    """关闭连接并清理临时文件。"""
+    if db_core_mod._db:
+        try:
+            await db_core_mod._db.close()
+        except Exception:
+            pass
+    db_core_mod._db = None
+    try:
+        os.remove(path)
+    except OSError:
+        pass
 
 
 class TestUserPreferencesDB:
@@ -12,67 +43,47 @@ class TestUserPreferencesDB:
 
     @pytest.mark.asyncio
     async def test_update_and_get_preference(self):
-        from plugins.deepseek import database
-        import plugins.deepseek.database as db_mod
-        db_mod._db = None
+        db, path = await _fresh_db()
         try:
-            await database.init_db()
-            await database.update_user_preference("user1", "reply_length", "long", 0.3)
-            prefs = await database.get_user_preferences("user1")
+            await db.update_user_preference("user1", "reply_length", "long", 0.3)
+            prefs = await db.get_user_preferences("user1")
             assert "reply_length" in prefs
             assert prefs["reply_length"]["long"] == 0.3
         finally:
-            if db_mod._db:
-                await db_mod._db.close()
-                db_mod._db = None
+            await _cleanup(path)
 
     @pytest.mark.asyncio
     async def test_preference_accumulates(self):
-        from plugins.deepseek import database
-        import plugins.deepseek.database as db_mod
-        db_mod._db = None
+        db, path = await _fresh_db()
         try:
-            await database.init_db()
-            await database.update_user_preference("user1", "reply_length", "long", 0.3)
-            await database.update_user_preference("user1", "reply_length", "long", 0.2)
-            prefs = await database.get_user_preferences("user1")
+            await db.update_user_preference("user1", "reply_length", "long", 0.3)
+            await db.update_user_preference("user1", "reply_length", "long", 0.2)
+            prefs = await db.get_user_preferences("user1")
             assert prefs["reply_length"]["long"] == pytest.approx(0.5, abs=0.01)
         finally:
-            if db_mod._db:
-                await db_mod._db.close()
-                db_mod._db = None
+            await _cleanup(path)
 
     @pytest.mark.asyncio
     async def test_preference_capped_at_1(self):
-        from plugins.deepseek import database
-        import plugins.deepseek.database as db_mod
-        db_mod._db = None
+        db, path = await _fresh_db()
         try:
-            await database.init_db()
-            await database.update_user_preference("user1", "sticker_freq", "high", 0.6)
-            await database.update_user_preference("user1", "sticker_freq", "high", 0.6)
-            prefs = await database.get_user_preferences("user1")
+            await db.update_user_preference("user1", "sticker_freq", "high", 0.6)
+            await db.update_user_preference("user1", "sticker_freq", "high", 0.6)
+            prefs = await db.get_user_preferences("user1")
             assert prefs["sticker_freq"]["high"] <= 1.0
         finally:
-            if db_mod._db:
-                await db_mod._db.close()
-                db_mod._db = None
+            await _cleanup(path)
 
     @pytest.mark.asyncio
     async def test_get_top_preference(self):
-        from plugins.deepseek import database
-        import plugins.deepseek.database as db_mod
-        db_mod._db = None
+        db, path = await _fresh_db()
         try:
-            await database.init_db()
-            await database.update_user_preference("user1", "reply_length", "short", 0.2)
-            await database.update_user_preference("user1", "reply_length", "long", 0.5)
-            top = await database.get_top_preference("user1", "reply_length")
+            await db.update_user_preference("user1", "reply_length", "short", 0.2)
+            await db.update_user_preference("user1", "reply_length", "long", 0.5)
+            top = await db.get_top_preference("user1", "reply_length")
             assert top == "long"
         finally:
-            if db_mod._db:
-                await db_mod._db.close()
-                db_mod._db = None
+            await _cleanup(path)
 
 
 class TestReplyQualityDB:
@@ -80,37 +91,27 @@ class TestReplyQualityDB:
 
     @pytest.mark.asyncio
     async def test_save_and_get_quality_stats(self):
-        from plugins.deepseek import database
-        import plugins.deepseek.database as db_mod
-        db_mod._db = None
+        db, path = await _fresh_db()
         try:
-            await database.init_db()
-            await database.save_reply_quality("user1", "sess1", "hello", 1.0, "emoji_reaction")
-            await database.save_reply_quality("user1", "sess1", "what", -1.0, "confusion")
-            await database.save_reply_quality("user1", "sess1", "ok", 0.0, "neutral")
-            stats = await database.get_quality_stats("user1", days=1)
+            await db.save_reply_quality("user1", "sess1", "hello", 1.0, "emoji_reaction")
+            await db.save_reply_quality("user1", "sess1", "what", -1.0, "confusion")
+            await db.save_reply_quality("user1", "sess1", "ok", 0.0, "neutral")
+            stats = await db.get_quality_stats("user1", days=1)
             assert stats["total"] == 3
             assert stats["avg_score"] == pytest.approx(0.0, abs=0.01)
             assert stats["confusion_rate"] == pytest.approx(1 / 3, abs=0.01)
         finally:
-            if db_mod._db:
-                await db_mod._db.close()
-                db_mod._db = None
+            await _cleanup(path)
 
     @pytest.mark.asyncio
     async def test_empty_stats(self):
-        from plugins.deepseek import database
-        import plugins.deepseek.database as db_mod
-        db_mod._db = None
+        db, path = await _fresh_db()
         try:
-            await database.init_db()
-            stats = await database.get_quality_stats("nobody", days=7)
+            stats = await db.get_quality_stats("nobody", days=7)
             assert stats["total"] == 0
             assert stats["avg_score"] == 0
         finally:
-            if db_mod._db:
-                await db_mod._db.close()
-                db_mod._db = None
+            await _cleanup(path)
 
 
 class TestPromptUserPrefs:

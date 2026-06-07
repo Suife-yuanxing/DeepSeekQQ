@@ -290,3 +290,111 @@ async def migrate_v12_add_group_members(db: aiosqlite.Connection):
         "CREATE INDEX IF NOT EXISTS idx_group_members_group ON group_members(group_id, last_active)"
     )
     await db.commit()
+
+
+@migration(13)
+async def migrate_v13_add_memory_deepening(db: aiosqlite.Connection):
+    """记忆系统深化：共同回忆、私人梗、重要日期。"""
+    # 共同回忆
+    await db.execute("""
+        CREATE TABLE IF NOT EXISTS shared_memories (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id TEXT NOT NULL,
+            event_type TEXT NOT NULL,
+            event_desc TEXT NOT NULL,
+            emotion_tag TEXT DEFAULT '',
+            context TEXT DEFAULT '',
+            importance REAL DEFAULT 0.5,
+            recall_count INTEGER DEFAULT 0,
+            created_at REAL,
+            last_recalled REAL DEFAULT 0
+        )
+    """)
+    await db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_shared_mem_user ON shared_memories(user_id, importance DESC)"
+    )
+    # 私人梗
+    await db.execute("""
+        CREATE TABLE IF NOT EXISTS private_memes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id TEXT NOT NULL,
+            meme_type TEXT NOT NULL,
+            content TEXT NOT NULL,
+            origin_context TEXT DEFAULT '',
+            trigger_keywords TEXT DEFAULT '',
+            frequency REAL DEFAULT 0.3,
+            usage_count INTEGER DEFAULT 0,
+            created_at REAL,
+            last_used REAL DEFAULT 0,
+            UNIQUE(user_id, meme_type, content)
+        )
+    """)
+    # 重要日期
+    await db.execute("""
+        CREATE TABLE IF NOT EXISTS important_dates (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id TEXT NOT NULL,
+            date_type TEXT NOT NULL,
+            date_value TEXT NOT NULL,
+            description TEXT DEFAULT '',
+            repeat_yearly BOOLEAN DEFAULT 1,
+            created_at REAL,
+            UNIQUE(user_id, date_type, date_value)
+        )
+    """)
+    await db.commit()
+
+
+@migration(14)
+async def migrate_v14_add_social_features(db: aiosqlite.Connection):
+    """社交能力增强：社交关系图、群聊梗、社交记忆。"""
+    # 社交关系图
+    await db.execute("""
+        CREATE TABLE IF NOT EXISTS group_social_graph (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            group_id TEXT NOT NULL,
+            member_a TEXT NOT NULL,
+            member_b TEXT NOT NULL,
+            rel_type TEXT DEFAULT 'stranger',
+            strength REAL DEFAULT 0.1,
+            evidence TEXT DEFAULT '',
+            interaction_count INTEGER DEFAULT 1,
+            created_at REAL,
+            last_interaction REAL,
+            UNIQUE(group_id, member_a, member_b)
+        )
+    """)
+    await db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_social_graph_group ON group_social_graph(group_id, strength DESC)"
+    )
+    # 群聊梗
+    await db.execute("""
+        CREATE TABLE IF NOT EXISTS group_memes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            group_id TEXT NOT NULL,
+            meme_type TEXT NOT NULL,
+            content TEXT NOT NULL,
+            trigger_keywords TEXT DEFAULT '',
+            creator_id TEXT DEFAULT '',
+            frequency REAL DEFAULT 0.3,
+            usage_count INTEGER DEFAULT 0,
+            created_at REAL,
+            last_used REAL DEFAULT 0,
+            UNIQUE(group_id, meme_type, content)
+        )
+    """)
+    # 社交记忆
+    await db.execute("""
+        CREATE TABLE IF NOT EXISTS social_references (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id TEXT NOT NULL,
+            person_name TEXT NOT NULL,
+            relationship TEXT DEFAULT '',
+            mentioned_count INTEGER DEFAULT 1,
+            context TEXT DEFAULT '',
+            created_at REAL,
+            last_mentioned REAL,
+            UNIQUE(user_id, person_name)
+        )
+    """)
+    await db.commit()

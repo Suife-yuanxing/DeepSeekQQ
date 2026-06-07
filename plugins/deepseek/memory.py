@@ -90,6 +90,13 @@ async def save_reply(session_id: str, user_id: str, raw_msg: str, reply_text: st
     asyncio.create_task(_evaluate_reply_quality(user_id, session_id, raw_msg, reply_text))
     # 跨会话状态更新
     asyncio.create_task(_update_session_state(session_id, raw_msg, reply_text))
+    # 记忆系统深化：提取共同回忆和私人梗
+    asyncio.create_task(_extract_shared_memories(user_id, raw_msg, reply_text))
+    asyncio.create_task(_extract_private_memes(user_id, raw_msg, reply_text))
+    asyncio.create_task(_extract_important_dates(user_id, raw_msg))
+    # 社交能力增强：提取社交关系和群聊梗
+    asyncio.create_task(_extract_social_references(user_id, raw_msg))
+    asyncio.create_task(_extract_group_memes(session_id, user_id, raw_msg, reply_text))
     # 策略性压缩：基于消息数或估算 token 数触发
     msg_count = await count_memories(session_id)
     if msg_count >= COMPRESS_MESSAGE_THRESHOLD:
@@ -181,6 +188,16 @@ async def _summarize_and_compress(session_id: str):
     cnt = await count_memories(session_id)
     if cnt < 25:
         return
+
+    # 摘要缓存：避免重复压缩
+    from .context_optimizer import get_cached_summary, set_cached_summary
+    cached = get_cached_summary(session_id, cnt)
+    if cached:
+        logger.debug(f"[记忆] 使用缓存摘要: {session_id[:20]}...")
+        keep_ids = await get_keep_ids(session_id, 20)
+        await delete_memories_except(session_id, keep_ids)
+        return
+
     old_rows = await get_oldest_memories(session_id, 15)
     if len(old_rows) < 10:
         return
@@ -214,6 +231,9 @@ async def _summarize_and_compress(session_id: str):
     except Exception:
         pass  # 用原文
     await append_memory_summary(session_id, summary)
+
+    # 更新摘要缓存
+    set_cached_summary(session_id, summary, cnt)
 
     keep_ids = await get_keep_ids(session_id, 20)
     await delete_memories_except(session_id, keep_ids)
@@ -332,6 +352,40 @@ async def _learn_preferences(user_id: str, raw_msg: str, reply_text: str, sessio
             if any(kw in raw_msg for kw in keywords):
                 await update_user_preference(user_id, "topic_interest", topic, 0.1)
                 break
+
+        # 5. 话题情绪关联：记录用户聊什么话题时的情绪
+        from .emotion_deep import record_topic_emotion
+        emotion_label = ""
+        if any(kw in raw_msg for kw in ["哈哈", "笑", "开心", "好", "棒", "喜欢", "爱"]):
+            emotion_label = "开心"
+        elif any(kw in raw_msg for kw in ["累", "烦", "难过", "哭", "气"]):
+            emotion_label = "难过"
+        elif any(kw in raw_msg for kw in ["喜欢", "心动", "想", "爱"]):
+            emotion_label = "兴奋"
+        if emotion_label:
+            for topic, keywords in topic_keywords.items():
+                if any(kw in raw_msg for kw in keywords):
+                    await record_topic_emotion(user_id, topic, emotion_label)
+                    break
+
+        # 6. 昵称学习：用户自定义称呼
+        nickname_patterns = [
+            r"以后叫我(.{1,6})",
+            r"叫我(.{1,6})就行",
+            r"叫我(.{1,6})就好",
+            r"叫我(.{1,6})吧",
+            r"你可以叫我(.{1,6})",
+        ]
+        import re as _re
+        for pattern in nickname_patterns:
+            match = _re.search(pattern, raw_msg)
+            if match:
+                nickname = match.group(1).strip()
+                if 1 <= len(nickname) <= 6 and nickname not in ["你", "我", "他"]:
+                    from .db_session import update_user_profile
+                    await update_user_profile(user_id, nickname=nickname)
+                    logger.info(f"[个性化] 用户 {user_id[:6]} 自定义昵称: {nickname}")
+                    break
 
         logger.debug(f"[偏好] 用户 {user_id[:6]} 偏好学习完成")
     except Exception as e:
@@ -517,6 +571,359 @@ async def recover_session_context(session_id: str, user_id: str) -> Optional[Dic
     except Exception as e:
         logger.info(f"[会话恢复] 失败（非关键）: {e}")
         return None
+
+
+# ---------- 记忆系统深化：共同回忆 ----------
+
+async def _extract_shared_memories(user_id: str, user_msg: str, reply_text: str):
+    """从对话中提取共同经历，保存为 shared_memories。"""
+    try:
+        # 快速关键词预筛：没有相关词汇就跳过 LLM 调用
+        trigger_kw = ["第一次", "还记得", "上次", "一起", "我们", "那时候", "记得吗",
+                       "认识", "开始", "纪念", "难忘", "印象", "经历", "回忆"]
+        combined = user_msg + reply_text
+        if not any(kw in combined for kw in trigger_kw):
+            return
+
+        prompt = f"""分析以下对话，判断是否包含值得长期记住的共同经历/重要时刻。
+只输出 JSON，没有就输出 null。
+
+用户说：{user_msg}
+回复：{reply_text}
+
+如果有，输出：
+{{"event_type": "类型", "event_desc": "简短描述(20字内)", "emotion_tag": "情绪标签"}}
+
+event_type 可选值：
+- first_chat: 第一次聊天/认识
+- shared_experience: 一起经历的事
+- funny_milestone: 有趣的里程碑
+- emotional_moment: 情感共鸣时刻
+- important_event: 重要事件
+
+没有值得记住的共同经历就输出 null。只输出JSON。"""
+        messages = [
+            {"role": "system", "content": "你是一个对话分析助手，只输出JSON或null。"},
+            {"role": "user", "content": prompt}
+        ]
+        raw = await api.call_deepseek_api(messages, temperature=0.3, task_type="extract")
+        clean = re.sub(r"```json\s*|\s*```", "", raw).strip()
+        if clean.lower() in ("null", "none", ""):
+            return
+        import json as _json
+        data = _json.loads(clean)
+        if isinstance(data, dict) and data.get("event_type"):
+            from .db_memories_deep import save_shared_memory
+            await save_shared_memory(
+                user_id,
+                event_type=data["event_type"],
+                event_desc=data.get("event_desc", ""),
+                emotion_tag=data.get("emotion_tag", ""),
+                context=f"用户:{user_msg[:100]}",
+            )
+    except Exception as e:
+        logger.debug(f"[共同回忆] 提取失败（非关键）: {e}")
+
+
+async def _extract_private_memes(user_id: str, user_msg: str, reply_text: str):
+    """检测私人梗形成（专属昵称、重复玩笑、暗号）。"""
+    try:
+        # 昵称检测：用户给 bot 起别名
+        nickname_patterns = [
+            r"(?:叫你|以后叫|就叫|给你起个|你的名字叫)[\s]*[「\"']?(.{1,6})[」\"']?",
+            r"(.{1,4})(?:猫|喵|酱|子|宝|咪)",
+        ]
+        for pattern in nickname_patterns:
+            match = re.search(pattern, user_msg)
+            if match:
+                nickname = match.group(1).strip()
+                if 1 <= len(nickname) <= 6 and nickname not in ["你", "我", "他", "她"]:
+                    from .db_memories_deep import save_private_meme
+                    await save_private_meme(
+                        user_id, "nickname", nickname,
+                        origin_context=user_msg[:100],
+                        trigger_keywords=nickname,
+                        frequency=0.5,
+                    )
+                    return
+
+        # 玩笑/梗检测：LLM 辅助
+        trigger_kw = ["哈哈", "笑死", "梗", "暗号", "只有我们", "专属", "秘密"]
+        if not any(kw in user_msg + reply_text for kw in trigger_kw):
+            return
+
+        prompt = f"""分析以下对话，判断是否形成了私人梗/专属笑话/暗号。
+只输出 JSON，没有就输出 null。
+
+用户说：{user_msg}
+回复：{reply_text}
+
+如果有，输出：
+{{"meme_type": "类型", "content": "梗的内容(15字内)", "trigger_keywords": "触发关键词(逗号分隔)"}}
+
+meme_type: joke(笑话) / catchphrase(口头禅) / code_word(暗号)
+没有新梗就输出 null。只输出JSON。"""
+        messages = [
+            {"role": "system", "content": "你是一个对话分析助手，只输出JSON或null。"},
+            {"role": "user", "content": prompt}
+        ]
+        raw = await api.call_deepseek_api(messages, temperature=0.3, task_type="extract")
+        clean = re.sub(r"```json\s*|\s*```", "", raw).strip()
+        if clean.lower() in ("null", "none", ""):
+            return
+        import json as _json
+        data = _json.loads(clean)
+        if isinstance(data, dict) and data.get("meme_type"):
+            from .db_memories_deep import save_private_meme
+            await save_private_meme(
+                user_id,
+                meme_type=data["meme_type"],
+                content=data.get("content", ""),
+                origin_context=user_msg[:100],
+                trigger_keywords=data.get("trigger_keywords", ""),
+            )
+    except Exception as e:
+        logger.debug(f"[私人梗] 提取失败（非关键）: {e}")
+
+
+async def _extract_important_dates(user_id: str, user_msg: str):
+    """从用户消息中提取重要日期（生日、纪念日等）。"""
+    try:
+        # 快速关键词预筛
+        date_kw = ["生日", "纪念日", "认识", "结婚", "周年", "几月几号", "什么时候"]
+        if not any(kw in user_msg for kw in date_kw):
+            return
+
+        # 日期格式匹配
+        date_patterns = [
+            (r"(\d{4})[年/-](\d{1,2})[月/-](\d{1,2})[日号]?", "full"),
+            (r"(\d{1,2})[月/-](\d{1,2})[日号]?", "month_day"),
+        ]
+
+        for pattern, fmt in date_patterns:
+            match = re.search(pattern, user_msg)
+            if match:
+                if fmt == "full":
+                    date_value = f"{match.group(1)}-{int(match.group(2)):02d}-{int(match.group(3)):02d}"
+                else:
+                    date_value = f"{int(match.group(1)):02d}-{int(match.group(2)):02d}"
+
+                # 判断日期类型
+                if "生日" in user_msg:
+                    date_type = "birthday"
+                    desc = f"生日 {date_value}"
+                elif "纪念" in user_msg or "周年" in user_msg:
+                    date_type = "anniversary"
+                    desc = f"纪念日 {date_value}"
+                elif "认识" in user_msg or "第一次" in user_msg:
+                    date_type = "first_chat"
+                    desc = f"认识的日子 {date_value}"
+                else:
+                    date_type = "special_day"
+                    desc = f"特别的日子 {date_value}"
+
+                from .db_memories_deep import save_important_date
+                await save_important_date(
+                    user_id, date_type, date_value,
+                    description=desc,
+                    repeat_yearly=(fmt == "month_day"),
+                )
+                return
+
+        # 无日期格式但有关键词时，用 LLM 提取
+        if "生日" in user_msg and not any(re.search(p, user_msg) for p, _ in date_patterns):
+            prompt = f"""用户提到了生日，提取日期信息。只输出 JSON 或 null。
+
+用户说：{user_msg}
+
+如果有日期，输出：{{"date_value": "MM-DD", "description": "描述"}}
+没有明确日期就输出 null。只输出JSON。"""
+            messages = [
+                {"role": "system", "content": "你是一个信息提取助手，只输出JSON或null。"},
+                {"role": "user", "content": prompt}
+            ]
+            raw = await api.call_deepseek_api(messages, temperature=0.3, task_type="extract")
+            clean = re.sub(r"```json\s*|\s*```", "", raw).strip()
+            if clean.lower() not in ("null", "none", ""):
+                import json as _json
+                data = _json.loads(clean)
+                if isinstance(data, dict) and data.get("date_value"):
+                    from .db_memories_deep import save_important_date
+                    await save_important_date(
+                        user_id, "birthday", data["date_value"],
+                        description=data.get("description", f"生日 {data['date_value']}"),
+                    )
+    except Exception as e:
+        logger.debug(f"[重要日期] 提取失败（非关键）: {e}")
+
+
+# ---------- 记忆深化提示生成 ----------
+
+async def get_shared_memory_hint(user_id: str, current_msg: str) -> Optional[str]:
+    """获取共同回忆提示，供 prompt 注入。"""
+    try:
+        from .db_memories_deep import get_recall_candidates
+        candidates = await get_recall_candidates(user_id, current_msg, limit=1)
+        if not candidates:
+            return None
+        mem = candidates[0]
+        desc = mem["event_desc"]
+        event_type = mem["event_type"]
+        type_hints = {
+            "first_chat": "你们第一次认识的场景",
+            "shared_experience": "你们一起经历的事",
+            "funny_milestone": "你们之间的趣事",
+            "emotional_moment": "你们之间的情感时刻",
+            "important_event": "你们共同的重要事件",
+        }
+        hint = type_hints.get(event_type, "你们的回忆")
+        return f"{hint}——{desc}。如果自然的话，可以在对话中不经意提到这段回忆。"
+    except Exception:
+        return None
+
+
+async def get_private_meme_hint(user_id: str, current_msg: str) -> Optional[str]:
+    """获取私人梗提示，供 prompt 注入。"""
+    try:
+        from .db_memories_deep import find_matching_meme
+        meme = await find_matching_meme(user_id, current_msg)
+        if not meme:
+            return None
+        content = meme["content"]
+        meme_type = meme["meme_type"]
+        type_hints = {
+            "nickname": f"你们之间有个专属昵称「{content}」",
+            "joke": f"你们之间有个梗「{content}」",
+            "catchphrase": f"你们的口头禅「{content}」",
+            "code_word": f"你们的暗号「{content}」",
+        }
+        return type_hints.get(meme_type, f"你们的默契「{content}」。在合适的时候自然地用出来。")
+    except Exception:
+        return None
+
+
+async def get_date_hint(user_id: str) -> Optional[str]:
+    """获取重要日期提示，供 prompt 注入。"""
+    try:
+        from .db_memories_deep import get_today_dates, get_upcoming_dates
+        from datetime import datetime
+        today = datetime.now().strftime("%m-%d")
+        today_dates = await get_today_dates(user_id, today)
+        if today_dates:
+            date = today_dates[0]
+            desc = date.get("description", date["date_type"])
+            return f"今天是一个特别的日子——{desc}。可以主动提起，表达在意。"
+
+        upcoming = await get_upcoming_dates(user_id, within_days=3)
+        if upcoming:
+            date = upcoming[0]
+            days = date.get("days_until", 0)
+            desc = date.get("description", date["date_type"])
+            if days == 1:
+                return f"明天是{desc}，可以在聊天中稍微暗示一下你记得。"
+            elif days <= 3:
+                return f"快到{desc}了（还有{days}天），可以提前准备一下。"
+        return None
+    except Exception:
+        return None
+
+
+# ---------- 社交能力增强 ----------
+
+async def _extract_social_references(user_id: str, user_msg: str):
+    """从用户消息中提取社交圈人物（朋友、家人、同事等）。"""
+    try:
+        # 关键词预筛
+        social_kw = ["我朋友", "我同学", "我同事", "我室友", "我对象", "我男/女朋友",
+                      "我妈", "我爸", "我姐", "我哥", "我弟", "我妹",
+                      "我老板", "我老师", "我闺蜜", "我兄弟", "我基友",
+                      "朋友说", "同学说", "同事说", "室友说"]
+        if not any(kw in user_msg for kw in social_kw):
+            # 也检查"XX说"模式
+            if not re.search(r'[一-鿿]{1,4}(?:说|跟我|找我|约我)', user_msg):
+                return
+
+        prompt = f"""从以下用户消息中，提取提到的社交圈人物。
+只输出 JSON 数组，没有就输出空数组 []。
+
+用户说：{user_msg}
+
+示例输出：
+[
+  {{"name": "小明", "relationship": "朋友", "context": "小明说周末一起打球"}},
+  {{"name": "妈妈", "relationship": "家人", "context": "我妈让我早点睡"}}
+]
+
+只输出JSON。"""
+        messages = [
+            {"role": "system", "content": "你是一个信息提取助手，只输出JSON数组。"},
+            {"role": "user", "content": prompt}
+        ]
+        raw = await api.call_deepseek_api(messages, temperature=0.3, task_type="extract")
+        clean = re.sub(r"```json\s*|\s*```", "", raw).strip()
+        refs = json.loads(clean)
+        if not isinstance(refs, list):
+            return
+
+        from .db_social import record_social_reference
+        for ref in refs:
+            if isinstance(ref, dict) and ref.get("name"):
+                await record_social_reference(
+                    user_id,
+                    person_name=ref["name"],
+                    relationship=ref.get("relationship", ""),
+                    context=ref.get("context", user_msg[:100]),
+                )
+    except Exception as e:
+        logger.debug(f"[社交记忆] 提取失败（非关键）: {e}")
+
+
+async def _extract_group_memes(session_id: str, user_id: str, user_msg: str, reply_text: str):
+    """检测群聊梗形成并保存。"""
+    try:
+        is_group = isinstance(session_id, str) and session_id.startswith("group_")
+        if not is_group:
+            return
+
+        group_id = session_id.replace("group_", "")
+
+        # 快速关键词预筛
+        trigger_kw = ["哈哈", "笑死", "经典", "名场面", "永远的神", "暗号", "只有我们"]
+        if not any(kw in user_msg + reply_text for kw in trigger_kw):
+            return
+
+        prompt = f"""分析以下群聊对话，判断是否形成了群聊梗/专属笑话。
+只输出 JSON，没有就输出 null。
+
+用户说：{user_msg}
+回复：{reply_text}
+
+如果有，输出：
+{{"meme_type": "类型", "content": "梗的内容(15字内)", "trigger_keywords": "触发关键词(逗号分隔)"}}
+
+meme_type: joke(笑话) / catchphrase(口头禅) / event_reference(事件引用) / code_word(暗号)
+没有新梗就输出 null。只输出JSON。"""
+        messages = [
+            {"role": "system", "content": "你是一个对话分析助手，只输出JSON或null。"},
+            {"role": "user", "content": prompt}
+        ]
+        raw = await api.call_deepseek_api(messages, temperature=0.3, task_type="extract")
+        clean = re.sub(r"```json\s*|\s*```", "", raw).strip()
+        if clean.lower() in ("null", "none", ""):
+            return
+        import json as _json
+        data = _json.loads(clean)
+        if isinstance(data, dict) and data.get("meme_type"):
+            from .db_social import save_group_meme
+            await save_group_meme(
+                group_id,
+                meme_type=data["meme_type"],
+                content=data.get("content", ""),
+                trigger_keywords=data.get("trigger_keywords", ""),
+                creator_id=user_id,
+            )
+    except Exception as e:
+        logger.debug(f"[群聊梗] 提取失败（非关键）: {e}")
 
 
 async def _update_session_state(session_id: str, raw_msg: str, reply_text: str):

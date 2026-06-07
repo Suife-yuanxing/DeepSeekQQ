@@ -1,9 +1,10 @@
-"""群聊气氛分析 — 判断当前群聊是否适合插话。
+"""群聊气氛分析 — 判断当前群聊是否适合插话、群聊角色定位。
 
 基于最近消息的密度、参与者数量、节奏间隔等判断。
 """
 import time
-from typing import List, Dict, Any
+import random
+from typing import List, Dict, Any, Optional
 
 
 def should_join_conversation(recent_messages: List[Dict[str, Any]], bot_id: str) -> Dict[str, Any]:
@@ -53,3 +54,74 @@ def should_join_conversation(recent_messages: List[Dict[str, Any]], bot_id: str)
 
     # 默认不插话
     return {"should_reply": False, "reason": "默认不插话", "confidence": 0.3}
+
+
+# ============================================================
+# 群聊角色定位
+# ============================================================
+
+async def get_group_role_hint(group_id: str) -> str:
+    """根据群聊情况决定 bot 的角色定位。
+
+    - 人少（<5）：活跃分子，可以多插话
+    - 人中等（5-10）：适度参与
+    - 人多（>10）：安静观察者，少说话
+    - 有熟人：更活跃
+    - 全是生人：更谨慎
+    """
+    try:
+        from .db_group import get_active_members
+        from .db_social import get_relationships
+
+        active = await get_active_members(group_id, hours=72)
+        total_active = len(active)
+
+        # 统计有关系的成员数
+        friend_count = 0
+        for member in active[:10]:  # 只检查前10个活跃成员
+            rels = await get_relationships(group_id, member["member_id"])
+            for rel in rels:
+                if rel["rel_type"] in ("friend", "close", "teammate") and rel["strength"] >= 0.2:
+                    friend_count += 1
+                    break
+
+        if total_active <= 3:
+            return "群里人很少，你可以活跃一点，多参与聊天，像群里的活跃分子。"
+        elif total_active <= 8:
+            if friend_count >= 2:
+                return "群里有几个你认识的人，可以自然地参与聊天，偶尔调侃一下。"
+            return "群里人不多，可以适当参与，但不要每条都回。"
+        elif total_active <= 15:
+            if friend_count >= 3:
+                return "群里人不少但有熟人，可以在感兴趣的话题时插话。"
+            return "群里人比较多，安静观察为主，被@或有明确话题时再说话。"
+        else:
+            return "群里很热闹，你主要当观众，只有被@或特别有趣的话题才参与。"
+    except Exception:
+        return ""
+
+
+async def get_group_social_context(group_id: str, current_msg: str) -> Dict[str, str]:
+    """收集群聊社交上下文（关系、梗、角色），供 prompt 注入。
+
+    Returns:
+        {"social_hint", "meme_hint", "role_hint"}
+    """
+    result = {"social_hint": "", "meme_hint": "", "role_hint": ""}
+
+    try:
+        # 社交关系摘要
+        from .db_social import get_group_relationships_summary, get_group_meme_hint
+        result["social_hint"] = await get_group_relationships_summary(group_id)
+
+        # 群聊梗匹配
+        meme = await get_group_meme_hint(group_id, current_msg)
+        if meme:
+            result["meme_hint"] = meme
+
+        # 角色定位
+        result["role_hint"] = await get_group_role_hint(group_id)
+    except Exception:
+        pass
+
+    return result

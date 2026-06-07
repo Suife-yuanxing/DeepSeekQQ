@@ -142,7 +142,7 @@ class TestConversationContextStructure:
     async def test_returns_none_when_no_state(self):
         """无 session_state 时返回 None。"""
         from plugins.deepseek.database import get_last_conversation_context
-        with patch("plugins.deepseek.database.get_session_state", new=AsyncMock(return_value=None)):
+        with patch("plugins.deepseek.db_session.get_session_state", new=AsyncMock(return_value=None)):
             result = await get_last_conversation_context("12345")
             assert result is None
 
@@ -150,7 +150,7 @@ class TestConversationContextStructure:
     async def test_returns_none_when_no_topic(self):
         """session_state 无 topic 时返回 None。"""
         from plugins.deepseek.database import get_last_conversation_context
-        with patch("plugins.deepseek.database.get_session_state", new=AsyncMock(
+        with patch("plugins.deepseek.db_session.get_session_state", new=AsyncMock(
             return_value={"last_topic": "", "last_interaction": 1000, "context_summary": ""}
         )):
             result = await get_last_conversation_context("12345")
@@ -162,7 +162,7 @@ class TestConversationContextStructure:
         import time
         from plugins.deepseek.database import get_last_conversation_context
         old_time = time.time() - 73 * 3600  # 73 小时前
-        with patch("plugins.deepseek.database.get_session_state", new=AsyncMock(
+        with patch("plugins.deepseek.db_session.get_session_state", new=AsyncMock(
             return_value={"last_topic": "面试", "last_interaction": old_time, "context_summary": "xxx"}
         )):
             result = await get_last_conversation_context("12345")
@@ -174,13 +174,13 @@ class TestConversationContextStructure:
         import time
         from plugins.deepseek.database import get_last_conversation_context
         recent_time = time.time() - 3 * 3600  # 3 小时前
-        with patch("plugins.deepseek.database.get_session_state", new=AsyncMock(
+        with patch("plugins.deepseek.db_session.get_session_state", new=AsyncMock(
             return_value={
                 "last_topic": "面试准备",
                 "last_interaction": recent_time,
                 "context_summary": "用户: 明天有面试 | 回复: 加油！",
             }
-        )), patch("plugins.deepseek.database.get_relevant_memory_tags", new=AsyncMock(
+        )), patch("plugins.deepseek.db_tags.get_relevant_memory_tags", new=AsyncMock(
             return_value=[{"content": "编程", "tag_type": "preference"}]
         )):
             result = await get_last_conversation_context("12345")

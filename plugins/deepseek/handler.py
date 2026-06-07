@@ -115,6 +115,29 @@ class ChatContext:
     is_first_today: bool = False
     schedule: Any = None  # ScheduleState from schedule.py
     voice_features: dict = field(default_factory=dict)  # 语音情绪特征
+    # 记忆系统深化
+    shared_memory_hint: str = ""
+    private_meme_hint: str = ""
+    date_hint: str = ""
+    # 对话节奏优化
+    topic_bridge: str = ""
+    icebreaker_hint: str = ""
+    topic_transition: str = ""
+    # 情绪系统深化
+    emotion_recovery_hint: str = ""
+    emotion_memory_hint: str = ""
+    contagion_result: dict = field(default_factory=dict)
+    # 社交能力增强
+    group_social_hint: str = ""
+    group_meme_hint: str = ""
+    group_role_hint: str = ""
+    # 行为模式丰富
+    behavior_hint: str = ""
+    # 个性化深化
+    nickname_hint: str = ""
+    interest_hint: str = ""
+    growth_hint: str = ""
+    catchphrase_hint: str = ""
 
 
 # ============================================================
@@ -349,6 +372,19 @@ async def _stage_context(ctx: ChatContext) -> Optional[str]:
     ctx.world_context = world_ctx
     ctx.bot_mood_result = await update_bot_emotion(ctx.raw_msg, ctx.analysis.emotion)
     ctx.emotion_params = get_emotion_params(ctx.analysis.emotion)
+
+    # 情绪系统深化：渐进恢复提示、情绪传染、情绪记忆
+    if ctx.bot_mood_result.get("recovery_stage"):
+        ctx.emotion_recovery_hint = ctx.bot_mood_result["recovery_stage"]
+    if ctx.bot_mood_result.get("swing_hint"):
+        ctx.emotion_recovery_hint = ctx.bot_mood_result["swing_hint"]
+    if ctx.bot_mood_result.get("contagion"):
+        ctx.contagion_result = ctx.bot_mood_result["contagion"]
+        # 将传染效果叠加到 bot_mood_result 中
+        ctx.bot_mood_result["valence"] = ctx.bot_mood_result.get("valence", 0) + ctx.contagion_result.get("valence_delta", 0)
+        ctx.bot_mood_result["arousal"] = ctx.bot_mood_result.get("arousal", 0.2) + ctx.contagion_result.get("arousal_delta", 0)
+    from .emotion_deep import get_emotion_memory_hint
+    ctx.emotion_memory_hint = await get_emotion_memory_hint(ctx.user_id, ctx.raw_msg) or ""
     ctx.user_prefs = await get_user_pref_hints(ctx.user_id)
 
     from .database import has_user_message_today
@@ -376,6 +412,86 @@ async def _stage_context(ctx: ChatContext) -> Optional[str]:
     # 填充作息状态
     from .schedule import get_schedule_state
     ctx.schedule = get_schedule_state()
+
+    # 记忆系统深化：共同回忆、私人梗、重要日期
+    from .memory import get_shared_memory_hint, get_private_meme_hint, get_date_hint
+    ctx.shared_memory_hint = await get_shared_memory_hint(ctx.user_id, ctx.raw_msg) or ""
+    ctx.private_meme_hint = await get_private_meme_hint(ctx.user_id, ctx.raw_msg) or ""
+    ctx.date_hint = await get_date_hint(ctx.user_id) or ""
+
+    # 对话节奏优化：话题桥接、破冰、换话题过渡
+    from .dialogue_rhythm import get_topic_bridge, get_icebreaker_context, get_topic_transition_hint
+    prev_topic = ""
+    if ctx.session_recovery:
+        prev_topic = ctx.session_recovery.get("last_topic", "")
+    if ctx.analysis.context.topic_shift_score > 0.5 and prev_topic:
+        ctx.topic_bridge = get_topic_bridge(
+            prev_topic, ctx.analysis.context.topic_summary,
+            ctx.analysis.context.topic_shift_score
+        )
+
+    # 破冰内容：沉默后首条消息
+    if ctx.is_first_today and ctx.session_recovery:
+        ctx.icebreaker_hint = await get_icebreaker_context(
+            ctx.session_recovery, ctx.bot_mood_result
+        ) or ""
+
+    # 换话题过渡
+    if ctx.analysis.context.topic_shift_score > 0.5 and prev_topic:
+        ctx.topic_transition = get_topic_transition_hint(
+            prev_topic, ctx.analysis.context.topic_summary,
+            ctx.analysis.context.topic_shift_score,
+            ctx.analysis.context.user_intent,
+        )
+
+    # 社交能力增强：群聊社交上下文
+    if ctx.is_group:
+        group_id = ctx.session_id.replace("group_", "")
+        from .group_atmosphere import get_group_social_context
+        social_ctx = await get_group_social_context(group_id, ctx.raw_msg)
+        ctx.group_social_hint = social_ctx.get("social_hint", "")
+        ctx.group_meme_hint = social_ctx.get("meme_hint", "")
+        ctx.group_role_hint = social_ctx.get("role_hint", "")
+        # 更新群成员活跃度
+        from .db_group import update_member_activity
+        await update_member_activity(group_id, ctx.user_id)
+
+    # 行为模式丰富：天气/季节/随机行为
+    from .behavior_engine import get_behavior_hint
+    weather_condition = ""
+    weather_temp = ""
+    if ctx.world_context:
+        # 从 world_context 中提取天气信息
+        import re
+        weather_match = re.search(r'天气：(\S+)', ctx.world_context)
+        if weather_match:
+            weather_condition = weather_match.group(1)
+        temp_match = re.search(r'(\d+)°C', ctx.world_context)
+        if temp_match:
+            weather_temp = temp_match.group(1)
+    schedule_period = ctx.schedule.period if ctx.schedule else "active"
+    bot_mood_dominant = ctx.bot_mood_result.get("dominant", "平静") if ctx.bot_mood_result else "平静"
+    ctx.behavior_hint = get_behavior_hint(weather_condition, weather_temp, schedule_period, bot_mood_dominant) or ""
+
+    # 个性化深化：昵称、共同兴趣、成长叙事、口头禅
+    from .personalization import get_personalization_hints
+    from .db_session import get_or_create_user_profile
+    profile = await get_or_create_user_profile(ctx.user_id)
+    custom_nickname = profile.get("nickname", "") if profile else ""
+    affection_score = ctx.affection.get("score", 0)
+    relationship_style = ctx.user_prefs.get("relationship_style", "")
+    total_chats = ctx.affection.get("total_chats", 0)
+    streak_days = ctx.affection.get("streak_days", 0)
+    first_interaction = ctx.affection.get("first_interaction", 0) if "first_interaction" in ctx.affection else 0
+    personal_hints = await get_personalization_hints(
+        ctx.user_id, affection_score, relationship_style, custom_nickname,
+        bot_mood_dominant, total_chats, streak_days, first_interaction,
+    )
+    ctx.nickname_hint = personal_hints.get("nickname_hint", "")
+    ctx.interest_hint = personal_hints.get("interest_hint", "")
+    ctx.growth_hint = personal_hints.get("growth_hint", "")
+    ctx.catchphrase_hint = personal_hints.get("catchphrase_hint", "")
+
     return None
 
 
@@ -452,6 +568,22 @@ async def _stage_llm(ctx: ChatContext) -> Optional[str]:
             milestone_hint=ctx.milestone_hint,
             schedule=ctx.schedule,
             voice_features=ctx.voice_features,
+            shared_memory_hint=ctx.shared_memory_hint or None,
+            private_meme_hint=ctx.private_meme_hint or None,
+            date_hint=ctx.date_hint or None,
+            topic_bridge=ctx.topic_bridge or None,
+            icebreaker_hint=ctx.icebreaker_hint or None,
+            topic_transition=ctx.topic_transition or None,
+            emotion_recovery_hint=ctx.emotion_recovery_hint or None,
+            emotion_memory_hint=ctx.emotion_memory_hint or None,
+            group_social_hint=ctx.group_social_hint or None,
+            group_meme_hint=ctx.group_meme_hint or None,
+            group_role_hint=ctx.group_role_hint or None,
+            behavior_hint=ctx.behavior_hint or None,
+            nickname_hint=ctx.nickname_hint or None,
+            interest_hint=ctx.interest_hint or None,
+            growth_hint=ctx.growth_hint or None,
+            catchphrase_hint=ctx.catchphrase_hint or None,
         )
         sys_prompt += "\n回复风格：专业分析+个性点评。分析部分结构化、有深度，点评部分保持你的猫娘语气。绝对禁止括号动作描写。"
         messages = [{"role": "system", "content": sys_prompt}]
@@ -480,6 +612,22 @@ async def _stage_llm(ctx: ChatContext) -> Optional[str]:
             milestone_hint=ctx.milestone_hint,
             schedule=ctx.schedule,
             voice_features=ctx.voice_features,
+            shared_memory_hint=ctx.shared_memory_hint or None,
+            private_meme_hint=ctx.private_meme_hint or None,
+            date_hint=ctx.date_hint or None,
+            topic_bridge=ctx.topic_bridge or None,
+            icebreaker_hint=ctx.icebreaker_hint or None,
+            topic_transition=ctx.topic_transition or None,
+            emotion_recovery_hint=ctx.emotion_recovery_hint or None,
+            emotion_memory_hint=ctx.emotion_memory_hint or None,
+            group_social_hint=ctx.group_social_hint or None,
+            group_meme_hint=ctx.group_meme_hint or None,
+            group_role_hint=ctx.group_role_hint or None,
+            behavior_hint=ctx.behavior_hint or None,
+            nickname_hint=ctx.nickname_hint or None,
+            interest_hint=ctx.interest_hint or None,
+            growth_hint=ctx.growth_hint or None,
+            catchphrase_hint=ctx.catchphrase_hint or None,
         )
 
         from .database import has_user_message_today
@@ -562,10 +710,17 @@ async def _stage_llm(ctx: ChatContext) -> Optional[str]:
 
         messages = [{"role": "system", "content": sys_prompt}]
         history_limit = REPLY_LENGTH_CONFIG["context_depth"] * CHAT_HISTORY_MULTIPLIER
-        for mem in ctx.recent_memories[-history_limit:]:
+
+        # 智能上下文选择（替代简单的保留最近N条）
+        from .context_optimizer import select_context_messages, fit_messages_to_budget
+        selected_memories = select_context_messages(ctx.recent_memories, ctx.raw_msg, history_limit)
+        for mem in selected_memories:
             messages.append({"role": mem["role"], "content": mem["content"]})
         if not messages or messages[-1]["role"] != "user":
             messages.append({"role": "user", "content": ctx.raw_msg})
+
+        # Token 预算管理：确保不超出上下文窗口
+        messages = fit_messages_to_budget(messages, sys_prompt)
 
     ctx.reply_text = await call_deepseek_api(
         messages,
@@ -609,12 +764,28 @@ async def _stage_humanize(ctx: ChatContext) -> Optional[str]:
     if not ctx.reply_text:
         return None
     text = ctx.reply_text
+
+    # 节奏增强：反应词前缀
+    from .handler_humanize import maybe_add_reaction_prefix
+    emotion_v = ctx.analysis.emotion.valence if ctx.analysis else 0.0
+    text = maybe_add_reaction_prefix(text, emotion_v)
+
+    # 原有人性化处理
     if random.random() < 0.03:
         text = introduce_typo(text)
     if random.random() < 0.02:
         text = introduce_mind_change(text)
     if random.random() < 0.01 and len(text) > 10:
         text = introduce_uncertainty(text)
+
+    # 节奏增强：连发拆分
+    from .handler_humanize import maybe_split_to_bursts
+    emotion_a = ctx.analysis.emotion.arousal if ctx.analysis else 0.5
+    bursts = maybe_split_to_bursts(text, emotion_a, emotion_v)
+    if bursts:
+        # 用换行连接，后续 split_long_reply 会拆成多条消息
+        text = "\n".join(bursts)
+
     ctx.reply_text = text
     return None
 
@@ -797,6 +968,8 @@ async def _handle_link_share(ctx: ChatContext):
 
 async def handle_chat(bot: Bot, event: MessageEvent):
     """主入口：构建上下文并执行 Pipeline。"""
+    from .performance_monitor import StageTimer, track_response
+    start_time = time.time()
     try:
         ctx = ChatContext(
             bot=bot,
@@ -808,7 +981,8 @@ async def handle_chat(bot: Bot, event: MessageEvent):
         )
 
         for stage_name, stage_func in _PIPELINE:
-            result = await stage_func(ctx)
+            with StageTimer(stage_name):
+                result = await stage_func(ctx)
             if result is _SKIP:
                 return
 
@@ -820,3 +994,6 @@ async def handle_chat(bot: Bot, event: MessageEvent):
             await bot.send(event, make_reply(event, Message("呜...脑袋有点乱，让我缓缓...")))
         except Exception:
             pass
+    finally:
+        total_ms = (time.time() - start_time) * 1000
+        track_response(total_ms)

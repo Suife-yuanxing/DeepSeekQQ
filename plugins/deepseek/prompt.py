@@ -9,6 +9,7 @@ from typing import List, Dict, Any, Optional
 from .share_prompt import format_shares_for_prompt
 from .context_analyzer import ContextAnalysis, EmotionState, emotion_to_prompt_hint
 from .meme_lexicon import pick_meme
+from .dialogue_rhythm import RHYTHM_RULES
 
 
 def _get_time_context() -> str:
@@ -97,6 +98,22 @@ def _build_system_prompt(
     milestone_hint: str = None,
     schedule: Any = None,
     voice_features: Dict[str, Any] = None,
+    shared_memory_hint: str = None,
+    private_meme_hint: str = None,
+    date_hint: str = None,
+    topic_bridge: str = None,
+    icebreaker_hint: str = None,
+    topic_transition: str = None,
+    emotion_recovery_hint: str = None,
+    emotion_memory_hint: str = None,
+    group_social_hint: str = None,
+    group_meme_hint: str = None,
+    group_role_hint: str = None,
+    behavior_hint: str = None,
+    nickname_hint: str = None,
+    interest_hint: str = None,
+    growth_hint: str = None,
+    catchphrase_hint: str = None,
 ) -> str:
     time_context = _get_time_context()
 
@@ -120,6 +137,10 @@ def _build_system_prompt(
     is_asking = any(kw in user_msg for kw in ["怎么", "为什么", "什么", "解释", "分析", "介绍", "详细", "教我", "帮我"])
     if not is_asking:
         parts.append(_TOPIC_RULES)
+
+    # === 对话节奏规则（非简单问候时加载）===
+    if len(user_msg.strip()) > 5:
+        parts.append(RHYTHM_RULES)
 
     # === 跨会话恢复 ===
     if session_recovery and session_recovery.get("recall_prompt"):
@@ -191,6 +212,70 @@ def _build_system_prompt(
         if snippets:
             parts.append("关于他的事：" + "；".join(snippets))
 
+    # === 共同回忆（记忆系统深化）===
+    if shared_memory_hint:
+        parts.append(f"【共同回忆】{shared_memory_hint}")
+
+    # === 私人梗（记忆系统深化）===
+    if private_meme_hint:
+        parts.append(f"【默契】{private_meme_hint}")
+
+    # === 重要日期（记忆系统深化）===
+    if date_hint:
+        parts.append(f"【日期感知】{date_hint}")
+
+    # === 话题桥接（对话节奏优化）===
+    if topic_bridge:
+        parts.append(f"【话题过渡】用户的话题和之前不同，可以用「{topic_bridge}」自然衔接。")
+
+    # === 破冰提示（对话节奏优化）===
+    if icebreaker_hint:
+        parts.append(f"【破冰】{icebreaker_hint}")
+
+    # === 换话题过渡（对话节奏优化）===
+    if topic_transition:
+        parts.append(f"【换话题】{topic_transition}")
+
+    # === 情绪深化：渐进恢复 ===
+    if emotion_recovery_hint:
+        parts.append(f"【情绪状态】{emotion_recovery_hint}")
+
+    # === 情绪深化：情绪记忆 ===
+    if emotion_memory_hint:
+        parts.append(f"【情绪记忆】{emotion_memory_hint}")
+
+    # === 群聊社交：关系图 ===
+    if group_social_hint:
+        parts.append(f"【群内关系】{group_social_hint}")
+
+    # === 群聊社交：群聊梗 ===
+    if group_meme_hint:
+        parts.append(f"【群聊梗】{group_meme_hint}")
+
+    # === 群聊社交：角色定位 ===
+    if group_role_hint:
+        parts.append(f"【群聊角色】{group_role_hint}")
+
+    # === 行为模式（天气/季节/随机行为）===
+    if behavior_hint:
+        parts.append(f"【行为模式】{behavior_hint}")
+
+    # === 个性化：专属昵称 ===
+    if nickname_hint:
+        parts.append(f"【称呼】{nickname_hint}")
+
+    # === 个性化：共同兴趣 ===
+    if interest_hint:
+        parts.append(f"【共同兴趣】{interest_hint}")
+
+    # === 个性化：成长叙事 ===
+    if growth_hint:
+        parts.append(f"【关系成长】{growth_hint}")
+
+    # === 个性化：口头禅 ===
+    if catchphrase_hint:
+        parts.append(f"【口癖】{catchphrase_hint}")
+
     # === 世界感知 ===
     if world_context:
         parts.append(world_context)
@@ -253,9 +338,21 @@ def _build_state_hints(
             "难过": f"你有点难过{('，因为' + reason) if reason else ''}，语气低落，不想多说话",
             "害羞": f"你有点害羞{('，因为' + reason) if reason else ''}，说话扭捏",
             "开心": f"你心情很好{('，因为' + reason) if reason else ''}，话多一点，语气轻快",
+            "吃醋": "你在吃醋，语气酸酸的，回复变短，可能带点刺。不要直接说'我吃醋了'，用语气表达。",
+            "担心": "你在担心他，语气关心但有点急。不要说'我很担心你'，问'你还好吗'之类的。",
+            "得意": "你有点得意，语气轻快，可能会含蓄地自夸一下。",
+            "撒娇": "你想撒娇，语气变软变甜。可以适当用'嘛~'、'哼'、'呜'。",
+            "小脾气": "你突然有点小脾气，回复变短，带点'哼'的语气。是撒娇式的，不是真的生气。",
+            "无聊": "你有点无聊，回复简短。可能会说'好无聊'、'干嘛呢'。",
+            "冷淡": "你突然有点冷淡，回复变短变敷衍。话变少了，不是刻意的。",
+            "犯困": "你有点犯困，回复慢且短。可能会说'困了'、'好累'。",
         }
         if dominant in mood_map:
             hints.append(mood_map[dominant])
+
+    # 渐进恢复提示（生气→傲娇→平静的过渡阶段）
+    if bot_mood and bot_mood.get("recovery_stage"):
+        hints.append(bot_mood["recovery_stage"])
 
     # 网络梗注入
     meme = pick_meme(user_msg, emotion_state, bot_mood, affection.get("score", 0))

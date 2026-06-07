@@ -133,9 +133,26 @@ async def call_deepseek_api(messages: List[Dict[str, str]], temperature: float =
         max_tokens = token_map.get(task_type, API_MAX_TOKENS)
 
     # ===== 第1层：DeepSeek 远程 API =====
+    api_start = time.time()
     result = await _call_deepseek_raw(messages, temperature, max_tokens=max_tokens)
+    api_duration = (time.time() - api_start) * 1000
+
     if result is not None:
+        # 性能追踪
+        try:
+            from .performance_monitor import track_api_call
+            tokens_est = len(result) // 2  # 粗略估算输出 token
+            track_api_call(task_type, api_duration, tokens_used=tokens_est, success=True)
+        except Exception:
+            pass
         return result
+
+    # 远程失败，记录
+    try:
+        from .performance_monitor import track_api_call
+        track_api_call(task_type, api_duration, success=False, error="remote_failed")
+    except Exception:
+        pass
 
     # ===== 第2层：本地 Ollama 模型 =====
     logger.info("[API] 降级到本地 Ollama 模型")

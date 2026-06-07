@@ -489,6 +489,8 @@ async def update_bot_emotion(user_msg: str, user_emotion: EmotionState) -> Dict[
     2. 如果bot当前有负面情绪且用户没有安抚，情绪持续
     3. 如果用户安抚了，加速衰减负面情绪
     4. 自然衰减：负面情绪随时间减弱
+    5. 情绪传染：用户情绪影响 bot 情绪
+    6. 渐进恢复：生气→傲娇→平静
     """
     old_mood = await get_bot_mood()
     now = time.time()
@@ -497,11 +499,14 @@ async def update_bot_emotion(user_msg: str, user_emotion: EmotionState) -> Dict[
     dt = now - old_mood.get("last_updated", now)
     duration = BOT_MOOD_DURATION.get(old_mood["dominant"], 600)
 
-    # 自然衰减：超过持续时间后回归平静
+    # 自然衰减：超过持续时间后回归平静（渐进恢复）
     if dt > duration and old_mood["dominant"] != "平静":
         await update_bot_mood(0.0, 0.2, "平静", "自然消退")
         logger.info(f"[Bot情绪] 自然消退: {old_mood['dominant']} -> 平静 (过了{int(dt)}秒)")
-        return {"dominant": "平静", "reason": "自然消退"}
+        result = {"dominant": "平静", "reason": "自然消退"}
+        # 情绪传染：平静后也可能被用户情绪影响
+        _try_apply_contagion(result, user_emotion, old_mood)
+        return result
 
     # 检查用户是否在安抚
     is_comforting = any(kw in user_msg for kw in _COMFORT_KEYWORDS)
@@ -538,13 +543,57 @@ async def update_bot_emotion(user_msg: str, user_emotion: EmotionState) -> Dict[
 
     # 没有触发新情绪，返回当前状态（衰减后的）
     if old_mood["dominant"] != "平静":
+        # 渐进恢复：检查是否处于恢复阶段
+        from .emotion_deep import get_gradual_recovery
+        recovery = get_gradual_recovery(old_mood["dominant"], old_mood.get("trigger_time", now), duration)
+        if recovery:
+            # 处于恢复阶段，返回恢复提示
+            result = {
+                "dominant": old_mood["dominant"],
+                "reason": old_mood.get("trigger_reason", ""),
+                "decaying": True,
+                "recovery_stage": recovery["hint"],
+                "recovery_label": recovery["stage_label"],
+                "recovery_progress": recovery["progress"],
+            }
+            logger.info(f"[Bot情绪] 恢复中: {old_mood['dominant']} -> {recovery['label']} ({recovery['progress']:.0%})")
+            _try_apply_contagion(result, user_emotion, old_mood)
+            return result
+
         # 衰减旧情绪
         progress = dt / duration  # 0~1
         decayed_v = old_mood["valence"] * (1 - progress)
         decayed_a = old_mood["arousal"] * (1 - progress)
         if abs(decayed_v) < 0.1:
             await update_bot_mood(0.0, 0.2, "平静", "自然消退")
-            return {"dominant": "平静", "reason": "自然消退"}
-        return {"dominant": old_mood["dominant"], "reason": old_mood.get("trigger_reason", ""), "decaying": True}
+            result = {"dominant": "平静", "reason": "自然消退"}
+            _try_apply_contagion(result, user_emotion, old_mood)
+            return result
+        result = {"dominant": old_mood["dominant"], "reason": old_mood.get("trigger_reason", ""), "decaying": True}
+        _try_apply_contagion(result, user_emotion, old_mood)
+        return result
 
-    return {"dominant": "平静", "reason": ""}
+    # 平静状态：检查随机波动 + 情绪传染
+    from .emotion_deep import maybe_trigger_mood_swing
+    swing = maybe_trigger_mood_swing(old_mood["dominant"], 0)  # 好感度在 handler 中传入
+    if swing:
+        await update_bot_mood(swing["valence"], swing["arousal"], swing["dominant"], swing["reason"])
+        return {"dominant": swing["dominant"], "reason": swing["reason"], "swing_hint": swing.get("hint", "")}
+
+    result = {"dominant": "平静", "reason": ""}
+    _try_apply_contagion(result, user_emotion, old_mood)
+    return result
+
+
+def _try_apply_contagion(result: dict, user_emotion: EmotionState, old_mood: dict):
+    """尝试应用情绪传染到结果中（修改 result 字典）。"""
+    if user_emotion.confidence < 0.4:
+        return
+    from .emotion_deep import apply_emotional_contagion
+    contagion = apply_emotional_contagion(
+        user_emotion.valence, user_emotion.arousal,
+        old_mood.get("valence", 0), old_mood.get("arousal", 0.2),
+        old_mood.get("dominant", "平静"),
+    )
+    if contagion:
+        result["contagion"] = contagion

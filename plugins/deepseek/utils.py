@@ -109,6 +109,34 @@ def calc_message_delay(text: str, context: dict = None) -> float:
     return max(0.5, min(base, 15.0))
 
 
+def calc_burst_delays(parts: List[str], base_context: dict = None) -> List[float]:
+    """计算连发消息的延迟列表。
+
+    连发节奏：
+    - 第一条：正常延迟（阅读+思考）
+    - 第二条：延迟缩短 30%（快速追加）
+    - 第三条：延迟缩短 50%（抢着说）
+    """
+    if not parts:
+        return []
+
+    delays = []
+    for i, part in enumerate(parts):
+        ctx = dict(base_context or {})
+        if i > 0:
+            ctx["is_first_reply"] = False
+            # 追加消息延迟递减
+            decay = max(0.3, 1.0 - i * 0.25)
+            delay = calc_message_delay(part, ctx) * decay
+            # 追加消息最低 0.3s
+            delay = max(0.3, delay)
+        else:
+            delay = calc_message_delay(part, ctx)
+        delays.append(delay)
+
+    return delays
+
+
 
 
 def get_session_id(event) -> str:

@@ -47,6 +47,16 @@ from .db_proactive import (
     get_silent_private_users,
 )
 from .db_cache import get_article_cache, save_article_cache
+from .db_memories_deep import (
+    save_shared_memory, get_shared_memories, get_recall_candidates, boost_shared_memory,
+    save_private_meme, get_private_memes, find_matching_meme,
+    save_important_date, get_important_dates, get_today_dates, get_upcoming_dates,
+)
+from .db_social import (
+    record_relationship, get_relationships, get_relationship,
+    save_group_meme, get_group_memes, find_matching_group_meme,
+    record_social_reference, get_social_references,
+)
 
 from .config import AFFECTION_LEVELS
 
@@ -313,4 +323,49 @@ async def init_db():
         )
     """)
     await db.execute("CREATE INDEX IF NOT EXISTS idx_reply_quality_user ON reply_quality(user_id, created_at)")
+    # 记忆系统深化表（v13 迁移的备份保障）
+    await db.execute("""
+        CREATE TABLE IF NOT EXISTS shared_memories (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id TEXT NOT NULL,
+            event_type TEXT NOT NULL,
+            event_desc TEXT NOT NULL,
+            emotion_tag TEXT DEFAULT '',
+            context TEXT DEFAULT '',
+            importance REAL DEFAULT 0.5,
+            recall_count INTEGER DEFAULT 0,
+            created_at REAL,
+            last_recalled REAL DEFAULT 0
+        )
+    """)
+    await db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_shared_mem_user ON shared_memories(user_id, importance DESC)"
+    )
+    await db.execute("""
+        CREATE TABLE IF NOT EXISTS private_memes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id TEXT NOT NULL,
+            meme_type TEXT NOT NULL,
+            content TEXT NOT NULL,
+            origin_context TEXT DEFAULT '',
+            trigger_keywords TEXT DEFAULT '',
+            frequency REAL DEFAULT 0.3,
+            usage_count INTEGER DEFAULT 0,
+            created_at REAL,
+            last_used REAL DEFAULT 0,
+            UNIQUE(user_id, meme_type, content)
+        )
+    """)
+    await db.execute("""
+        CREATE TABLE IF NOT EXISTS important_dates (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id TEXT NOT NULL,
+            date_type TEXT NOT NULL,
+            date_value TEXT NOT NULL,
+            description TEXT DEFAULT '',
+            repeat_yearly BOOLEAN DEFAULT 1,
+            created_at REAL,
+            UNIQUE(user_id, date_type, date_value)
+        )
+    """)
     await db.commit()
