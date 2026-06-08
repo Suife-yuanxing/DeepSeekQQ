@@ -9,6 +9,7 @@
 - 短句子、口语化、有停顿感
 - 不给模板，引导 LLM 根据图片实际内容自然聊起来
 """
+import re
 from typing import Dict, Any, Optional, List
 
 from nonebot import logger
@@ -49,9 +50,9 @@ def classify_image(vision_result: str, user_msg: str = "") -> str:
 
     result_lower = vision_result.lower()
 
-    # 人物照片关键词
+    # 人物照片关键词（使用 word boundary 避免 "man" 误匹配 "human"/"manga" 等）
     person_keywords = ["人", "脸", "自拍", "合照", "男", "女", "帅哥", "美女",
-                       "portrait", "selfie", "person", "face", "man", "woman"]
+                       "portrait", "selfie", "person", "face"]
     # 风景照片关键词
     scenery_keywords = ["风景", "山", "海", "湖", "天空", "日落", "日出", "夜景",
                         "建筑", "城市", "街道", "公园", "花", "树", "云",
@@ -105,7 +106,7 @@ def get_image_reply_prompt(
     vision_result: str,
     affection_score: float,
     user_msg: str,
-    bot_mood: Dict[str, Any] = None,
+    bot_mood: Optional[Dict[str, Any]] = None,
 ) -> str:
     """生成图片回复的 prompt 提示，注入到 system prompt 中。
 

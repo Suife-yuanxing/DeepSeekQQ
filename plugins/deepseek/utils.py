@@ -1,7 +1,28 @@
 """通用工具函数。"""
 import re
 import random
+from collections import OrderedDict
 from typing import List, Dict, Any, Tuple
+
+
+class LRUDict(OrderedDict):
+    """LRU 字典：容量达上限时自动驱逐最旧条目。
+
+    可用于：URL 冷却、图片缓存、去重等场景。
+    """
+
+    def __init__(self, max_size: int = 500):
+        super().__init__()
+        self.max_size = max_size
+
+    def __setitem__(self, key, value):
+        if key in self:
+            self.move_to_end(key)
+        else:
+            while len(self) >= self.max_size:
+                oldest = next(iter(self))
+                del self[oldest]
+        super().__setitem__(key, value)
 
 
 def split_long_reply(text: str) -> List[str]:

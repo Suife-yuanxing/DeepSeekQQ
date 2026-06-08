@@ -11,35 +11,22 @@ import hashlib
 import asyncio
 from datetime import datetime
 from typing import Optional, List, Dict, Any
-from collections import OrderedDict
 
 import aiohttp
 
 from .config import SHARE_TTL, URL_FETCH_COOLDOWN
 from .database import get_article_cache, save_article_cache
 from .api import get_http_session
-from .vision import recognize_sticker, analyze_image
+from .vision import recognize_sticker, analyze_image, extract_vision_text
 from .image_reply import classify_image, IMAGE_TYPE_STICKER
+from .utils import LRUDict
 from nonebot import logger
 
 _recent_shares: Dict[str, List[Dict[str, Any]]] = {}
 _QQ_FACE_MAP={"0":"微笑","1":"撇嘴","2":"色","3":"发呆","4":"得意","5":"流泪","6":"害羞","7":"闭嘴","8":"睡","9":"大哭","10":"尴尬","11":"发怒","12":"调皮","13":"呲牙","14":"惊讶","15":"难过","16":"酷","17":"冷汗","18":"抓狂","19":"吐","20":"偷笑","21":"愉快","22":"白眼","23":"傲慢","24":"饥饿","25":"困","26":"惊恐","27":"流汗","28":"憨笑","29":"悠闲","30":"奋斗","31":"咒骂","32":"疑问","33":"嘘","34":"晕","35":"折磨","36":"衰","37":"骷髅","38":"敲打","39":"再见","40":"发抖","41":"爱情","42":"跳跳","43":"猪头","44":"拥抱","45":"蛋糕","46":"闪电","47":"炸弹","48":"刀","49":"足球","50":"便便","51":"咖啡","52":"饭","53":"玫瑰","54":"凋谢","55":"爱心","56":"心碎","57":"礼物","58":"太阳","59":"月亮","60":"赞","61":"踩","62":"握手","63":"胜利","64":"飞吻","65":"怄火","66":"西瓜","67":"冷酷","68":"色眯眯","69":"好怕怕","73":"裂开","75":"叹气","76":"戳一戳","77":"托腮","78":"歪嘴笑","79":"左看看","80":"右看看","81":"委屈","82":"裂开","96":"抱拳","97":"勾引","98":"拳头","99":"差劲","100":"爱你","101":"NO","102":"OK","103":"转圈","104":"挥手","105":"飞奔","106":"偷看","107":"吓","108":"委屈"}
 
-
-# 使用 OrderedDict 实现 LRU，限制最大容量防止无限增长
-class LRUCooldownDict(OrderedDict):
-    MAX_SIZE = 500  # 最多缓存 500 个 URL
-
-    def __setitem__(self, key, value):
-        if key in self:
-            self.move_to_end(key)
-        else:
-            if len(self) >= self.MAX_SIZE:
-                oldest = next(iter(self))
-                del self[oldest]
-        super().__setitem__(key, value)
-
-_url_fetch_cooldown: Dict[str, float] = LRUCooldownDict()
+# 使用 utils.LRUDict 实现 URL 抓取冷却（LRU + 容量上限防泄漏）
+_url_fetch_cooldown: LRUDict = LRUDict(max_size=500)
 
 
 # ==================== 内容有效性校验 ====================
@@ -51,16 +38,28 @@ _INVALID_MARKERS = [
 
 
 def _is_valid_share(s: Dict[str, Any]) -> bool:
-    """校验分享内容是否有效（统一入口，同时供外部模块调用）。"""
+    """校验分享内容是否有效（统一入口，同时供外部模块调用）。
+
+    校验逻辑：
+    1. 无摘要 → 无效
+    2. needs_paste / 小黑盒 → 有效（虽然抓不到内容，但有标题等基本信息）
+    3. restricted → 有效（受限平台，有标题/描述即可）
+    4. 摘要 < 80 字符 → 无效（内容太短，解析失败）
+    5. 包含无效标记词 → 无效（只抓到了页面框架而非正文）
+    """
     summary = s.get("summary", "")
     if not summary:
         return False
+    # 小黑盒等需要用户粘贴正文的平台：即使抓不到内容也算有效
     if s.get("needs_paste") or s.get("platform") == "小黑盒":
         return True
+    # 受限平台（抖音等）：有标题和描述就算有效
     if s.get("restricted"):
         return True
+    # 通用校验：内容太短说明解析失败
     if len(summary.strip()) < 80:
         return False
+    # 无效标记词表明只抓到了页面框架
     return not any(m in summary for m in _INVALID_MARKERS)
 
 
@@ -404,189 +403,242 @@ async def global_cleanup_shares():
         logger.info(f"[分享] 全局清理完成，释放 {freed_sessions} 个 session, {len(expired_urls)} 个 URL 冷却")
 
 
+# ==================== 消息段处理器（从 extract_and_cache_shares 拆分） ====================
+
+async def _handle_text_segment(seg, seen_urls: set) -> List[Dict[str, Any]]:
+    """处理文本消息段，提取 URL 并抓取内容。"""
+    results = []
+    text = seg.data.get("text", "")
+    urls = re.findall(r'https?://[^\s\]\)]+', text)
+    for url in urls:
+        url = url.rstrip('.,;:!?)]}\'\"')
+        if url in seen_urls:
+            continue
+        seen_urls.add(url)
+        article = await fetch_url_content(url)
+        if _is_valid_share(article):
+            display = f"{article.get('title', '无标题')} - {article.get('author', '未知')}"
+            results.append({
+                "type": "网页",
+                "source": display,
+                "url": url,
+                "summary": article["summary"],
+                "comments": article.get("comments", ""),
+                "cached": article.get("cached", False),
+                "restricted": article.get("restricted", False),
+                "platform": article.get("platform", "unknown"),
+                "needs_paste": article.get("needs_paste", False),
+                "time": datetime.now().timestamp()
+            })
+        else:
+            logger.warning(f"[分享] 链接内容无效或无法读取，跳过缓存: {url[:60]}")
+    return results
+
+
+async def _handle_sticker_segment(seg) -> Dict[str, Any]:
+    """处理表情包图片段（sub_type=1 或 QQ 动画表情）。"""
+    img_url = seg.data.get("url", "") or seg.data.get("file", "")
+    summary = seg.data.get("summary", "")
+    emoji_desc = summary.replace("[动画表情]", "").strip()
+    if not emoji_desc or emoji_desc == "[图片]":
+        emoji_desc = ""
+
+    if emoji_desc:
+        return {"type": "表情", "source": f"用户发了表情[{emoji_desc}]",
+                "summary": f"[用户发送了QQ表情：{emoji_desc}]", "image_url": img_url,
+                "time": datetime.now().timestamp()}
+
+    # 尝试视觉识别表情情绪
+    emotion = await recognize_sticker(img_url) if img_url else None
+    if emotion:
+        return {"type": "表情", "source": f"用户发了一个表情[{emotion}]",
+                "summary": f"[用户发送了QQ表情：{emotion}]", "image_url": img_url,
+                "time": datetime.now().timestamp()}
+    return {"type": "表情", "source": "用户发了一个表情",
+            "summary": "[用户发送了一个QQ表情图片，无法确定具体内容]", "image_url": img_url,
+            "time": datetime.now().timestamp()}
+
+
+async def _handle_photo_segment(seg, user_text: str) -> Dict[str, Any]:
+    """处理普通图片段（含三层降级识别 + 重试机制）。"""
+    img_url = seg.data.get("url") or seg.data.get("file", "未知图片")
+
+    # 动态选择识别提示词
+    img_prompt = _select_image_prompt(user_text)
+
+    img_desc = "[图片内容暂无法直接识别]"
+    vision_success = False
+    try:
+        if img_url and img_url != "未知图片":
+            for retry in range(3):
+                vision_result = await analyze_image(img_url, img_prompt)
+                vision_text = extract_vision_text(vision_result)
+                if vision_text:
+                    img_desc = vision_result  # 保留完整格式（含 OCR 前缀）
+                    vision_success = True
+                    break
+                elif retry < 2:
+                    logger.info(f"[图片识别] 重试 {retry + 1}/2: {img_url[:50]}")
+                    await asyncio.sleep(1)
+    except Exception as e:
+        logger.warning(f"[图片识别] 异常: {e}")
+
+    if not vision_success:
+        logger.warning(f"[图片识别] 最终失败: {img_url[:50]}")
+
+    # 图片分类（使用安全的 extract_vision_text）
+    vision_text = extract_vision_text(img_desc)
+    image_type = classify_image(vision_text, user_text)
+    logger.info(f"[图片分类] {image_type} | {vision_text[:50] if vision_text else '(无描述)'}...")
+
+    return {
+        "type": "图片",
+        "source": img_url,
+        "summary": img_desc,
+        "image_type": image_type,
+        "vision_text": vision_text,
+        "time": datetime.now().timestamp()
+    }
+
+
+def _select_image_prompt(user_text: str) -> str:
+    """根据用户消息上下文选择合适的图片识别提示词。"""
+    if user_text and any(kw in user_text for kw in ["截图", "聊天记录", "对话", "屏幕"]):
+        return "这是一张截图，请重点识别其中的文字内容和界面元素，用中文简洁描述，2-3句话"
+    if user_text and any(kw in user_text for kw in ["表情包", "表情", "搞笑", "斗图"]):
+        return "这是一个表情包，请描述其中的人物表情、动作和文字，用中文简洁描述，2句话"
+    if user_text and any(kw in user_text for kw in ["这是什么", "看看", "帮我", "识别", "什么"]):
+        return "请详细描述这张图片的内容，包括主要物体、场景、文字等，用中文回答，3-4句话"
+    return "请用中文简洁描述这张图片的主要内容，2-3句话，如果有文字请提取出来。特别注意：如果图片中有人物、动物、食物、风景、代码、聊天记录、文档等，请明确指出类型。"
+
+
+def _handle_face_segment(seg) -> Dict[str, Any]:
+    """处理 QQ 表情消息段。"""
+    face_id = str(seg.data.get("id", seg.data.get("faceIndex", "")))
+    face_text = seg.data.get("text", "") or seg.data.get("faceText", "")
+    if not face_text:
+        raw = seg.data.get("raw", {})
+        if isinstance(raw, dict):
+            face_text = raw.get("faceText", "")
+    if face_text:
+        face_text = face_text.strip().lstrip("/")
+    if not face_text:
+        face_text = _QQ_FACE_MAP.get(face_id, "")
+    if not face_text:
+        face_text = "表情"
+    return {"type": "表情", "source": f"用户发了QQ表情[{face_text}]",
+            "summary": f"[用户发送了QQ表情：{face_text}]", "time": datetime.now().timestamp()}
+
+
+async def _handle_json_card(seg, seen_urls: set) -> List[Dict[str, Any]]:
+    """处理 JSON 分享卡片消息段。"""
+    results = []
+    try:
+        card = json.loads(seg.data.get("data", "{}"))
+        card_added = False
+        if "meta" in card:
+            for k, v in card["meta"].items():
+                if not isinstance(v, dict):
+                    continue
+                card_url = v.get("jumpUrl") or v.get("url") or v.get("qqdocurl")
+                title = v.get("title", "分享卡片")
+                desc = v.get("desc", "") or v.get("description", "")
+                if card_url and card_url.startswith("http"):
+                    if card_url in seen_urls:
+                        card_added = True
+                        break
+                    seen_urls.add(card_url)
+                    article = await fetch_url_content(card_url)
+                    if _is_valid_share(article):
+                        results.append({
+                            "type": "网页",
+                            "source": f"{article.get('title', title)} - {article.get('author', '未知')}",
+                            "url": card_url,
+                            "summary": article["summary"],
+                            "comments": article.get("comments", ""),
+                            "cached": article.get("cached", False),
+                            "restricted": article.get("restricted", False),
+                            "platform": article.get("platform", "unknown"),
+                            "needs_paste": article.get("needs_paste", False),
+                            "time": datetime.now().timestamp()
+                        })
+                        card_added = True
+                        break
+                    else:
+                        logger.warning(f"[分享] 卡片URL抓取无效: {card_url[:60]}")
+                        results.append({
+                            "type": "分享卡片", "source": title,
+                            "summary": f"{desc} {card_url}".strip()[:500],
+                            "time": datetime.now().timestamp()
+                        })
+                        card_added = True
+                        break
+                else:
+                    results.append({
+                        "type": "分享卡片", "source": title,
+                        "summary": desc[:500], "time": datetime.now().timestamp()
+                    })
+                    card_added = True
+                    break
+        if not card_added and "prompt" in card:
+            results.append({
+                "type": "分享卡片",
+                "source": card.get("prompt", "分享"),
+                "summary": str(card)[:500],
+                "time": datetime.now().timestamp()
+            })
+    except Exception as e:
+        logger.warning(f"[分享] JSON卡片解析失败: {e}")
+    return results
+
+
+# ==================== 主入口 ====================
+
 async def extract_and_cache_shares(event, session_id: str) -> bool:
-    """提取消息中的分享内容并缓存。修复了卡片重复添加问题。"""
+    """提取消息中的分享内容并缓存。
+
+    按消息段类型分发处理：
+    - text → URL 抓取
+    - image → 贴纸/图片识别
+    - face/mface → QQ 表情映射
+    - json → 分享卡片解析
+    - xml → 原始 XML
+    - file → 文件元信息
+    """
     msg = event.get_message()
-    # 提取用户纯文本，用于图片 prompt 上下文判断
     user_text = msg.extract_plain_text().strip() if msg else ""
     shares = []
     seen_urls = set()
 
     for seg in msg:
         if seg.type == "text":
-            text = seg.data.get("text", "")
-            urls = re.findall(r'https?://[^\s\]\)]+', text)
-            for url in urls:
-                url = url.rstrip('.,;:!?)]}\'\"')
-                if url in seen_urls:
-                    continue
-                seen_urls.add(url)
-                article = await fetch_url_content(url)
-                if _is_valid_share(article):
-                    display = f"{article.get('title', '无标题')} - {article.get('author', '未知')}"
-                    shares.append({
-                        "type": "网页",
-                        "source": display,
-                        "url": url,
-                        "summary": article["summary"],
-                        "comments": article.get("comments", ""),
-                        "cached": article.get("cached", False),
-                        "restricted": article.get("restricted", False),
-                        "platform": article.get("platform", "unknown"),
-                        "needs_paste": article.get("needs_paste", False),
-                        "time": datetime.now().timestamp()
-                    })
-                else:
-                    logger.warning(f"[分享] 链接内容无效或无法读取，跳过缓存: {url[:60]}")
+            shares.extend(await _handle_text_segment(seg, seen_urls))
 
         elif seg.type == "image":
             sub_type = seg.data.get("sub_type", 0)
             summary = seg.data.get("summary", "")
             if sub_type == 1 or "动画表情" in summary or sub_type == 13:
-                img_url = seg.data.get("url", "") or seg.data.get("file", "")
-                emoji_desc = summary.replace("[动画表情]", "").strip()
-                if not emoji_desc or emoji_desc == "[图片]": emoji_desc = ""
-                if emoji_desc:
-                    shares.append({"type": "表情", "source": f"用户发了表情[{emoji_desc}]", "summary": f"[用户发送了QQ表情：{emoji_desc}]", "image_url": img_url, "time": datetime.now().timestamp()})
-                else:
-                    # 尝试用 Qwen-VL 视觉识别
-                    emotion = await recognize_sticker(img_url) if img_url else None
-                    if emotion:
-                        shares.append({"type": "表情", "source": f"用户发了一个表情[{emotion}]", "summary": f"[用户发送了QQ表情：{emotion}]", "image_url": img_url, "time": datetime.now().timestamp()})
-                    else:
-                        shares.append({"type": "表情", "source": "用户发了一个表情", "summary": "[用户发送了一个QQ表情图片，无法确定具体内容]", "image_url": img_url, "time": datetime.now().timestamp()})
+                shares.append(await _handle_sticker_segment(seg))
             else:
-                img_url = seg.data.get("url") or seg.data.get("file", "未知图片")
-                # 动态 prompt：根据用户消息上下文选择识别策略
-                if user_text and any(kw in user_text for kw in ["截图", "聊天记录", "对话", "屏幕"]):
-                    img_prompt = "这是一张截图，请重点识别其中的文字内容和界面元素，用中文简洁描述，2-3句话"
-                elif user_text and any(kw in user_text for kw in ["表情包", "表情", "搞笑", "斗图"]):
-                    img_prompt = "这是一个表情包，请描述其中的人物表情、动作和文字，用中文简洁描述，2句话"
-                elif user_text and any(kw in user_text for kw in ["这是什么", "看看", "帮我", "识别", "什么"]):
-                    img_prompt = "请详细描述这张图片的内容，包括主要物体、场景、文字等，用中文回答，3-4句话"
-                else:
-                    img_prompt = "请用中文简洁描述这张图片的主要内容，2-3句话，如果有文字请提取出来。特别注意：如果图片中有人物、动物、食物、风景、代码、聊天记录、文档等，请明确指出类型。"
-                # 三层降级识别图片：视觉模型 → OCR → 占位
-                img_desc = "[图片内容暂无法直接识别]"
-                vision_success = False
-                try:
-                    if img_url and img_url != "未知图片":
-                        # 添加重试机制（最多重试2次）
-                        for retry in range(3):
-                            vision_result = await analyze_image(img_url, img_prompt)
-                            if vision_result and vision_result != "[图片内容暂无法识别]" and vision_result != "[图片文件不存在]":
-                                img_desc = f"[图片内容: {vision_result}]"
-                                vision_success = True
-                                break
-                            elif retry < 2:
-                                logger.info(f"[图片识别] 重试 {retry + 1}/2: {img_url[:50]}")
-                                await asyncio.sleep(1)
-                except Exception as e:
-                    logger.warning(f"[图片识别] 异常: {e}")
+                shares.append(await _handle_photo_segment(seg, user_text))
 
-                if not vision_success:
-                    logger.warning(f"[图片识别] 最终失败: {img_url[:50]}")
-
-                # 图片分类（用于个性化回复）
-                vision_text = img_desc.replace("[图片内容: ", "").replace("]", "")
-                image_type = classify_image(vision_text, user_text)
-                logger.info(f"[图片分类] {image_type} | {vision_text[:50]}...")
-
-                shares.append({
-                    "type": "图片",
-                    "source": img_url,
-                    "summary": img_desc,
-                    "image_type": image_type,
-                    "vision_text": vision_text,
-                    "time": datetime.now().timestamp()
-                })
         elif seg.type == "face":
-            face_id = str(seg.data.get("id", seg.data.get("faceIndex", "")))
-            face_text = seg.data.get("text", "") or seg.data.get("faceText", "")
-            if not face_text:
-                raw = seg.data.get("raw", {})
-                if isinstance(raw, dict):
-                    face_text = raw.get("faceText", "")
-            if face_text:
-                face_text = face_text.strip().lstrip("/")
-            if not face_text:
-                face_text = _QQ_FACE_MAP.get(face_id, "")
-            if not face_text:
-                face_text = "表情"
-            shares.append({"type": "表情", "source": f"用户发了QQ表情[{face_text}]", "summary": f"[用户发送了QQ表情：{face_text}]", "time": datetime.now().timestamp()})
+            shares.append(_handle_face_segment(seg))
+
         elif seg.type == "mface":
             ed = seg.data.get("summary", "") or seg.data.get("desc", "") or "表情"
-            shares.append({"type": "表情", "source": f"用户发了商城表情[{ed}]", "summary": f"[用户发送了QQ商城表情：{ed}]", "time": datetime.now().timestamp()})
-
+            shares.append({"type": "表情", "source": f"用户发了商城表情[{ed}]",
+                          "summary": f"[用户发送了QQ商城表情：{ed}]",
+                          "time": datetime.now().timestamp()})
 
         elif seg.type == "json":
-            try:
-                card = json.loads(seg.data.get("data", "{}"))
-                card_added = False
-                if "meta" in card:
-                    for k, v in card["meta"].items():
-                        if not isinstance(v, dict):
-                            continue
-                        card_url = v.get("jumpUrl") or v.get("url") or v.get("qqdocurl")
-                        title = v.get("title", "分享卡片")
-                        desc = v.get("desc", "") or v.get("description", "")
-                        if card_url and card_url.startswith("http"):
-                            if card_url in seen_urls:
-                                card_added = True
-                                break
-                            seen_urls.add(card_url)
-                            article = await fetch_url_content(card_url)
-                            if _is_valid_share(article):
-                                shares.append({
-                                    "type": "网页",
-                                    "source": f"{article.get('title', title)} - {article.get('author', '未知')}",
-                                    "url": card_url,
-                                    "summary": article["summary"],
-                                    "comments": article.get("comments", ""),
-                                    "cached": article.get("cached", False),
-                                    "restricted": article.get("restricted", False),
-                                    "platform": article.get("platform", "unknown"),
-                                    "needs_paste": article.get("needs_paste", False),
-                                    "time": datetime.now().timestamp()
-                                })
-                                card_added = True
-                                break
-                            else:
-                                logger.warning(f"[分享] 卡片URL抓取无效: {card_url[:60]}")
-                                shares.append({
-                                    "type": "分享卡片",
-                                    "source": title,
-                                    "summary": f"{desc} {card_url}".strip()[:500],
-                                    "time": datetime.now().timestamp()
-                                })
-                                card_added = True
-                                break
-                        else:
-                            shares.append({
-                                "type": "分享卡片",
-                                "source": title,
-                                "summary": desc[:500],
-                                "time": datetime.now().timestamp()
-                            })
-                            card_added = True
-                            break
-                if not card_added and "prompt" in card:
-                    shares.append({
-                        "type": "分享卡片",
-                        "source": card.get("prompt", "分享"),
-                        "summary": str(card)[:500],
-                        "time": datetime.now().timestamp()
-                    })
-            except Exception as e:
-                logger.warning(f"[分享] JSON卡片解析失败: {e}")
+            shares.extend(await _handle_json_card(seg, seen_urls))
 
         elif seg.type == "xml":
             raw = seg.data.get("data", "")
             shares.append({
-                "type": "分享消息",
-                "source": "XML消息",
-                "summary": raw[:300],
-                "time": datetime.now().timestamp()
+                "type": "分享消息", "source": "XML消息",
+                "summary": raw[:300], "time": datetime.now().timestamp()
             })
 
         elif seg.type == "file":
