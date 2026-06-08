@@ -10,6 +10,8 @@ from plugins.deepseek.phone_control import (
     parse_phone_command, is_phone_command, APP_MAP, DIRECT_COMMANDS,
 )
 
+pytestmark = [pytest.mark.unit]
+
 
 class TestParsePhoneCommand:
     """指令解析测试。"""

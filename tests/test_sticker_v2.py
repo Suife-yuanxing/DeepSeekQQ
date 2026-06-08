@@ -5,6 +5,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import pytest
 from plugins.deepseek.sticker import parse_sticker_tag, filter_sticker_tag
+pytestmark = [pytest.mark.unit]
+
 
 
 class TestParseStickerTag:

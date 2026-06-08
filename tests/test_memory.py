@@ -10,6 +10,8 @@ from plugins.deepseek.memory import (
     _MEMORY_CACHE_MAX_USERS, MEMORY_COOLDOWN_ROUNDS, MAX_MEMORY_PER_REPLY,
 )
 
+pytestmark = [pytest.mark.unit]
+
 
 class TestMemoryRelevance:
     def test_relevant_by_keyword(self):

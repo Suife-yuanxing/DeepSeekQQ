@@ -1,6 +1,8 @@
 """对话节奏优化测试 — 话题桥接、连发拆分、破冰内容、换话题过渡。"""
 import pytest
 from unittest.mock import AsyncMock, patch
+pytestmark = [pytest.mark.unit]
+
 
 
 # ============================================================

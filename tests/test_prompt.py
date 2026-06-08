@@ -9,6 +9,8 @@ from plugins.deepseek.prompt import (
     _CORE_PERSONA, _STICKER_RULES, _SHARE_RULES, _LOCATION_RULES,
 )
 
+pytestmark = [pytest.mark.unit]
+
 
 class TestModularPrompt:
     def _base_kwargs(self, **overrides):

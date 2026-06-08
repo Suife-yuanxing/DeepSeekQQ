@@ -6,6 +6,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 import pytest
 import pytest_asyncio
 from plugins.deepseek.circuit_breaker import CircuitBreaker
+pytestmark = [pytest.mark.unit]
+
 
 
 class TestCircuitBreaker:

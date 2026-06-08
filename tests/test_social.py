@@ -3,6 +3,8 @@ import os
 import pytest
 import time
 from unittest.mock import AsyncMock, MagicMock, patch
+pytestmark = [pytest.mark.unit, pytest.mark.needs_db]
+
 
 
 class _MockExecuteResult:

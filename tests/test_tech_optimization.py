@@ -2,6 +2,8 @@
 import pytest
 import time
 from unittest.mock import patch
+pytestmark = [pytest.mark.unit]
+
 
 
 # ============================================================

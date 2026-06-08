@@ -2,6 +2,8 @@
 import pytest
 import inspect
 from plugins.deepseek.api import call_deepseek_api
+pytestmark = [pytest.mark.unit]
+
 
 
 class TestApiMaxTokensOverride:

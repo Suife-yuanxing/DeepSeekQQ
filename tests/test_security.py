@@ -5,6 +5,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import pytest
 from plugins.deepseek.security import scan_input, get_blocked_reply, _user_msg_history
+pytestmark = [pytest.mark.unit]
+
 
 
 class TestInjectionDetection:

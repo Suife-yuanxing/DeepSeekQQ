@@ -1,5 +1,7 @@
 """测试 image_reply.py — 图片回复策略模块。"""
 import pytest
+pytestmark = [pytest.mark.unit]
+
 
 
 class TestClassifyImage:

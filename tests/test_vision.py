@@ -4,6 +4,8 @@ import sys
 import types
 from collections import OrderedDict
 from unittest.mock import AsyncMock, patch, MagicMock
+pytestmark = [pytest.mark.unit]
+
 
 # ---- Mock 第三方依赖（不影响项目模块）----
 if "aiohttp" not in sys.modules:

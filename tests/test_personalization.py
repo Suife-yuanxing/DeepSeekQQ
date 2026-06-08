@@ -3,6 +3,8 @@ import os
 import pytest
 import time
 from unittest.mock import AsyncMock, patch
+pytestmark = [pytest.mark.unit]
+
 
 
 # ============================================================

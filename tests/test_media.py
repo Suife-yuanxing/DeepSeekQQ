@@ -3,6 +3,8 @@ import pytest
 import sys
 import types
 from unittest.mock import MagicMock, patch
+pytestmark = [pytest.mark.unit]
+
 
 
 class TestExtractUrls:

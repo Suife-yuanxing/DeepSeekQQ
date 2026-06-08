@@ -7,6 +7,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 import pytest
 from unittest.mock import AsyncMock, patch, MagicMock
 import random
+pytestmark = [pytest.mark.unit, pytest.mark.needs_db]
+
 
 
 # ---------- 情绪驱动 boost 测试 ----------

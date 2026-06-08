@@ -4,6 +4,8 @@ import time
 import pytest
 from unittest.mock import patch, AsyncMock, MagicMock
 from plugins.deepseek.memory import _build_bot_emotion_memory_hint, _format_time_ago
+pytestmark = [pytest.mark.unit]
+
 
 
 class TestFormatTimeAgo:

@@ -12,6 +12,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
+pytestmark = [pytest.mark.unit]
+
 
 
 class TestExtractVoiceUrl:

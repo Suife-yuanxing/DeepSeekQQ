@@ -11,6 +11,8 @@ from plugins.deepseek.handler_helpers import (
     parse_target_lines,
 )
 
+pytestmark = [pytest.mark.unit]
+
 
 class TestIsMultiTopic:
     def test_single_sentence(self):

@@ -11,6 +11,8 @@ from plugins.deepseek.conversation_fatigue import (
     _build_fatigue_hint,
 )
 
+pytestmark = [pytest.mark.unit]
+
 
 class TestClosingWordsDetection:
     """收尾词检测测试。"""

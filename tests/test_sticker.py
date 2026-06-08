@@ -5,6 +5,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import pytest
 from plugins.deepseek.sticker import parse_sticker_tag, should_send_sticker_fallback, filter_sticker_tag, _normalize_emotion
+pytestmark = [pytest.mark.unit]
+
 
 
 class TestParseStickerTag:

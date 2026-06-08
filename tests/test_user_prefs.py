@@ -5,6 +5,8 @@ import tempfile
 import os
 
 import plugins.deepseek.db_core as db_core_mod
+pytestmark = [pytest.mark.unit, pytest.mark.needs_db]
+
 
 
 async def _fresh_db():

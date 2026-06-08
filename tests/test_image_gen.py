@@ -1,6 +1,8 @@
 """功能④：图片生成 — 触发词检测测试。"""
 import pytest
 from plugins.deepseek.image_gen import should_generate_image, _extract_draw_prompt
+pytestmark = [pytest.mark.unit]
+
 
 
 class TestShouldGenerateImage:

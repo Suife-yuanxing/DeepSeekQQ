@@ -1,6 +1,8 @@
 """功能⑤：情绪驱动渐变 — get_emotion_params 测试。"""
 import pytest
 from plugins.deepseek.context_analyzer import EmotionState
+pytestmark = [pytest.mark.unit]
+
 
 
 class TestGetEmotionParams:

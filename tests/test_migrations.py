@@ -9,6 +9,8 @@ from plugins.deepseek.migrations import (
     MIGRATIONS, ensure_migration_table, get_current_version, run_migrations
 )
 
+pytestmark = [pytest.mark.integration, pytest.mark.needs_db]
+
 
 class TestMigrations:
     @pytest.mark.asyncio

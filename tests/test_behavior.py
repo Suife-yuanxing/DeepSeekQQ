@@ -3,6 +3,8 @@ import os
 import pytest
 from unittest.mock import patch
 from datetime import datetime
+pytestmark = [pytest.mark.unit]
+
 
 
 # ============================================================

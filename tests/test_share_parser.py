@@ -9,6 +9,8 @@ import types
 import re
 from unittest.mock import AsyncMock, MagicMock, patch
 from collections import OrderedDict
+pytestmark = [pytest.mark.unit]
+
 
 
 def _safe_module_mock(name: str, **attrs):

@@ -7,6 +7,8 @@ from plugins.deepseek.plugin_manager import (
     _plugins, _loaded,
 )
 
+pytestmark = [pytest.mark.unit]
+
 
 @pytest.fixture(autouse=True)
 def clean_plugins():

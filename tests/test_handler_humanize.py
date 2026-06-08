@@ -6,6 +6,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import pytest
 from plugins.deepseek.handler_humanize import introduce_typo, introduce_mind_change, introduce_uncertainty
+pytestmark = [pytest.mark.unit]
+
 
 
 class TestIntroduceTypo:
