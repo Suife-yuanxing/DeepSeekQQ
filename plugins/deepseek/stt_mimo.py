@@ -19,6 +19,7 @@ from nonebot import logger
 
 from .api import get_http_session
 from .config import MIMO_STT_API_KEY, MIMO_STT_API_BASE_URL, MIMO_STT_MODEL
+from ._audio_utils import validate_file
 
 
 async def call_mimo_stt(audio_path: str, language: str = "zh") -> Optional[str]:
@@ -35,13 +36,8 @@ async def call_mimo_stt(audio_path: str, language: str = "zh") -> Optional[str]:
         logger.warning("[MiMo STT] 未配置 MIMO_STT_API_KEY，跳过")
         return None
 
-    if not os.path.exists(audio_path):
-        logger.error(f"[MiMo STT] 文件不存在: {audio_path}")
-        return None
-
-    file_size = os.path.getsize(audio_path)
-    if file_size < 100:
-        logger.warning(f"[MiMo STT] 文件过小: {file_size} bytes")
+    if not validate_file(audio_path, 100):
+        logger.error(f"[MiMo STT] 文件无效或过小: {audio_path}")
         return None
 
     url = f"{MIMO_STT_API_BASE_URL.rstrip('/')}/audio/transcriptions"

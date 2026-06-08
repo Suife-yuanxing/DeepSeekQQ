@@ -26,6 +26,7 @@ from .config import (
     MIMO_API_KEY, MIMO_API_BASE_URL, MIMO_TTS_VOICE,
     VOICE_MAX_LENGTH, VOICE_DIR,
 )
+from ._audio_utils import ensure_dir, safe_remove, validate_file, write_audio_file, make_audio_path
 
 # 默认风格（无情绪时使用）
 DEFAULT_STYLE = "温柔甜美，自然可爱"
@@ -89,7 +90,7 @@ async def generate_mimo_voice(text: str, emotion: Optional[str] = None) -> Optio
         return None
 
     # 确保输出目录存在
-    os.makedirs(VOICE_DIR, exist_ok=True)
+    ensure_dir(VOICE_DIR)
 
     # 构建风格指令和音色
     style = EMOTION_STYLE_MAP.get(emotion, DEFAULT_STYLE) if emotion else DEFAULT_STYLE
@@ -116,7 +117,7 @@ async def generate_mimo_voice(text: str, emotion: Optional[str] = None) -> Optio
         "Content-Type": "application/json",
     }
 
-    mp3_path = f"{VOICE_DIR}/mimo_voice_{int(datetime.now().timestamp() * 1000)}.mp3"
+    mp3_path = make_audio_path("mimo_voice", VOICE_DIR, ".mp3")
 
     try:
         session = await get_http_session()
@@ -151,33 +152,22 @@ async def generate_mimo_voice(text: str, emotion: Optional[str] = None) -> Optio
                 logger.error(f"[MiMo TTS] base64 解码失败: {e}")
                 return None
 
-            async with aiofiles.open(mp3_path, "wb") as f:
-                await f.write(audio_bytes)
+            if not await write_audio_file(mp3_path, audio_bytes):
+                return None
 
-            file_size = os.path.getsize(mp3_path)
-            if file_size > 1000:
-                logger.info(f"[MiMo TTS] 生成成功: {mp3_path} ({file_size} bytes)")
+            if validate_file(mp3_path, 1000):
+                logger.info(f"[MiMo TTS] 生成成功: {mp3_path} ({os.path.getsize(mp3_path)} bytes)")
                 return mp3_path
             else:
-                logger.warning(f"[MiMo TTS] 生成的文件过小: {file_size} bytes")
-                # 清理无效文件
-                _safe_remove(mp3_path)
+                logger.warning(f"[MiMo TTS] 生成的文件过小: {os.path.getsize(mp3_path)} bytes")
+                safe_remove(mp3_path)
                 return None
 
     except asyncio.TimeoutError:
         logger.error("[MiMo TTS] 请求超时(60s)")
-        _safe_remove(mp3_path)
+        safe_remove(mp3_path)
         return None
     except Exception as e:
         logger.error(f"[MiMo TTS] 异常: {e}")
-        _safe_remove(mp3_path)
+        safe_remove(mp3_path)
         return None
-
-
-def _safe_remove(path: str):
-    """安全删除文件，忽略不存在的情况。"""
-    try:
-        if path and os.path.exists(path):
-            os.remove(path)
-    except OSError:
-        pass

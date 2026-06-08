@@ -60,10 +60,10 @@ def _set_cache(city: str, data: WeatherInfo):
 # 和风天气 API
 # ============================================================
 
-# 和风天气 API（免费开发版）
+# 和风天气 API（使用标准端点，与 geoapi 一致认证方式）
 _QWEATHER_GEO_URL = "https://geoapi.qweather.com/v2/city/lookup"
-_QWEATHER_NOW_URL = "https://devapi.qweather.com/v7/weather/now"
-_QWEATHER_AIR_URL = "https://devapi.qweather.com/v7/air/now"
+_QWEATHER_NOW_URL = "https://api.qweather.com/v7/weather/now"
+_QWEATHER_AIR_URL = "https://api.qweather.com/v7/air/now"
 
 # 常用城市 ID 映射（跳过 geo 查询，直接用 ID）
 _CITY_ID_MAP = {

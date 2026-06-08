@@ -18,14 +18,19 @@ from .utils import clean_api_response
 logger = logging.getLogger("deepseek.api")
 
 _http_session: Optional[aiohttp.ClientSession] = None
+_session_lock = asyncio.Lock()
 
 
 async def get_http_session() -> aiohttp.ClientSession:
-    """获取全局复用的 HTTP Session。异常后自动重建。"""
+    """获取全局复用的 HTTP Session。异常后自动重建。线程安全。"""
     global _http_session
-    if _http_session is None or _http_session.closed:
-        _http_session = aiohttp.ClientSession()
-    return _http_session
+    if _http_session is not None and not _http_session.closed:
+        return _http_session
+    async with _session_lock:
+        # 双重检查：获取锁后再次确认
+        if _http_session is None or _http_session.closed:
+            _http_session = aiohttp.ClientSession()
+        return _http_session
 
 
 async def close_http_session():
@@ -79,13 +84,13 @@ async def _call_deepseek_raw(messages: List[Dict[str, str]], temperature: float 
                 return clean_api_response(content)
         except (asyncio.TimeoutError, aiohttp.ClientError) as e:
             last_exception = str(e)
-            global _http_session
-            if _http_session:
-                try:
-                    await _http_session.close()
-                except Exception:
-                    pass
-                _http_session = None
+            async with _session_lock:
+                if _http_session:
+                    try:
+                        await _http_session.close()
+                    except Exception:
+                        pass
+                    _http_session = None
             await asyncio.sleep(2 ** attempt)
         except Exception as e:
             last_exception = str(e)

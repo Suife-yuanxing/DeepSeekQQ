@@ -1334,9 +1334,7 @@ async def handle_chat(bot: Bot, event: MessageEvent):
                 return
 
     except Exception as e:
-        import traceback
-        logger.error(f"[handle_chat] 严重异常: {e}")
-        traceback.print_exc()
+        logger.exception(f"[handle_chat] 严重异常: {e}")
         try:
             await bot.send(event, make_reply(event, Message("呜...脑袋有点乱，让我缓缓...")))
         except Exception:

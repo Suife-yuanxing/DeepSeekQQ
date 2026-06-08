@@ -8,13 +8,14 @@ import pytest_asyncio
 from plugins.deepseek.circuit_breaker import CircuitBreaker
 
 
-@pytest.mark.asyncio
 class TestCircuitBreaker:
+    @pytest.mark.asyncio
     async def test_initial_state_closed(self):
         cb = CircuitBreaker("test", fail_threshold=3, recovery_seconds=10)
         assert cb.state == "closed"
         assert cb.fail_count == 0
 
+    @pytest.mark.asyncio
     async def test_success_resets_fail_count(self):
         cb = CircuitBreaker("test", fail_threshold=3, recovery_seconds=10)
         cb.fail_count = 2
@@ -27,6 +28,7 @@ class TestCircuitBreaker:
         assert cb.fail_count == 0
         assert cb.state == "closed"
 
+    @pytest.mark.asyncio
     async def test_failure_increments_count(self):
         cb = CircuitBreaker("test", fail_threshold=3, recovery_seconds=10)
 
@@ -39,6 +41,7 @@ class TestCircuitBreaker:
         assert cb.fail_count == 2
         assert cb.state == "closed"
 
+    @pytest.mark.asyncio
     async def test_opens_after_threshold(self):
         cb = CircuitBreaker("test", fail_threshold=3, recovery_seconds=10)
 
@@ -49,6 +52,7 @@ class TestCircuitBreaker:
             await cb.call(fail_func)
         assert cb.state == "open"
 
+    @pytest.mark.asyncio
     async def test_open_circuit_skips_call(self):
         cb = CircuitBreaker("test", fail_threshold=1, recovery_seconds=10)
 
@@ -64,6 +68,7 @@ class TestCircuitBreaker:
         result = await cb.call(success_func)
         assert result is None
 
+    @pytest.mark.asyncio
     async def test_fallback_called_when_open(self):
         cb = CircuitBreaker("test", fail_threshold=1, recovery_seconds=10)
 

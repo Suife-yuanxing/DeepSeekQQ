@@ -1,4 +1,5 @@
 """社交能力增强测试 — 社交关系图、群聊梗、社交记忆、角色定位。"""
+import os
 import pytest
 import time
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -220,14 +221,16 @@ class TestGroupAtmosphere:
 class TestPromptInjection:
     def test_group_params_in_prompt(self):
         """prompt.py 应该有群聊社交参数"""
-        with open('plugins/deepseek/prompt.py', 'r', encoding='utf-8') as f:
+        prompt_path = os.path.join(os.path.dirname(__file__), '..', 'plugins', 'deepseek', 'prompt.py')
+        with open(prompt_path, 'r', encoding='utf-8') as f:
             content = f.read()
         for param in ['group_social_hint', 'group_meme_hint', 'group_role_hint']:
             assert param in content, f"prompt.py missing param: {param}"
 
     def test_group_hints_injection(self):
         """prompt.py 应该注入群聊社交提示"""
-        with open('plugins/deepseek/prompt.py', 'r', encoding='utf-8') as f:
+        prompt_path = os.path.join(os.path.dirname(__file__), '..', 'plugins', 'deepseek', 'prompt.py')
+        with open(prompt_path, 'r', encoding='utf-8') as f:
             content = f.read()
         assert "群内关系" in content
         assert "群聊梗" in content

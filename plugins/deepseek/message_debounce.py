@@ -122,9 +122,7 @@ class MessageDebouncer:
                 await handler(bot, merged_event)
         except Exception as e:
             # 记录错误但不中断
-            logger.error(f"[Debounce] 处理合并消息出错: {e}")
-            import traceback
-            traceback.print_exc()
+            logger.exception(f"[Debounce] 处理合并消息出错: {e}")
 
     def _merge_messages(self, messages: List[MessageEvent]) -> MessageEvent:
         """合并多条消息为一条。

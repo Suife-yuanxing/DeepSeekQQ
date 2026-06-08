@@ -24,6 +24,10 @@ from .config import (
     TTS_ENGINE,
 )
 from .api import get_http_session
+from ._audio_utils import (
+    ensure_dir, safe_remove, validate_file, write_audio_file,
+    make_audio_path, schedule_cleanup, convert_audio_with_ffmpeg,
+)
 from nonebot import logger
 
 BAIDU_TTS_TOKEN: Optional[str] = None
@@ -59,62 +63,51 @@ async def _get_baidu_token() -> str:
         return ""
 
 async def _convert_mp3_to_silk(mp3_path: str) -> Optional[str]:
+    """将 MP3 转为 QQ 兼容的 silk 格式（腾讯语音编码）。"""
     if not VOICE_TRY_CONVERT or not _has_ffmpeg():
         return None
+
     silk_path = mp3_path.replace(".mp3", ".silk")
     pcm_path = mp3_path.replace(".mp3", ".pcm")
+
+    # 步骤1: MP3 → PCM (24kHz 单声道)
+    if not await convert_audio_with_ffmpeg(mp3_path, pcm_path, sample_rate=24000):
+        safe_remove(pcm_path)
+        return None
+
+    # 步骤2: PCM → SILK (腾讯 silk_v3_encoder)
+    silk_encoder = (
+        "/usr/local/bin/silk_v3_encoder"
+        if os.path.exists("/usr/local/bin/silk_v3_encoder")
+        else (shutil.which("silk_v3_encoder") or shutil.which("silk_encoder"))
+    )
+    if not silk_encoder:
+        logger.warning("[语音] 未找到 silk_v3_encoder，跳过 silk 编码")
+        safe_remove(pcm_path)
+        return None
+
     try:
-        ffmpeg_cmd = [
-            "ffmpeg", "-y", "-i", mp3_path,
-            "-f", "s16le", "-ar", "24000", "-ac", "1",
-            pcm_path
-        ]
-        proc1 = await asyncio.create_subprocess_exec(
-            *ffmpeg_cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
-        )
-        _, stderr1 = await proc1.communicate()
-        if proc1.returncode != 0:
-            logger.warning(f"[语音] ffmpeg pcm 转换失败: {stderr1.decode()[:200]}")
-            return None
-
-        silk_encoder = "/usr/local/bin/silk_v3_encoder" if os.path.exists("/usr/local/bin/silk_v3_encoder") else (shutil.which("silk_v3_encoder") or shutil.which("silk_encoder"))
-        if not silk_encoder:
-            logger.warning("[语音] 未找到 silk_v3_encoder，跳过 silk 编码")
-            try:
-                os.remove(pcm_path)
-            except Exception:
-                pass
-            return None
-
         enc_cmd = [silk_encoder, pcm_path, silk_path, "-tencent"]
-        proc2 = await asyncio.create_subprocess_exec(
+        proc = await asyncio.create_subprocess_exec(
             *enc_cmd,
             stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
+            stderr=asyncio.subprocess.PIPE,
         )
-        _, stderr2 = await proc2.communicate()
-        try:
-            os.remove(pcm_path)
-        except Exception:
-            pass
+        _, stderr = await proc.communicate()
 
-        if proc2.returncode == 0 and os.path.exists(silk_path) and os.path.getsize(silk_path) > 0:
+        if proc.returncode == 0 and validate_file(silk_path, 100):
             logger.info(f"[语音] silk 转码成功: {silk_path}")
             return silk_path
         else:
-            logger.warning(f"[语音] silk 编码失败: {stderr2.decode()[:200]}")
+            logger.warning(f"[语音] silk 编码失败: {stderr.decode()[:200]}")
+            safe_remove(silk_path)
             return None
     except Exception as e:
-        logger.error(f"[语音] 转码异常: {e}")
-        for p in [pcm_path, silk_path]:
-            try:
-                if os.path.exists(p):
-                    os.remove(p)
-            except Exception:
-                pass
+        logger.error(f"[语音] silk 编码异常: {e}")
+        safe_remove(silk_path)
         return None
+    finally:
+        safe_remove(pcm_path)
 
 async def _generate_baidu_voice(text: str) -> Optional[str]:
     """百度 TTS 引擎。"""
@@ -129,7 +122,7 @@ async def _generate_baidu_voice(text: str) -> Optional[str]:
         f"tex={tex}&tok={token}&cuid=deepseek_bot&ctp=1&"
         f"lan=zh&spd={BAIDU_TTS_SPD}&pit={BAIDU_TTS_PIT}&vol={BAIDU_TTS_VOL}&per={BAIDU_TTS_PER}&aue=3"
     )
-    mp3_path = f"{VOICE_DIR}/deepseek_voice_{int(datetime.now().timestamp() * 1000)}.mp3"
+    mp3_path = make_audio_path("deepseek_voice", VOICE_DIR, ".mp3")
 
     session = await get_http_session()
     try:
@@ -138,16 +131,17 @@ async def _generate_baidu_voice(text: str) -> Optional[str]:
             if len(data) < 1000 or data[:2] == b'{"':
                 logger.warning(f"[语音] 百度TTS错误/无效: {data[:200]}")
                 return None
-            async with aiofiles.open(mp3_path, "wb") as f:
-                await f.write(data)
+            if not await write_audio_file(mp3_path, data):
+                return None
 
-        if os.path.exists(mp3_path) and os.path.getsize(mp3_path) > 1000:
+        if validate_file(mp3_path, 1000):
             logger.info(f"[语音] 百度TTS生成成功: {mp3_path} ({os.path.getsize(mp3_path)} bytes)")
             return mp3_path
         logger.warning("[语音] 文件过小或不存在")
         return None
     except Exception as e:
         logger.error(f"[语音] 百度TTS失败: {e}")
+        safe_remove(mp3_path)
         return None
 
 
@@ -169,15 +163,6 @@ async def generate_voice_file(text: str, emotion: Optional[str] = None) -> Optio
     # 百度 TTS 引擎（默认）
     return await _generate_baidu_voice(text)
 
-async def _delayed_cleanup(path: str, delay: int = 300):
-    await asyncio.sleep(delay)
-    try:
-        if os.path.exists(path):
-            os.remove(path)
-            logger.info(f"[语音] 已清理: {path}")
-    except Exception as e:
-        logger.warning(f"[语音] 清理失败: {e}")
-
 async def send_voice(bot: Bot, event: MessageEvent, text: str, emotion: str = None):
     is_group = isinstance(event, GroupMessageEvent)
     enabled = VOICE_ENABLED_GROUP if is_group else VOICE_ENABLED_PRIVATE
@@ -185,7 +170,7 @@ async def send_voice(bot: Bot, event: MessageEvent, text: str, emotion: str = No
         return
 
     voice_path = await generate_voice_file(text, emotion)
-    if not voice_path or not os.path.exists(voice_path):
+    if not voice_path or not validate_file(voice_path, 100):
         logger.info("[语音] 无有效语音文件")
         return
 
@@ -193,7 +178,7 @@ async def send_voice(bot: Bot, event: MessageEvent, text: str, emotion: str = No
     try:
         # 尝试 silk 转码（QQ 原生格式，兼容性最好）
         silk_path = await _convert_mp3_to_silk(voice_path)
-        if silk_path and os.path.exists(silk_path):
+        if silk_path and validate_file(silk_path, 100):
             send_path = silk_path
             logger.info(f"[语音] 使用 silk 格式发送")
         else:
@@ -207,9 +192,9 @@ async def send_voice(bot: Bot, event: MessageEvent, text: str, emotion: str = No
     except Exception as e:
         logger.error(f"[语音] 发送失败: {e}")
     finally:
-        asyncio.create_task(_delayed_cleanup(voice_path))
+        schedule_cleanup(voice_path)
         if send_path != voice_path:
-            asyncio.create_task(_delayed_cleanup(send_path))
+            schedule_cleanup(send_path)
 
 def should_send_voice(user_msg: str, reply_text: str, history: List[Dict[str, Any]]) -> bool:
     import random

@@ -25,6 +25,10 @@ from nonebot.adapters.onebot.v11 import MessageEvent, MessageSegment
 from .config import BAIDU_TTS_AK, BAIDU_TTS_SK, STT_ENGINE
 from .api import get_http_session
 from .voice import _get_baidu_token
+from ._audio_utils import (
+    ensure_dir, safe_remove, validate_file, write_audio_file,
+    schedule_cleanup_multi, convert_audio_with_ffmpeg,
+)
 
 
 async def _get_baidu_vop_token() -> str:
@@ -50,16 +54,15 @@ def _extract_voice_url(event: MessageEvent) -> Optional[str]:
 async def _download_voice(url: str) -> Optional[str]:
     """下载语音文件到本地临时目录。"""
     try:
-        # 确定保存路径
         voice_dir = "./data/voice"
-        os.makedirs(voice_dir, exist_ok=True)
+        ensure_dir(voice_dir)
+
+        # 确定文件扩展名
         ext = ".amr"  # QQ语音通常是 amr 格式
-        if ".silk" in url:
-            ext = ".silk"
-        elif ".wav" in url:
-            ext = ".wav"
-        elif ".mp3" in url:
-            ext = ".mp3"
+        for known_ext in [".silk", ".wav", ".mp3"]:
+            if known_ext in url:
+                ext = known_ext
+                break
 
         save_path = os.path.join(voice_dir, f"stt_input_{int(time.time() * 1000)}{ext}")
 
@@ -72,8 +75,8 @@ async def _download_voice(url: str) -> Optional[str]:
             if len(data) < 100:
                 logger.warning(f"[STT] 语音文件太小: {len(data)} bytes")
                 return None
-            async with aiofiles.open(save_path, "wb") as f:
-                await f.write(data)
+            if not await write_audio_file(save_path, data):
+                return None
         logger.info(f"[STT] 下载语音成功: {save_path} ({len(data)} bytes)")
         return save_path
     except Exception as e:
@@ -84,28 +87,10 @@ async def _download_voice(url: str) -> Optional[str]:
 async def _convert_to_pcm(input_path: str) -> Optional[str]:
     """将语音文件转换为 PCM 格式（百度 STT 要求）。"""
     pcm_path = input_path.rsplit(".", 1)[0] + ".pcm"
-    try:
-        # 使用 ffmpeg 转换
-        cmd = [
-            "ffmpeg", "-y", "-i", input_path,
-            "-f", "s16le", "-ar", "16000", "-ac", "1",
-            pcm_path
-        ]
-        proc = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
-        )
-        _, stderr = await proc.communicate()
-        if proc.returncode == 0 and os.path.exists(pcm_path) and os.path.getsize(pcm_path) > 100:
-            logger.info(f"[STT] PCM转换成功: {pcm_path}")
-            return pcm_path
-        else:
-            logger.warning(f"[STT] PCM转换失败: {stderr.decode()[:200]}")
-            return None
-    except Exception as e:
-        logger.error(f"[STT] PCM转换异常: {e}")
-        return None
+    if await convert_audio_with_ffmpeg(input_path, pcm_path, sample_rate=16000):
+        return pcm_path
+    safe_remove(pcm_path)
+    return None
 
 
 async def _call_baidu_stt(pcm_path: str) -> Optional[str]:
@@ -156,27 +141,9 @@ async def _call_baidu_stt(pcm_path: str) -> Optional[str]:
         return None
 
 
-async def _cleanup_files(*paths):
-    """延迟清理临时文件。"""
-    await asyncio.sleep(60)
-    for p in paths:
-        try:
-            if p and os.path.exists(p):
-                os.remove(p)
-        except Exception:
-            pass
-
 
 async def recognize_voice(event: MessageEvent) -> Optional[str]:
-    """主入口：从语音消息中识别文字。
-
-    引擎优先级：
-    1. MiMo STT（如果配置了 MIMO_STT_API_KEY）
-    2. 百度 STT（兜底）
-
-    Returns:
-        识别出的文字，或 None（非语音消息/识别失败）
-    """
+    """主入口：从语音消息中识别文字。..."""
     # 提取语音URL
     voice_url = _extract_voice_url(event)
     if not voice_url:
@@ -202,7 +169,6 @@ async def recognize_voice(event: MessageEvent) -> Optional[str]:
         # 引擎 1: MiMo STT（优先）
         if STT_ENGINE == "mimo":
             from .stt_mimo import call_mimo_stt
-            # MiMo STT 可以直接处理 amr/wav/mp3 等格式
             text = await call_mimo_stt(local_path)
             if text:
                 return text
@@ -217,5 +183,5 @@ async def recognize_voice(event: MessageEvent) -> Optional[str]:
             return None
 
     finally:
-        # 异步清理
-        asyncio.create_task(_cleanup_files(local_path))
+        # 异步清理临时文件
+        schedule_cleanup_multi([local_path])

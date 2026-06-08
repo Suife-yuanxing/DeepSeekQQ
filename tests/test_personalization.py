@@ -1,4 +1,5 @@
 """个性化深化测试 — 专属昵称、共同兴趣、成长叙事、口头禅。"""
+import os
 import pytest
 import time
 from unittest.mock import AsyncMock, patch
@@ -195,7 +196,7 @@ class TestPersonalizationHints:
 class TestPromptInjection:
     def test_personalization_params_in_prompt(self):
         """prompt.py 应该有个性化参数"""
-        with open('plugins/deepseek/prompt.py', 'r', encoding='utf-8') as f:
+        with open(os.path.join(os.path.dirname(__file__), '..', 'plugins', 'deepseek', 'prompt.py'), 'r', encoding='utf-8') as f:
             content = f.read()
         for param in ['nickname_hint', 'interest_hint', 'growth_hint', 'catchphrase_hint']:
             assert param in content, f"prompt.py missing param: {param}"

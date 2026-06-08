@@ -51,7 +51,7 @@ class TestMemoryCacheCleanup:
         for i in range(total):
             _recently_used_memories[f"user_{i}"] = ["记忆"]
         _cleanup_memory_cache()
-        assert len(_recently_used_memories) == total // 2
+        assert len(_recently_used_memories) == _MEMORY_CACHE_MAX_USERS
 
 
 class TestMemoryConstants:

@@ -1,4 +1,5 @@
 """情绪系统深化测试 — 情绪传染、随机波动、渐进恢复、情绪记忆。"""
+import os
 import pytest
 import time
 from unittest.mock import AsyncMock, patch, MagicMock
@@ -241,7 +242,8 @@ class TestPromptHints:
     def test_all_emotions_in_prompt_map(self):
         """所有新增情绪都应该在 prompt 的 mood_map 中"""
         # 读取 prompt.py 检查 mood_map
-        with open('plugins/deepseek/prompt.py', 'r', encoding='utf-8') as f:
+        prompt_path = os.path.join(os.path.dirname(__file__), '..', 'plugins', 'deepseek', 'prompt.py')
+        with open(prompt_path, 'r', encoding='utf-8') as f:
             content = f.read()
         emotions = ["吃醋", "担心", "得意", "撒娇", "小脾气", "无聊", "冷淡", "犯困"]
         for emotion in emotions:
@@ -249,6 +251,7 @@ class TestPromptHints:
 
     def test_recovery_hint_in_prompt(self):
         """prompt.py 应该处理 recovery_stage"""
-        with open('plugins/deepseek/prompt.py', 'r', encoding='utf-8') as f:
+        prompt_path = os.path.join(os.path.dirname(__file__), '..', 'plugins', 'deepseek', 'prompt.py')
+        with open(prompt_path, 'r', encoding='utf-8') as f:
             content = f.read()
         assert "recovery_stage" in content
