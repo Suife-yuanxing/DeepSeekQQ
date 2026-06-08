@@ -10,7 +10,7 @@ from .db_core import get_db, checkpoint_db, close_db
 from .db_memories import (
     save_message, get_recent_memories, trim_memories, count_memories,
     get_oldest_memories, get_keep_ids, delete_memories_except,
-    has_recent_message, has_user_message_today,
+    has_recent_message, has_user_message_today, get_last_bot_reply_time,
 )
 from .db_affection import (
     get_affection, update_affection, decay_affection,

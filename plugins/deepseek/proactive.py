@@ -139,29 +139,34 @@ async def _generate_proactive_message(scene: str, user_id: str = "", context: di
             "不要说「上次」「之前」这样的词，要像自然而然想到的一样。"
         )
 
+    # 强制注入精确时间（修复时间编造问题）
+    now = datetime.now()
+    weekday_names = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"]
+    weekday = weekday_names[now.weekday()]
+    exact_time = f"现在是{now.strftime('%Y年%m月%d日')} {weekday} {now.strftime('%H:%M')}（北京时间）。"
+
     # 早安场景：携带昨晚上下文
-    morning_prompt = "现在是早上，你要给主人发一条早安消息。语气要自然，像刚睡醒一样，不要像客服。"
+    morning_prompt = f"{exact_time}现在是早上，你要给主人发一条早安消息。语气要自然，像刚睡醒一样，不要像客服。"
     if scene == "morning" and context:
         mood_hint = context.get("mood_hint", "")
         if mood_hint:
             morning_prompt += f"\n{mood_hint}。"
         # 根据当前时间调整语气
-        hour = datetime.now().hour
-        if hour < 9:
+        if now.hour < 9:
             morning_prompt += "\n现在比较早，语气可以慵懒一点。"
-        elif hour >= 10:
+        elif now.hour >= 10:
             morning_prompt += "\n现在比较晚了，可以调侃一句'终于醒了？'之类的。"
 
     scene_prompts = {
         "morning": morning_prompt,
-        "night": "现在是深夜，主人还没睡，你要催他睡觉。语气关心但带点命令式，比如'快去睡！'。",
-        "sleep_nag": "现在是凌晨了，主人还在聊天。你要催他睡觉，语气要强势一点。",
-        "silence": "你好久没和主人聊天了，想主动找他说话。" + (context_hint if context_hint else ""),
-        "holiday": "今天是个节日，要给主人发节日问候。",
-        "checkin": "你突然想起主人了，想找他说说话。语气随意、自然，像突然想到一样。",
+        "night": f"{exact_time}现在是深夜，主人还没睡，你要催他睡觉。语气关心但带点命令式，比如'快去睡！'。",
+        "sleep_nag": f"{exact_time}现在是凌晨了，主人还在聊天。你要催他睡觉，语气要强势一点。",
+        "silence": f"{exact_time}你好久没和主人聊天了，想主动找他说话。" + (context_hint if context_hint else ""),
+        "holiday": f"{exact_time}今天是个节日，要给主人发节日问候。",
+        "checkin": f"{exact_time}你突然想起主人了，想找他说说话。语气随意、自然，像突然想到一样。",
     }
 
-    prompt = scene_prompts.get(scene, "给主人发一条消息。")
+    prompt = scene_prompts.get(scene, f"{exact_time}给主人发一条消息。")
     if affection_info:
         prompt += f"\n{affection_info}"
     if dedup_hint:
@@ -219,6 +224,120 @@ async def _generate_proactive_message(scene: str, user_id: str = "", context: di
             return random.choice(silence_fallbacks)
     fallbacks.setdefault("silence", ["你在干嘛呀~", "好久不见了喵", "想你了"])
     return random.choice(fallbacks.get(scene, ["喵~"]))
+
+
+async def _get_weather_alert_for_user(user_id: str) -> Optional[str]:
+    """获取恶劣天气提醒（只在恶劣天气时返回提醒文本）。
+
+    恶劣天气包括：暴雨/大雪/寒潮/高温/大风/雾霾
+    返回 None 表示天气正常，不需要提醒。
+    """
+    try:
+        from .world_context import get_weather
+        from .config import WEATHER_CITY
+
+        # 使用默认城市（后续可以扩展为从用户偏好获取）
+        city = WEATHER_CITY
+        if not city:
+            return None
+
+        weather = await get_weather(city)
+        if not weather:
+            return None
+
+        condition = weather.condition
+        temp = weather.temp
+
+        # 判断是否是恶劣天气
+        is_severe = False
+        alert_type = ""
+
+        # 暴雨/大雨
+        if any(kw in condition for kw in ["暴雨", "大雨", "雷阵雨", "大暴雨"]):
+            is_severe = True
+            alert_type = "rain"
+        # 大雪/暴雪
+        elif any(kw in condition for kw in ["大雪", "暴雪", "中雪"]):
+            is_severe = True
+            alert_type = "snow"
+        # 高温
+        elif temp and temp != "--":
+            try:
+                temp_val = int(temp)
+                if temp_val >= 35:
+                    is_severe = True
+                    alert_type = "hot"
+                elif temp_val <= 0:
+                    is_severe = True
+                    alert_type = "cold"
+            except (ValueError, TypeError):
+                pass
+        # 大风
+        elif weather.wind_scale:
+            try:
+                if int(weather.wind_scale) >= 6:
+                    is_severe = True
+                    alert_type = "wind"
+            except (ValueError, TypeError):
+                pass
+        # 雾霾
+        elif any(kw in condition for kw in ["雾", "霾", "重度污染"]):
+            is_severe = True
+            alert_type = "fog"
+
+        if not is_severe:
+            return None
+
+        # 生成基于人设的提醒（不要说"暴雨预警"，要像猫娘一样关心）
+        from datetime import datetime
+        hour = datetime.now().hour
+
+        # 根据时间段调整语气
+        if hour < 10:
+            time_prefix = "早上好呀~"
+        elif hour < 14:
+            time_prefix = ""
+        else:
+            time_prefix = ""
+
+        # 根据恶劣天气类型生成提醒
+        weather_msgs = {
+            "rain": [
+                f"{time_prefix}今天要下大雨诶，你出门记得带伞哦~",
+                f"{time_prefix}外面雨好大，出门小心别淋湿了~",
+                f"{time_prefix}今天有暴雨呢，能不出门就别出去啦~",
+            ],
+            "snow": [
+                f"{time_prefix}下雪了呢，路滑要小心哦~",
+                f"{time_prefix}外面雪好大，出门穿暖和点~",
+            ],
+            "hot": [
+                f"{time_prefix}今天好热呀，记得多喝水别中暑了~",
+                f"{time_prefix}外面热死了，出门记得防晒哦~",
+            ],
+            "cold": [
+                f"{time_prefix}外面好冷呀，多穿点衣服别冻着了~",
+                f"{time_prefix}今天好冷，出门记得穿厚点~",
+            ],
+            "wind": [
+                f"{time_prefix}风好大，出门小心别被吹跑了~",
+                f"{time_prefix}今天风好大，注意安全哦~",
+            ],
+            "fog": [
+                f"{time_prefix}外面有雾霾，出门记得戴口罩~",
+                f"{time_prefix}今天能见度低，出门注意安全~",
+            ],
+        }
+
+        msgs = weather_msgs.get(alert_type, [])
+        if msgs:
+            return random.choice(msgs)
+
+        return None
+
+    except Exception as e:
+        logger.debug(f"[天气提醒] 获取失败（非关键）: {e}")
+        return None
 
 
 async def _should_send_morning(uid: str) -> dict:
@@ -303,7 +422,8 @@ async def _morning_greeting(bot):
     if not (8 <= now.hour < 12):
         return
 
-    for uid in cfg["target_users"]:
+    target_users = cfg["target_users"]() if callable(cfg["target_users"]) else cfg["target_users"]
+    for uid in target_users:
         decision = await _should_send_morning(str(uid))
         if not decision["should_send"]:
             logger.debug(f"[早安] 跳过 {str(uid)[:6]}: {decision['reason']}")
@@ -313,6 +433,13 @@ async def _morning_greeting(bot):
         msg = await _generate_proactive_message("morning", str(uid), context={"mood_hint": decision["context"]})
         await _send_proactive_message(bot, "private", str(uid), msg, scene="morning")
         logger.info(f"[早安] 发送 {str(uid)[:6]}: {msg[:30]}...")
+
+        # 天气提醒：只在恶劣天气时发送（暴雨/寒潮/高温/大风）
+        weather_hint = await _get_weather_alert_for_user(str(uid))
+        if weather_hint:
+            await asyncio.sleep(random.uniform(2, 5))  # 早安后间隔几秒
+            await _send_proactive_message(bot, "private", str(uid), weather_hint, scene="weather_alert")
+            logger.info(f"[天气提醒] 发送 {str(uid)[:6]}: {weather_hint[:30]}...")
 
     for gid in cfg["target_groups"]:
         if await has_proactive_today(str(gid), "morning"):
@@ -330,7 +457,8 @@ async def _night_greeting(bot):
     cfg = PROACTIVE_CONFIG["night_greeting"]
     if not cfg["enabled"]:
         return
-    for uid in cfg["target_users"]:
+    target_users = cfg["target_users"]() if callable(cfg["target_users"]) else cfg["target_users"]
+    for uid in target_users:
         session_id = f"private_{uid}"
         if not await has_recent_message(session_id, minutes=30):
             continue
@@ -525,7 +653,9 @@ async def _sleep_nag(bot):
         return
     max_nags = cfg.get("max_nags_per_night", 2)
     today = datetime.now().strftime("%Y-%m-%d")
-    for uid in cfg.get("target_users", []):
+    target_users_raw = cfg.get("target_users", [])
+    target_users = target_users_raw() if callable(target_users_raw) else target_users_raw
+    for uid in target_users:
         nag_count = await get_today_proactive_count_by_scene(str(uid), "sleep_nag", today)
         if nag_count >= max_nags:
             continue
@@ -543,7 +673,8 @@ async def _holiday_greeting(bot):
     today = datetime.now().strftime("%m-%d")
     if today in cfg["holidays"]:
         holiday_name = cfg["holidays"][today]  # fallback
-        for uid in cfg["target_users"]:
+        target_users = cfg["target_users"]() if callable(cfg["target_users"]) else cfg["target_users"]
+        for uid in target_users:
             msg = await _generate_proactive_message("holiday", str(uid))
             await _send_proactive_message(bot, "private", str(uid), msg, scene="holiday")
         for gid in cfg["target_groups"]:

@@ -6,10 +6,12 @@ from nonebot import on_message
 from nonebot.adapters.onebot.v11 import Bot, MessageEvent
 
 from .handler import handle_chat
+from .message_debounce import debouncer
 from . import startup
 
 chat_handler = on_message(priority=5, block=False)
 
 @chat_handler.handle()
 async def _chat_handler(bot: Bot, event: MessageEvent):
-    await handle_chat(bot, event)
+    # 使用防抖：4秒窗口内合并消息，避免连续消息重复回复
+    await debouncer.add_message(bot, event, handle_chat)

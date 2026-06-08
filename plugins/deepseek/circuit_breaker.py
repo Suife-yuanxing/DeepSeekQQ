@@ -44,7 +44,7 @@ class CircuitBreaker:
         if self._is_open():
             logger.debug(f"[熔断] {self.name} 熔断中，跳过调用")
             if fallback:
-                return fallback() if not callable(fallback) or True else None
+                return fallback() if callable(fallback) else fallback
             return None
 
         try:
@@ -68,7 +68,7 @@ class CircuitBreaker:
                 logger.debug(f"[熔断] {self.name} 失败 {self.fail_count}/{self.fail_threshold}: {e}")
             if fallback:
                 try:
-                    return fallback() if not callable(fallback) else None
+                    return fallback() if callable(fallback) else fallback
                 except Exception:
                     pass
             return None

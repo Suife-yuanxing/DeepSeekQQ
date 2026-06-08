@@ -25,7 +25,10 @@ def _get_time_context() -> str:
     else: period = "凌晨"
     time_str = now.strftime("%H:%M")
     date_str = now.strftime("%Y年%m月%d日")
-    return f"今天是{date_str} {weekday}，当前时间是{period} {time_str}（北京时间）。"
+    return (
+        f"今天是{date_str} {weekday}，当前时间是{period} {time_str}（北京时间）。"
+        f"\n重要：如果回复中需要提到时间，必须使用以上真实时间，绝对不要猜测或编造时间！"
+    )
 
 
 # ============================================================
@@ -47,6 +50,12 @@ _STICKER_RULES = '''发表情包：想发表情包时，在回复末尾加 [stic
 绝对不要输出 [doge]、[微笑]、[撇嘴]、[偷笑] 等QQ内置表情标签！想发表情包只用 [sticker:情绪|场景] 格式。'''
 
 _SHARE_RULES = '分享链接时直接发URL就行，像发QQ消息一样自然。不用说"以下是链接"。看到有趣的东西想分享就直接甩链接。'
+
+_NO_FABRICATION_RULES = (
+    "绝对禁止编造内容！如果链接打不开、网页读取失败、或者你没有看到具体内容，"
+    "直接说「我这边打不开」「没看到内容诶」「这个链接我打不开哦」。"
+    "千万不要猜测或编造链接里的内容，这是最重要的规则之一。"
+)
 
 _LOCATION_RULES = '重要：用户提到城市/地点时，不要自动推荐旅游攻略、美食、景点、百科信息。除非用户明确问"XX有什么好玩的"/"XX旅游攻略"之类的，否则不要主动提供这些。用户说"我在北京"就是陈述事实，正常聊天回应就行。'
 
@@ -115,6 +124,9 @@ def _build_system_prompt(
     interest_hint: str = None,
     growth_hint: str = None,
     catchphrase_hint: str = None,
+    reply_gap_hint: str = None,
+    bot_emotion_memory_hint: str = None,
+    fatigue_hint: str = None,
 ) -> str:
     time_context = _get_time_context()
 
@@ -129,6 +141,7 @@ def _build_system_prompt(
     # === 分享链接规则（有分享内容时加载） ===
     if recent_shares:
         parts.append(_SHARE_RULES)
+        parts.append(_NO_FABRICATION_RULES)
 
     # === 位置规则（提到城市时加载） ===
     if world_context or any(kw in user_msg for kw in ["天气", "城市", "在哪", "出门"]):
@@ -146,6 +159,10 @@ def _build_system_prompt(
     # === 跨会话恢复 ===
     if session_recovery and session_recovery.get("recall_prompt"):
         parts.append(f"【历史记忆】{session_recovery['recall_prompt']}")
+
+    # === 话题上下文（避免重复提问）===
+    if session_recovery and session_recovery.get("topic_context"):
+        parts.append(session_recovery["topic_context"])
 
     # === 情绪关心（P1）===
     if session_recovery and session_recovery.get("mood_care_hint"):
@@ -289,6 +306,18 @@ def _build_system_prompt(
     # === 个性化：口头禅 ===
     if catchphrase_hint:
         parts.append(f"【口癖】{catchphrase_hint}")
+
+    # === 已读不回感知 ===
+    if reply_gap_hint:
+        parts.append(f"【回复间隔】{reply_gap_hint}")
+
+    # === 跨会话 bot 情绪记忆 ===
+    if bot_emotion_memory_hint:
+        parts.append(f"【情绪回忆】{bot_emotion_memory_hint}")
+
+    # === 对话疲劳感知 ===
+    if fatigue_hint:
+        parts.append(f"【对话节奏】{fatigue_hint}")
 
     # === 世界感知 ===
     if world_context:

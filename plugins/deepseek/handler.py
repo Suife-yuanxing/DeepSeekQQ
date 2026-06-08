@@ -102,7 +102,87 @@ def classify_message_complexity(raw_msg: str, has_image: bool, has_voice: bool) 
 
 
 # ============================================================
-# Pipeline 数据结构
+# 已读不回感知
+# ============================================================
+
+def _build_reply_gap_hint(gap_seconds: float, affection: dict, schedule, bot_mood: str, current_hour: int = -1) -> str:
+    """根据 bot 最后回复到用户当前消息的时间间隔，生成已读不回提示。"""
+    import random
+
+    gap_min = gap_seconds / 60
+    gap_hour = gap_min / 60
+    affection_score = affection.get("score", 0) if affection else 0
+
+    # 判断当前时段
+    if current_hour < 0:
+        from datetime import datetime
+        current_hour = datetime.now().hour
+    hour = current_hour
+    is_late_night = 0 <= hour < 7  # 深夜到清晨，用户可能在睡觉
+
+    # 深夜回来不算"已读不回"，走另一条路
+    if is_late_night and gap_hour >= 3:
+        if gap_hour >= 8:
+            return random.choice([
+                "用户可能刚睡醒，不要提间隔太久，自然地打招呼就好",
+                "隔了很久才来消息，可能是刚起床，语气自然一些",
+            ])
+        return ""
+
+    # 短间隔不触发
+    if gap_min < 15:
+        return ""
+
+    # 根据好感度调整语气
+    if affection_score >= 200:
+        # 高好感度：撒娇式
+        if 15 <= gap_min < 60:
+            return random.choice([
+                f"用户过了{int(gap_min)}分钟才回复，可以带点撒娇地说等了很久",
+                f"过了{int(gap_min)}分钟才回我，稍微表达一下等待的小委屈",
+            ])
+        elif 1 <= gap_hour < 3:
+            return random.choice([
+                f"用户{int(gap_hour)}个多小时没回消息了，可以撒娇说\"终于回我了~\"",
+                f"等了{int(gap_hour)}个多小时，语气有点委屈但不生气",
+                f"好久没回消息了，可以假装生气一下但不要太认真",
+            ])
+        elif 3 <= gap_hour < 8:
+            return random.choice([
+                f"用户好几个小时没理我了，可以小声抱怨一下",
+                f"等了好几个小时，语气有点小委屈",
+            ])
+    elif affection_score >= 50:
+        # 中好感度：关心式
+        if 15 <= gap_min < 60:
+            return random.choice([
+                f"用户过了{int(gap_min)}分钟才回复，可以自然地接上话题",
+                f"隔了一会儿才回，语气自然不要刻意提",
+            ])
+        elif 1 <= gap_hour < 3:
+            return random.choice([
+                f"用户1个多小时没回，可以问一下是不是在忙",
+                f"隔了挺久才回，自然地聊回来就好",
+            ])
+        elif 3 <= gap_hour < 8:
+            return random.choice([
+                f"用户好几个小时没回，可以问问去干嘛了",
+                f"好几个小时没消息了，可以自然地说\"好久不见~\"",
+            ])
+    else:
+        # 低好感度：平淡式
+        if 1 <= gap_hour < 3:
+            return random.choice([
+                f"用户隔了比较久才回复，正常接话就好",
+                f"过了一段时间才回，不用刻意提",
+            ])
+        elif gap_hour >= 3:
+            return random.choice([
+                f"用户好几个小时没回，简单接话即可",
+                f"隔了很久，正常回复不要刻意提间隔",
+            ])
+
+    return ""
 # ============================================================
 
 _SKIP = object()
@@ -164,6 +244,13 @@ class ChatContext:
     catchphrase_hint: str = ""
     # 真人化优化
     complexity: str = "normal"        # simple / normal / complex
+    # 已读不回感知
+    reply_gap_hint: str = ""
+    # 跨会话情绪记忆
+    bot_emotion_memory_hint: str = ""
+    # 对话疲劳感知
+    fatigue_level: int = 0
+    fatigue_hint: str = ""
 
 
 # ============================================================
@@ -209,6 +296,18 @@ async def _stage_security(ctx: ChatContext) -> Optional[str]:
 @stage("session_recovery")
 async def _stage_session_recovery(ctx: ChatContext) -> Optional[str]:
     ctx.session_recovery = await recover_session_context(ctx.session_id, ctx.user_id)
+    if ctx.session_recovery and ctx.session_recovery.get("bot_emotion_memory_hint"):
+        ctx.bot_emotion_memory_hint = ctx.session_recovery["bot_emotion_memory_hint"]
+
+    # 话题追踪：获取话题上下文，避免重复提问
+    from .topic_tracker import get_topic_context
+    topic_context = get_topic_context(ctx.session_id, ctx.recent_memories)
+    if topic_context:
+        if not ctx.session_recovery:
+            ctx.session_recovery = {}
+        ctx.session_recovery["topic_context"] = topic_context
+        logger.debug(f"[话题追踪] 注入话题上下文: {topic_context[:50]}...")
+
     return None
 
 
@@ -380,191 +479,231 @@ async def _stage_context(ctx: ChatContext) -> Optional[str]:
         ctx.schedule = get_schedule_state()
         logger.info(f"[快速通道] 简单消息，跳过深度分析: {ctx.raw_msg[:20]}")
     else:
-        # === 完整分析流程 ===
-        async def _do_analysis():
-            return await analyze_context_and_emotion(ctx.raw_msg, history_for_analysis, ctx.user_id)
-
-        async def _do_search():
-            search_decision = should_search(ctx.raw_msg)
-            if search_decision.get("need_search"):
-                ctx.is_explicit_search = search_decision.get("is_explicit", False)
-                query = extract_search_query(ctx.raw_msg)
-                result = await search(query)
-                if result:
-                    logger.info(f"[搜索] 找到 {len(result.results)} 条结果 | 显式={ctx.is_explicit_search}")
-                return result
-            return None
-
-        async def _do_weather():
-            user_city = extract_city_from_message(ctx.raw_msg)
-            if not user_city:
-                for tag in ctx.relevant_tags:
-                    tag_str = str(tag)
-                    for city_name in ["上海", "北京", "广州", "深圳", "杭州", "成都", "武汉", "南京", "重庆", "西安", "苏州", "天津"]:
-                        if city_name in tag_str:
-                            user_city = city_name
-                            break
-                    if user_city:
-                        break
-            return await build_world_context_prompt(user_city)
-
-        # 并行：分析 + 搜索 + 天气 + 提醒
-        async def _do_reminders():
-            return await get_pending_reminders_context(ctx.user_id)
-
-        analysis, search_result, world_ctx, reminder_ctx = await asyncio.gather(
-            _do_analysis(), _do_search(), _do_weather(), _do_reminders()
-        )
-
-        ctx.analysis = analysis
-        ctx.search_result = search_result
-        ctx.world_context = world_ctx
-        ctx.reminder_context = reminder_ctx
-        ctx.emotion_params = get_emotion_params(ctx.analysis.emotion)
-
-        if ctx.analysis.context.referenced_entity:
-            logger.info(f"[指代消解] 检测到指代: {ctx.analysis.context.referenced_entity}")
-
-        # === 第一批并行：无依赖的 DB/状态查询 ===
-        from .emotion_deep import get_emotion_memory_hint
-        from .memory import get_shared_memory_hint, get_private_meme_hint, get_date_hint
-        from .database import has_user_message_today, check_and_trigger_milestone
-
-        async def _get_affection_decay():
-            if ctx.affection and ctx.session_recovery:
-                from .db_affection import get_affection_decay_hint
-                return await get_affection_decay_hint(ctx.user_id)
-            return None
-
-        async def _get_undisclosed():
-            if ctx.affection and random.random() < 0.15:
-                from .db_session import get_undisclosed_facts
-                return await get_undisclosed_facts(ctx.user_id, ctx.affection.get("score", 0))
-            return None
-
-        batch1_results = await asyncio.gather(
-            update_bot_emotion(ctx.raw_msg, ctx.analysis.emotion),          # [0]
-            get_emotion_memory_hint(ctx.user_id, ctx.raw_msg),              # [1]
-            get_user_pref_hints(ctx.user_id),                               # [2]
-            has_user_message_today(ctx.session_id),                         # [3]
-            get_shared_memory_hint(ctx.user_id, ctx.raw_msg),               # [4]
-            get_private_meme_hint(ctx.user_id, ctx.raw_msg),                # [5]
-            get_date_hint(ctx.user_id),                                     # [6]
-            check_and_trigger_milestone(ctx.user_id),                       # [7]
-            _get_affection_decay(),                                         # [8]
-            _get_undisclosed(),                                             # [9]
-        )
-
-        # 解包 batch1 结果
-        ctx.bot_mood_result = batch1_results[0]
-        ctx.emotion_memory_hint = batch1_results[1] or ""
-        ctx.user_prefs = batch1_results[2]
-        ctx.is_first_today = not batch1_results[3]
-        ctx.shared_memory_hint = batch1_results[4] or ""
-        ctx.private_meme_hint = batch1_results[5] or ""
-        ctx.date_hint = batch1_results[6] or ""
-        ctx.milestone_hint = batch1_results[7]
-        ctx.affection_decay_hint = batch1_results[8]
-        ctx.disclosure_hint = batch1_results[9]
-        if ctx.disclosure_hint:
-            from .database import mark_disclosed
-            asyncio.create_task(mark_disclosed(ctx.user_id, ctx.disclosure_hint["key"]))
-
-        # 情绪系统深化
-        if ctx.bot_mood_result.get("recovery_stage"):
-            ctx.emotion_recovery_hint = ctx.bot_mood_result["recovery_stage"]
-        if ctx.bot_mood_result.get("swing_hint"):
-            ctx.emotion_recovery_hint = ctx.bot_mood_result["swing_hint"]
-        if ctx.bot_mood_result.get("contagion"):
-            ctx.contagion_result = ctx.bot_mood_result["contagion"]
-            ctx.bot_mood_result["valence"] = ctx.bot_mood_result.get("valence", 0) + ctx.contagion_result.get("valence_delta", 0)
-            ctx.bot_mood_result["arousal"] = ctx.bot_mood_result.get("arousal", 0.2) + ctx.contagion_result.get("arousal_delta", 0)
-
-        # === 同步计算（依赖 batch1 结果）===
-        ctx.schedule = get_schedule_state()
-
-        bot_mood_dominant = ctx.bot_mood_result.get("dominant", "平静") if ctx.bot_mood_result else "平静"
-
-        # 对话节奏：话题桥接/过渡
-        from .dialogue_rhythm import get_topic_bridge, get_topic_transition_hint
-        prev_topic = ""
-        if ctx.session_recovery:
-            prev_topic = ctx.session_recovery.get("last_topic", "")
-        if ctx.analysis.context.topic_shift_score > 0.5 and prev_topic:
-            ctx.topic_bridge = get_topic_bridge(
-                prev_topic, ctx.analysis.context.topic_summary,
-                ctx.analysis.context.topic_shift_score
-            )
-            ctx.topic_transition = get_topic_transition_hint(
-                prev_topic, ctx.analysis.context.topic_summary,
-                ctx.analysis.context.topic_shift_score,
-                ctx.analysis.context.user_intent,
-            )
-
-        # 行为模式
-        from .behavior_engine import get_behavior_hint
-        weather_condition = ""
-        weather_temp = ""
-        if ctx.world_context:
-            weather_match = re.search(r'天气：(\S+)', ctx.world_context)
-            if weather_match:
-                weather_condition = weather_match.group(1)
-            temp_match = re.search(r'(\d+)°C', ctx.world_context)
-            if temp_match:
-                weather_temp = temp_match.group(1)
-        schedule_period = ctx.schedule.period if ctx.schedule else "active"
-        ctx.behavior_hint = get_behavior_hint(weather_condition, weather_temp, schedule_period, bot_mood_dominant) or ""
-
-        # === 第二批并行：依赖 batch1 结果 ===
-        async def _get_icebreaker():
-            if ctx.is_first_today and ctx.session_recovery:
-                return await get_icebreaker_context(ctx.session_recovery, ctx.bot_mood_result) or ""
-            return ""
-
-        async def _get_group_social():
-            if ctx.is_group:
-                group_id = ctx.session_id.replace("group_", "")
-                from .group_atmosphere import get_group_social_context
-                from .db_group import update_member_activity
-                social_ctx = await get_group_social_context(group_id, ctx.raw_msg)
-                asyncio.create_task(update_member_activity(group_id, ctx.user_id))
-                return social_ctx
-            return {}
-
-        async def _get_personalization():
-            from .personalization import get_personalization_hints
-            from .db_session import get_or_create_user_profile
-            profile = await get_or_create_user_profile(ctx.user_id)
-            custom_nickname = profile.get("nickname", "") if profile else ""
-            affection_score = ctx.affection.get("score", 0)
-            relationship_style = ctx.user_prefs.get("relationship_style", "")
-            total_chats = ctx.affection.get("total_chats", 0)
-            streak_days = ctx.affection.get("streak_days", 0)
-            first_interaction = ctx.affection.get("first_interaction", 0) if "first_interaction" in ctx.affection else 0
-            return await get_personalization_hints(
-                ctx.user_id, affection_score, relationship_style, custom_nickname,
-                bot_mood_dominant, total_chats, streak_days, first_interaction,
-            )
-
-        batch2_results = await asyncio.gather(
-            _get_icebreaker(),       # [0]
-            _get_group_social(),     # [1]
-            _get_personalization(),  # [2]
-        )
-
-        ctx.icebreaker_hint = batch2_results[0]
-        social_ctx = batch2_results[1]
-        if social_ctx:
-            ctx.group_social_hint = social_ctx.get("social_hint", "")
-            ctx.group_meme_hint = social_ctx.get("meme_hint", "")
-            ctx.group_role_hint = social_ctx.get("role_hint", "")
-        personal_hints = batch2_results[2]
-        ctx.nickname_hint = personal_hints.get("nickname_hint", "")
-        ctx.interest_hint = personal_hints.get("interest_hint", "")
-        ctx.growth_hint = personal_hints.get("growth_hint", "")
-        ctx.catchphrase_hint = personal_hints.get("catchphrase_hint", "")
+        await _run_full_analysis(ctx, history_for_analysis)
 
     return None
+
+
+async def _run_full_analysis(ctx: ChatContext, history_for_analysis: list):
+    """完整分析流程：拆分为核心分析 → 状态查询 → 同步计算 → 深化查询 → 疲劳感知。"""
+    await _run_core_analysis(ctx, history_for_analysis)
+    await _run_batch1_queries(ctx)
+    bot_mood_dominant = _run_sync_computations(ctx)
+    await _run_batch2_queries(ctx, bot_mood_dominant)
+    await _run_fatigue_and_gap(ctx, bot_mood_dominant)
+
+
+async def _run_core_analysis(ctx: ChatContext, history_for_analysis: list):
+    """第一批并行：分析 + 搜索 + 天气 + 提醒。"""
+    async def _do_analysis():
+        return await analyze_context_and_emotion(ctx.raw_msg, history_for_analysis, ctx.user_id)
+
+    async def _do_search():
+        search_decision = should_search(ctx.raw_msg)
+        if search_decision.get("need_search"):
+            ctx.is_explicit_search = search_decision.get("is_explicit", False)
+            query = extract_search_query(ctx.raw_msg)
+            result = await search(query)
+            if result:
+                logger.info(f"[搜索] 找到 {len(result.results)} 条结果 | 显式={ctx.is_explicit_search}")
+            return result
+        return None
+
+    async def _do_weather():
+        user_city = extract_city_from_message(ctx.raw_msg)
+        if not user_city:
+            for tag in ctx.relevant_tags:
+                tag_str = str(tag)
+                for city_name in ["上海", "北京", "广州", "深圳", "杭州", "成都", "武汉", "南京", "重庆", "西安", "苏州", "天津"]:
+                    if city_name in tag_str:
+                        user_city = city_name
+                        break
+                if user_city:
+                    break
+        return await build_world_context_prompt(user_city)
+
+    async def _do_reminders():
+        return await get_pending_reminders_context(ctx.user_id)
+
+    analysis, search_result, world_ctx, reminder_ctx = await asyncio.gather(
+        _do_analysis(), _do_search(), _do_weather(), _do_reminders()
+    )
+
+    ctx.analysis = analysis
+    ctx.search_result = search_result
+    ctx.world_context = world_ctx
+    ctx.reminder_context = reminder_ctx
+    ctx.emotion_params = get_emotion_params(ctx.analysis.emotion)
+
+    if ctx.analysis.context.referenced_entity:
+        logger.info(f"[指代消解] 检测到指代: {ctx.analysis.context.referenced_entity}")
+
+
+async def _run_batch1_queries(ctx: ChatContext):
+    """第二批并行：无依赖的 DB/状态查询。"""
+    from .emotion_deep import get_emotion_memory_hint
+    from .memory import get_shared_memory_hint, get_private_meme_hint, get_date_hint
+    from .database import has_user_message_today, check_and_trigger_milestone
+
+    async def _get_affection_decay():
+        if ctx.affection and ctx.session_recovery:
+            from .db_affection import get_affection_decay_hint
+            return await get_affection_decay_hint(ctx.user_id)
+        return None
+
+    async def _get_undisclosed():
+        if ctx.affection and random.random() < 0.15:
+            from .db_session import get_undisclosed_facts
+            return await get_undisclosed_facts(ctx.user_id, ctx.affection.get("score", 0))
+        return None
+
+    batch1_results = await asyncio.gather(
+        update_bot_emotion(ctx.raw_msg, ctx.analysis.emotion),          # [0]
+        get_emotion_memory_hint(ctx.user_id, ctx.raw_msg),              # [1]
+        get_user_pref_hints(ctx.user_id),                               # [2]
+        has_user_message_today(ctx.session_id),                         # [3]
+        get_shared_memory_hint(ctx.user_id, ctx.raw_msg),               # [4]
+        get_private_meme_hint(ctx.user_id, ctx.raw_msg),                # [5]
+        get_date_hint(ctx.user_id),                                     # [6]
+        check_and_trigger_milestone(ctx.user_id),                       # [7]
+        _get_affection_decay(),                                         # [8]
+        _get_undisclosed(),                                             # [9]
+    )
+
+    # 解包 batch1 结果
+    ctx.bot_mood_result = batch1_results[0]
+    ctx.emotion_memory_hint = batch1_results[1] or ""
+    ctx.user_prefs = batch1_results[2]
+    ctx.is_first_today = not batch1_results[3]
+    ctx.shared_memory_hint = batch1_results[4] or ""
+    ctx.private_meme_hint = batch1_results[5] or ""
+    ctx.date_hint = batch1_results[6] or ""
+    ctx.milestone_hint = batch1_results[7]
+    ctx.affection_decay_hint = batch1_results[8]
+    ctx.disclosure_hint = batch1_results[9]
+    if ctx.disclosure_hint:
+        from .database import mark_disclosed
+        asyncio.create_task(mark_disclosed(ctx.user_id, ctx.disclosure_hint["key"]))
+
+    # 情绪系统深化
+    if ctx.bot_mood_result.get("recovery_stage"):
+        ctx.emotion_recovery_hint = ctx.bot_mood_result["recovery_stage"]
+    if ctx.bot_mood_result.get("swing_hint"):
+        ctx.emotion_recovery_hint = ctx.bot_mood_result["swing_hint"]
+    if ctx.bot_mood_result.get("contagion"):
+        ctx.contagion_result = ctx.bot_mood_result["contagion"]
+        ctx.bot_mood_result["valence"] = ctx.bot_mood_result.get("valence", 0) + ctx.contagion_result.get("valence_delta", 0)
+        ctx.bot_mood_result["arousal"] = ctx.bot_mood_result.get("arousal", 0.2) + ctx.contagion_result.get("arousal_delta", 0)
+
+
+def _run_sync_computations(ctx: ChatContext) -> str:
+    """同步计算：作息、对话节奏、行为模式。返回 bot_mood_dominant。"""
+    from .schedule import get_schedule_state
+    ctx.schedule = get_schedule_state()
+    bot_mood_dominant = ctx.bot_mood_result.get("dominant", "平静") if ctx.bot_mood_result else "平静"
+
+    # 对话节奏：话题桥接/过渡
+    from .dialogue_rhythm import get_topic_bridge, get_topic_transition_hint
+    prev_topic = ""
+    if ctx.session_recovery:
+        prev_topic = ctx.session_recovery.get("last_topic", "")
+    if ctx.analysis.context.topic_shift_score > 0.5 and prev_topic:
+        ctx.topic_bridge = get_topic_bridge(
+            prev_topic, ctx.analysis.context.topic_summary,
+            ctx.analysis.context.topic_shift_score
+        )
+        ctx.topic_transition = get_topic_transition_hint(
+            prev_topic, ctx.analysis.context.topic_summary,
+            ctx.analysis.context.topic_shift_score,
+            ctx.analysis.context.user_intent,
+        )
+
+    # 行为模式
+    from .behavior_engine import get_behavior_hint
+    weather_condition = ""
+    weather_temp = ""
+    if ctx.world_context:
+        weather_match = re.search(r'天气：(\S+)', ctx.world_context)
+        if weather_match:
+            weather_condition = weather_match.group(1)
+        temp_match = re.search(r'(\d+)°C', ctx.world_context)
+        if temp_match:
+            weather_temp = temp_match.group(1)
+    schedule_period = ctx.schedule.period if ctx.schedule else "active"
+    ctx.behavior_hint = get_behavior_hint(weather_condition, weather_temp, schedule_period, bot_mood_dominant) or ""
+
+    return bot_mood_dominant
+
+
+async def _run_batch2_queries(ctx: ChatContext, bot_mood_dominant: str):
+    """第三批并行：依赖 batch1 结果的查询（破冰/群聊社交/个性化）。"""
+    async def _get_icebreaker():
+        if ctx.is_first_today and ctx.session_recovery:
+            return await get_icebreaker_context(ctx.session_recovery, ctx.bot_mood_result) or ""
+        return ""
+
+    async def _get_group_social():
+        if ctx.is_group:
+            group_id = ctx.session_id.replace("group_", "")
+            from .group_atmosphere import get_group_social_context
+            from .db_group import update_member_activity
+            social_ctx = await get_group_social_context(group_id, ctx.raw_msg)
+            asyncio.create_task(update_member_activity(group_id, ctx.user_id))
+            return social_ctx
+        return {}
+
+    async def _get_personalization():
+        from .personalization import get_personalization_hints
+        from .db_session import get_or_create_user_profile
+        profile = await get_or_create_user_profile(ctx.user_id)
+        custom_nickname = profile.get("nickname", "") if profile else ""
+        affection_score = ctx.affection.get("score", 0)
+        relationship_style = ctx.user_prefs.get("relationship_style", "")
+        total_chats = ctx.affection.get("total_chats", 0)
+        streak_days = ctx.affection.get("streak_days", 0)
+        first_interaction = ctx.affection.get("first_interaction", 0) if "first_interaction" in ctx.affection else 0
+        return await get_personalization_hints(
+            ctx.user_id, affection_score, relationship_style, custom_nickname,
+            bot_mood_dominant, total_chats, streak_days, first_interaction,
+        )
+
+    batch2_results = await asyncio.gather(
+        _get_icebreaker(),       # [0]
+        _get_group_social(),     # [1]
+        _get_personalization(),  # [2]
+    )
+
+    ctx.icebreaker_hint = batch2_results[0]
+    social_ctx = batch2_results[1]
+    if social_ctx:
+        ctx.group_social_hint = social_ctx.get("social_hint", "")
+        ctx.group_meme_hint = social_ctx.get("meme_hint", "")
+        ctx.group_role_hint = social_ctx.get("role_hint", "")
+    personal_hints = batch2_results[2]
+    ctx.nickname_hint = personal_hints.get("nickname_hint", "")
+    ctx.interest_hint = personal_hints.get("interest_hint", "")
+    ctx.growth_hint = personal_hints.get("growth_hint", "")
+    ctx.catchphrase_hint = personal_hints.get("catchphrase_hint", "")
+
+
+async def _run_fatigue_and_gap(ctx: ChatContext, bot_mood_dominant: str):
+    """对话疲劳感知 + 已读不回感知。"""
+    from .conversation_fatigue import analyze_conversation_fatigue
+    fatigue_result = analyze_conversation_fatigue(ctx.recent_memories, ctx.raw_msg, ctx.schedule)
+    ctx.fatigue_level = fatigue_result["level"]
+    ctx.fatigue_hint = fatigue_result["hint"]
+    if ctx.fatigue_level >= 2:
+        logger.info(f"[疲劳感知] level={ctx.fatigue_level} score={fatigue_result['score']} signals={fatigue_result['signals']}")
+
+    # 已读不回感知
+    from .db_memories import get_last_bot_reply_time
+    import time as _time
+    last_bot_ts = await get_last_bot_reply_time(ctx.session_id)
+    if last_bot_ts > 0:
+        gap_seconds = _time.time() - last_bot_ts
+        ctx.reply_gap_hint = _build_reply_gap_hint(
+            gap_seconds, ctx.affection, ctx.schedule, bot_mood_dominant
+        )
 
 
 @stage("schedule_interrupt")
@@ -664,6 +803,9 @@ async def _stage_llm(ctx: ChatContext) -> Optional[str]:
             interest_hint=ctx.interest_hint or None,
             growth_hint=ctx.growth_hint or None,
             catchphrase_hint=ctx.catchphrase_hint or None,
+            reply_gap_hint=ctx.reply_gap_hint or None,
+            bot_emotion_memory_hint=ctx.bot_emotion_memory_hint or None,
+            fatigue_hint=ctx.fatigue_hint or None,
         )
         sys_prompt += "\n回复风格：专业分析+个性点评。分析部分结构化、有深度，点评部分保持你的猫娘语气。绝对禁止括号动作描写。"
         messages = [{"role": "system", "content": sys_prompt}]
@@ -708,6 +850,9 @@ async def _stage_llm(ctx: ChatContext) -> Optional[str]:
             interest_hint=ctx.interest_hint or None,
             growth_hint=ctx.growth_hint or None,
             catchphrase_hint=ctx.catchphrase_hint or None,
+            reply_gap_hint=ctx.reply_gap_hint or None,
+            bot_emotion_memory_hint=ctx.bot_emotion_memory_hint or None,
+            fatigue_hint=ctx.fatigue_hint or None,
         )
 
         from .database import has_user_message_today
@@ -715,7 +860,7 @@ async def _stage_llm(ctx: ChatContext) -> Optional[str]:
 
         # 检查是否是晚安后又来聊天（5分钟内）
         is_comeback_after_farewell = False
-        if greeting_type is None and greeting_type != "morning":
+        if greeting_type is None:
             from .database import get_last_farewell_time
             farewell_time = await get_last_farewell_time(ctx.session_id)
             if farewell_time:
@@ -746,6 +891,10 @@ async def _stage_llm(ctx: ChatContext) -> Optional[str]:
                 # 记录道别时间
                 from .database import record_farewell
                 asyncio.create_task(record_farewell(ctx.user_id, ctx.session_id))
+                # 取消追问（修复：说了晚安后追问系统还在追问）
+                from .follow_up import suppress_followup
+                suppress_followup(ctx.session_id)
+                logger.info(f"[晚安] 取消追问 session={ctx.session_id[:8]}")
             else:
                 # 低置信度（可能是抱怨）
                 sys_prompt += (
@@ -893,7 +1042,7 @@ async def _stage_humanize(ctx: ChatContext) -> Optional[str]:
 
 @stage("post_process")
 async def _stage_post(ctx: ChatContext) -> Optional[str]:
-    await save_reply(ctx.session_id, ctx.user_id, ctx.raw_msg, ctx.reply_text)
+    await save_reply(ctx.session_id, ctx.user_id, ctx.raw_msg, ctx.reply_text, ctx.bot_mood_result)
 
     sticker_chance = ctx.emotion_params.get("sticker_chance", 0.25)
     reply_filtered, sticker_kept = filter_sticker_tag(ctx.reply_text, ctx.session_id, keep_probability=sticker_chance)
@@ -1000,6 +1149,27 @@ async def _stage_post(ctx: ChatContext) -> Optional[str]:
         msg_type = classify_bot_message(ctx.reply_text)
         record_bot_message(ctx.session_id, ctx.reply_text, msg_type)
 
+        # 晚安关键词检测：bot 回复包含晚安关键词时自动取消追问
+        night_keywords = ["晚安", "快睡", "去睡", "睡觉吧", "好梦", "明天见"]
+        if any(kw in ctx.reply_text for kw in night_keywords):
+            from .follow_up import suppress_followup
+            suppress_followup(ctx.session_id)
+            logger.info(f"[晚安] bot回复包含晚安关键词，取消追问 session={ctx.session_id[:8]}")
+
+    # === 对话疲劳：抑制追问 + 自然收尾 ===
+    if ctx.fatigue_level >= 2 and not ctx.is_group:
+        from .follow_up import suppress_followup
+        suppress_followup(ctx.session_id)
+        logger.info(f"[疲劳感知] 抑制追问 | level={ctx.fatigue_level}")
+
+    if ctx.fatigue_level >= 3 and not ctx.is_group:
+        from .conversation_fatigue import get_closing_message
+        closing = get_closing_message(ctx.fatigue_level, ctx.schedule)
+        if closing:
+            await asyncio.sleep(random.uniform(1.5, 3.0))
+            await ctx.bot.send(ctx.event, make_reply(ctx.event, Message(closing)))
+            logger.info(f"[疲劳感知] 发送收尾消息: {closing}")
+
     # 随机行为（P2）：3% 概率突然分享点什么
     from .message_actions import maybe_share_something
     asyncio.create_task(maybe_share_something(ctx.bot, ctx.event, share_chance=0.03))
@@ -1059,14 +1229,47 @@ async def _handle_emoji_share(ctx: ChatContext, last_share: dict):
 
 
 async def _handle_link_share(ctx: ChatContext):
+    # 获取分享内容
+    recent = get_recent_shares(ctx.session_id)
+    last_share = recent[-1] if recent else None
+
+    # 构建分享内容描述
+    share_desc = ""
+    fetch_failed = False
+
+    if last_share:
+        share_type = last_share.get("type", "链接")
+        share_source = last_share.get("source", "")
+        share_summary = last_share.get("summary", "")
+        fetch_failed = last_share.get("fetch_failed", False)
+
+        if fetch_failed:
+            share_desc = f"用户发了一个{share_type}链接，但内容无法读取。"
+        elif share_summary and len(share_summary) > 10:
+            share_desc = f"用户发了一个{share_type}：{share_source}\n内容摘要：{share_summary[:300]}"
+        else:
+            share_desc = f"用户发了一个{share_type}链接：{share_source}"
+    else:
+        share_desc = "用户发了一个链接，没有其他文字。"
+
+    # 构建系统提示
     share_sys = (
         "你是一只猫娘，正在QQ上和人聊天。用户给你发了一个链接/分享，没有说其他话。"
         "用你的性格（猫系、会调侃、嘴硬、偶尔撒娇、有点小好色）回复1句话，表示你看到了。"
         "口语化、短句、像发QQ消息。不要加括号动作。只输出回复内容。"
     )
+
+    # 如果内容无法读取，添加反编造规则
+    if fetch_failed:
+        share_sys += (
+            "\n\n重要：这个链接的内容无法读取（可能是视频或需要登录）。"
+            "你没有看到任何内容，所以绝对不要编造内容！"
+            "直接说「我这边打不开这个链接诶」「没看到内容哦」或类似的话。"
+        )
+
     share_messages = [
         {"role": "system", "content": share_sys},
-        {"role": "user", "content": "用户发了一个链接，没有其他文字。回复一句表示你看到了。"}
+        {"role": "user", "content": share_desc}
     ]
     try:
         share_reply = await call_deepseek_api(share_messages, temperature=1.0)
@@ -1076,7 +1279,10 @@ async def _handle_link_share(ctx: ChatContext):
         else:
             raise ValueError("回复太短")
     except Exception:
-        await ctx.bot.send(ctx.event, make_reply(ctx.event, Message("喵？什么东西，让我看看~")))
+        if fetch_failed:
+            await ctx.bot.send(ctx.event, make_reply(ctx.event, Message("我这边打不开这个链接诶")))
+        else:
+            await ctx.bot.send(ctx.event, make_reply(ctx.event, Message("喵？什么东西，让我看看~")))
 
 
 # ============================================================

@@ -134,6 +134,18 @@ def record_user_reply(session_id: str):
     state.last_bot_msg_type = ""
 
 
+def suppress_followup(session_id: str):
+    """强制取消该 session 的所有待发追问（用于对话疲劳收尾）。"""
+    state = get_session_state(session_id)
+    if state.follow_up_count > 0 or not state.user_replied:
+        logger.info(f"[追问] 疲劳抑制 | 取消追问 | session={session_id[:8]}")
+    state.user_replied = True
+    state.follow_up_count = 0
+    state.last_bot_msg = ""
+    state.last_bot_msg_type = ""
+    state.pending_emotion = None
+
+
 # ============================================================
 # 消息类型判断
 # ============================================================

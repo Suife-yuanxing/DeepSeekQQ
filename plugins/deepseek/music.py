@@ -23,6 +23,8 @@ _SONG_PATTERNS = [
     re.compile(r"我想听\s*(.+)"),
     re.compile(r"点歌[：:]\s*(.+)"),
     re.compile(r"(.+)\s*(?:怎么唱|歌词是什么)"),
+    # 支持"我想听歌手的歌名"格式（如"我想听周杰伦的晴天"）
+    re.compile(r"我想听\s*(\S+?)的\s*(.+)"),
 ]
 
 # 推荐/随机关键词
@@ -70,11 +72,22 @@ def detect_music_intent(text: str) -> Tuple[str, Optional[str]]:
     for pattern in _SONG_PATTERNS:
         match = pattern.search(text)
         if match:
-            song_name = match.group(1).strip()
-            # 只删末尾语气词，不删中间的
-            song_name = re.sub(r"[的吗呢吧啊哦嗯吧]+$", "", song_name).strip()
-            if len(song_name) >= 1:
-                return ("search", song_name)
+            groups = match.groups()
+            if len(groups) == 2:
+                # "我想听歌手的歌名"格式
+                artist, song_name = groups
+                song_name = song_name.strip()
+                # 只删末尾语气词，不删中间的
+                song_name = re.sub(r"[的吗呢吧啊哦嗯吧]+$", "", song_name).strip()
+                if len(song_name) >= 1:
+                    logger.info(f"[音乐] 提取到歌手+歌名: {artist} - {song_name}")
+                    return ("search", song_name)
+            else:
+                song_name = groups[0].strip()
+                # 只删末尾语气词，不删中间的
+                song_name = re.sub(r"[的吗呢吧啊哦嗯吧]+$", "", song_name).strip()
+                if len(song_name) >= 1:
+                    return ("search", song_name)
 
     return ("none", None)
 
@@ -254,13 +267,28 @@ async def _handle_recommend(bot, event) -> Optional[str]:
 
 async def _handle_search(bot, event, song_name: str) -> Optional[str]:
     """处理点歌请求。"""
-    results = await search_song(song_name, limit=5)
+    logger.info(f"[音乐] 搜索歌曲: {song_name}")
+
+    try:
+        results = await search_song(song_name, limit=5)
+    except Exception as e:
+        logger.error(f"[音乐] 搜索API异常: {e}")
+        await bot.send(event, make_reply(event, Message(f"搜索「{song_name}」的时候出了点问题...稍后再试试？")))
+        return "SKIP"
 
     if not results:
-        await bot.send(event, make_reply(event, Message(f"没找到「{song_name}」诶...换个关键词试试？")))
+        logger.warning(f"[音乐] 搜索无结果: {song_name}")
+        # 基于人设的友好提示，不要说"没找到"
+        fallback_msgs = [
+            f"诶，「{song_name}」我这边搜不到呢...换个名字试试？",
+            f"「{song_name}」好像找不到诶，是不是歌名记错了？",
+            f"嗯...「{song_name}」搜不到呢，你确定是这个名字吗？",
+        ]
+        await bot.send(event, make_reply(event, Message(random.choice(fallback_msgs))))
         return "SKIP"
 
     song = results[0]
+    logger.info(f"[音乐] 找到歌曲: {song.name} - {song.artist}")
 
     # 个性化提示
     intro = _build_intro_message(song, "search")

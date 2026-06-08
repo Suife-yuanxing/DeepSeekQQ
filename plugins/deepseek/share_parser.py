@@ -8,6 +8,7 @@
 import re
 import json
 import hashlib
+import asyncio
 from datetime import datetime
 from typing import Optional, List, Dict, Any
 from collections import OrderedDict
@@ -145,7 +146,7 @@ def _parse_by_platform(html: str, url: str) -> Optional[Dict[str, str]]:
             title = re.search(r'"desc"\s*:\s*"([^"]{4,})"', html)
         if not title:
             title = re.search(r'<title[^>]*>(.*?)</title>', html, re.DOTALL)
-        title = _strip_html(title, "抖音视频")
+        title = _strip_html(title, "")
 
         desc = re.search(r'<meta[^>]*property="og:description"[^>]*content="([^"]*)"', html)
         if not desc:
@@ -171,20 +172,37 @@ def _parse_by_platform(html: str, url: str) -> Optional[Dict[str, str]]:
             else:
                 duration_text = f"({secs}秒)"
 
-        summary_parts = []
-        if desc_text and desc_text != title:
-            summary_parts.append(desc_text[:500])
-        summary = " ".join(summary_parts) if summary_parts else title
+        # 检查是否成功提取到有效内容
+        has_valid_title = title and title != "抖音视频" and len(title) > 2
+        has_valid_desc = desc_text and len(desc_text) > 5
 
-        return {
-            **base_fields,
-            "title": title[:100],
-            "author": author,
-            "summary": f"[抖音视频{duration_text}] {summary}"[:800],
-            "platform": "douyin",
-            "image_url": image_url,
-            "restricted": True,  # 视频内容无法文字提取
-        }
+        if has_valid_title or has_valid_desc:
+            # 成功提取到标题或描述
+            summary_parts = []
+            if has_valid_desc and desc_text != title:
+                summary_parts.append(desc_text[:500])
+            summary = " ".join(summary_parts) if summary_parts else title
+            return {
+                **base_fields,
+                "title": title[:100] if has_valid_title else "抖音视频",
+                "author": author,
+                "summary": f"[抖音视频{duration_text}] {summary}"[:800],
+                "platform": "douyin",
+                "image_url": image_url,
+                "restricted": True,  # 视频内容无法文字提取
+            }
+        else:
+            # 无法提取有效内容（页面需要JS渲染或被反爬）
+            return {
+                **base_fields,
+                "title": "抖音视频",
+                "author": author,
+                "summary": "[抖音视频链接，内容无法读取]",
+                "platform": "douyin",
+                "image_url": image_url,
+                "restricted": True,
+                "fetch_failed": True,  # 标记抓取失败
+            }
 
     if "xiaoheike" in url or "xiaoheihe" in url or "xiaoheih" in url:
         title = re.search(r'<meta[^>]*property="og:title"[^>]*content="([^"]*)"', html)
@@ -450,13 +468,24 @@ async def extract_and_cache_shares(event, session_id: str) -> bool:
                     img_prompt = "请用中文简洁描述这张图片的主要内容，2-3句话，如果有文字请提取出来。特别注意：如果图片中有人物、动物、食物、风景、代码、聊天记录、文档等，请明确指出类型。"
                 # 三层降级识别图片：视觉模型 → OCR → 占位
                 img_desc = "[图片内容暂无法直接识别]"
+                vision_success = False
                 try:
                     if img_url and img_url != "未知图片":
-                        vision_result = await analyze_image(img_url, img_prompt)
-                        if vision_result and vision_result != "[图片内容暂无法识别]" and vision_result != "[图片文件不存在]":
-                            img_desc = f"[图片内容: {vision_result}]"
+                        # 添加重试机制（最多重试2次）
+                        for retry in range(3):
+                            vision_result = await analyze_image(img_url, img_prompt)
+                            if vision_result and vision_result != "[图片内容暂无法识别]" and vision_result != "[图片文件不存在]":
+                                img_desc = f"[图片内容: {vision_result}]"
+                                vision_success = True
+                                break
+                            elif retry < 2:
+                                logger.info(f"[图片识别] 重试 {retry + 1}/2: {img_url[:50]}")
+                                await asyncio.sleep(1)
                 except Exception as e:
                     logger.warning(f"[图片识别] 异常: {e}")
+
+                if not vision_success:
+                    logger.warning(f"[图片识别] 最终失败: {img_url[:50]}")
 
                 # 图片分类（用于个性化回复）
                 vision_text = img_desc.replace("[图片内容: ", "").replace("]", "")

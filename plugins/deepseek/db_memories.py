@@ -88,6 +88,17 @@ async def has_recent_message(session_id: str, minutes: int = 30) -> bool:
         return (row["cnt"] if row else 0) > 0
 
 
+async def get_last_bot_reply_time(session_id: str) -> float:
+    """获取该 session 最近一条 bot 回复的时间戳。无记录返回 0。"""
+    db = await get_db()
+    async with db.execute(
+        "SELECT MAX(timestamp) as ts FROM memories WHERE session_id = ? AND role = 'assistant'",
+        (session_id,)
+    ) as cursor:
+        row = await cursor.fetchone()
+        return row["ts"] if row and row["ts"] else 0
+
+
 async def has_user_message_today(session_id: str) -> bool:
     """检查该 session 今天是否有用户消息。"""
     today = datetime.now().strftime("%Y-%m-%d")

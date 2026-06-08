@@ -52,6 +52,11 @@ REPLY_LENGTH_CONFIG = {
 }
 
 # === 主动消息 ===
+def _get_target_users():
+    """动态获取目标用户列表，确保运行时读取最新 MY_QQ 值。"""
+    return [MY_QQ] if MY_QQ else []
+
+
 PROACTIVE_CONFIG = {
     "morning_greeting": {
         "enabled": True,
@@ -64,7 +69,7 @@ PROACTIVE_CONFIG = {
             "早~今天天气怎么样？要是不好就赖床吧，我陪你~",
             "早安！新的一天开始了，今天想聊点什么？",
         ],
-        "target_users": [MY_QQ] if MY_QQ else [],
+        "target_users": _get_target_users,
         "target_groups": [],
     },
     "night_greeting": {
@@ -78,7 +83,7 @@ PROACTIVE_CONFIG = {
             "晚安喵~明天见，不许偷偷熬夜哦。",
             "该睡觉啦~熬夜会长黑眼圈的，虽然我没有...",
         ],
-        "target_users": [MY_QQ] if MY_QQ else [],
+        "target_users": _get_target_users,
         "target_groups": [],
     },
     "silence_check": {
@@ -110,13 +115,13 @@ PROACTIVE_CONFIG = {
             "06-19": "端午安康~今天吃粽子了吗？我喜欢甜的！",
             "09-25": "中秋快乐！我们一起看月亮吧~虽然你在屏幕那一边...",
         },
-        "target_users": [MY_QQ] if MY_QQ else [],
+        "target_users": _get_target_users,
         "target_groups": [],
     },
     "sleep_nag": {
         "enabled": True,
         "max_nags_per_night": 2,
-        "target_users": [MY_QQ] if MY_QQ else [],
+        "target_users": _get_target_users,
     },
 }
 

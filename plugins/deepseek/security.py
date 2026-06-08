@@ -42,13 +42,22 @@ _ABUSE_THRESHOLD = 15     # 窗口内最大消息数
 _ABUSE_SPAM_THRESHOLD = 5 # 连续相同消息数
 
 
+_ABUSE_HISTORY_MAX_USERS = 500  # 硬上限
+
+
 def _cleanup_abuse_history():
-    """定期清理过期的滥用检测记录。"""
+    """定期清理过期的滥用检测记录，并强制执行上限。"""
     now = time.time()
     expired = [uid for uid, msgs in _user_msg_history.items()
                if not msgs or now - msgs[-1][0] > _ABUSE_WINDOW * 2]
     for uid in expired:
         del _user_msg_history[uid]
+    # 强制上限：删除最旧的条目
+    if len(_user_msg_history) > _ABUSE_HISTORY_MAX_USERS:
+        sorted_uids = sorted(_user_msg_history.keys(),
+                             key=lambda u: _user_msg_history[u][-1][0] if _user_msg_history[u] else 0)
+        for uid in sorted_uids[:len(_user_msg_history) - _ABUSE_HISTORY_MAX_USERS]:
+            del _user_msg_history[uid]
 
 
 # ============================================================

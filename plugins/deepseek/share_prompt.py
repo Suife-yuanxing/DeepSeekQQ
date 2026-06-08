@@ -19,6 +19,9 @@ def format_shares_for_prompt(shares: List[Dict[str, Any]], user_msg: str = "") -
             lines.append(f"   摘要: {s['summary'][:400]}")
         if s.get('needs_paste') and s.get('platform') == '小黑盒':
             lines.append(f"   ⚠️ 小黑盒的内容网页端无法自动读取。请用户把正文复制粘贴过来，我再帮你分析~")
+        elif s.get('fetch_failed'):
+            # 内容抓取失败，明确告诉 LLM 不要编造
+            lines.append(f"   ❌ 该链接内容无法读取（可能是视频或需要登录）。直接告诉用户「我这边打不开这个链接诶」或「没看到内容哦」，绝对不要编造任何内容！")
         elif s.get('platform') == 'douyin':
             lines.append(f"   📹 这是一个抖音视频，基于标题和描述回复，可以吐槽/讨论视频主题。")
         elif s.get('restricted'):

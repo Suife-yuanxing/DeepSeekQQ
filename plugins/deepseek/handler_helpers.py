@@ -51,10 +51,12 @@ def is_greeting(msg: str) -> bool:
 def detect_greeting_type(msg: str, recent_memories: list = None) -> Optional[str]:
     """检测问候类型，返回 'morning'/'night'/'night_uncertain'/None。
 
-    增强版：结合上下文判断晚安置信度。
+    增强版：结合上下文和时间判断晚安置信度。
     - 'night': 高置信度道别（晚安、睡了、明天见）
     - 'night_uncertain': 低置信度（困了、好困，可能是抱怨）
     """
+    from datetime import datetime
+
     morning_kw = ["早安", "早", "早上好", "早呀", "早啊", "good morning", "起床"]
     if any(kw in msg for kw in morning_kw):
         return "morning"
@@ -64,10 +66,15 @@ def detect_greeting_type(msg: str, recent_memories: list = None) -> Optional[str
     if any(kw in msg for kw in night_high):
         return "night"
 
-    # 低置信度关键词：需要上下文辅助判断
-    night_low = ["困了", "好困", "要睡了", "下了", "睡觉"]
+    # 低置信度关键词：需要上下文或时间辅助判断
+    night_low = ["困了", "好困", "要睡了", "下了", "睡觉", "累了", "好累", "撑不住了"]
+    hour = datetime.now().hour
 
     if any(kw in msg for kw in night_low):
+        # 深夜（22:00-06:00）+ 模糊意图 → 高置信度晚安
+        if hour >= 22 or hour < 6:
+            return "night"
+
         # 上下文辅助判断
         if recent_memories and len(recent_memories) >= 2:
             # 检查最近消息：如果用户刚发了很多消息，可能只是抱怨
@@ -76,6 +83,11 @@ def detect_greeting_type(msg: str, recent_memories: list = None) -> Optional[str
             if len(recent_user_msgs) >= 3:
                 return "night_uncertain"
         return "night"
+
+    # 深夜 + 短消息（可能只是敷衍）→ 低置信度晚安
+    if (hour >= 23 or hour < 3) and len(msg.strip()) <= 3:
+        if any(kw in msg for kw in ["嗯", "哦", "好", "行", "88", "拜"]):
+            return "night_uncertain"
 
     return None
 
