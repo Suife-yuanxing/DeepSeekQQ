@@ -5,22 +5,11 @@ import types
 from collections import OrderedDict
 from unittest.mock import AsyncMock, patch, MagicMock
 
-# ---- Mock 依赖（仅在未加载时 mock）----
+# ---- Mock 第三方依赖（不影响项目模块）----
 if "aiohttp" not in sys.modules:
     mock_aiohttp = types.ModuleType("aiohttp")
     mock_aiohttp.ClientTimeout = lambda total: total
     sys.modules["aiohttp"] = mock_aiohttp
-
-# config — 只读 SimpleNamespace，不覆盖已导入的真实模块
-if "plugins.deepseek.config" not in sys.modules:
-    sys.modules["plugins.deepseek.config"] = types.SimpleNamespace(
-        QWEN_VL_API_KEY="", QWEN_VL_MODEL="qwen-vl-plus",
-    )
-# api — 仅在不存在时 mock
-if "plugins.deepseek.api" not in sys.modules:
-    mock_api = types.ModuleType("plugins.deepseek.api")
-    mock_api.get_http_session = AsyncMock(return_value=AsyncMock())
-    sys.modules["plugins.deepseek.api"] = mock_api
 
 
 class TestExtractVisionText:

@@ -1,4 +1,8 @@
-"""测试 share_parser.py — 分享内容抓取与缓存（纯逻辑函数）。"""
+"""测试 share_parser.py — 分享内容抓取与缓存（纯逻辑函数）。
+
+⚠️ 本文件所有 sys.modules mock 均通过 autouse fixture 管理，
+   测试结束后自动恢复，不会污染其他测试文件。
+"""
 import pytest
 import sys
 import types
@@ -7,37 +11,69 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from collections import OrderedDict
 
 
-# ---- Mock 依赖 ----
-mock_aiohttp = types.ModuleType("aiohttp")
-mock_aiohttp.ClientTimeout = lambda total: total
-sys.modules["aiohttp"] = mock_aiohttp
+def _safe_module_mock(name: str, **attrs):
+    """创建安全的模块 mock：任何未显式设置的属性自动返回 MagicMock。
 
-if "plugins.deepseek.config" not in sys.modules:
-    sys.modules["plugins.deepseek.config"] = types.SimpleNamespace(
-        SHARE_TTL=1800, URL_FETCH_COOLDOWN=300,
-    )
-if "plugins.deepseek.api" not in sys.modules:
-    mock_api = types.ModuleType("plugins.deepseek.api")
-    mock_api.get_http_session = AsyncMock(return_value=AsyncMock())
-    sys.modules["plugins.deepseek.api"] = mock_api
-if "plugins.deepseek.database" not in sys.modules:
-    mock_db = types.ModuleType("plugins.deepseek.database")
-    mock_db.get_article_cache = AsyncMock(return_value=None)
-    mock_db.save_article_cache = AsyncMock(return_value=None)
-    sys.modules["plugins.deepseek.database"] = mock_db
-if "plugins.deepseek.vision" not in sys.modules:
-    mock_vision = types.ModuleType("plugins.deepseek.vision")
-    mock_vision.recognize_sticker = AsyncMock(return_value=None)
-    mock_vision.analyze_image = AsyncMock(return_value="[图片内容: 一只猫]")
-    mock_vision.extract_vision_text = lambda x: x.replace("[图片内容: ", "").replace("]", "") if x and x.startswith("[图片内容:") else (x or "")
-    sys.modules["plugins.deepseek.vision"] = mock_vision
-if "plugins.deepseek.image_reply" not in sys.modules:
-    mock_reply = types.ModuleType("plugins.deepseek.image_reply")
-    mock_reply.classify_image = MagicMock(return_value="photo_pet")
-    mock_reply.IMAGE_TYPE_STICKER = "sticker"
-    sys.modules["plugins.deepseek.image_reply"] = mock_reply
-if "plugins.deepseek.utils" not in sys.modules:
-    mock_utils = types.ModuleType("plugins.deepseek.utils")
+    避免因 mock 属性不全导致其他模块（如 handler.py → context_analyzer.py → database）
+    导入失败。"""
+    mod = types.ModuleType(name)
+    for k, v in attrs.items():
+        setattr(mod, k, v)
+
+    def _fallback_getattr(attr_name):
+        if attr_name.startswith("_"):
+            raise AttributeError(attr_name)
+        return MagicMock()
+
+    mod.__getattr__ = _fallback_getattr
+    return mod
+
+
+# aiohttp 是第三方包，mock 不会污染项目模块
+if "aiohttp" not in sys.modules:
+    mock_aiohttp = types.ModuleType("aiohttp")
+    mock_aiohttp.ClientTimeout = lambda total: total
+    sys.modules["aiohttp"] = mock_aiohttp
+
+# 保存原始模块引用，teardown 时恢复
+_SAVED_MODULES = {}
+
+
+def _setup_mocks():
+    """设置 share_parser 导入所需的模块 mock。"""
+    mocks = {
+        "plugins.deepseek.config": _safe_module_mock(
+            "plugins.deepseek.config",
+            SHARE_TTL=1800, URL_FETCH_COOLDOWN=300,
+        ),
+        "plugins.deepseek.api": _safe_module_mock(
+            "plugins.deepseek.api",
+            get_http_session=AsyncMock(return_value=AsyncMock()),
+        ),
+        "plugins.deepseek.database": _safe_module_mock(
+            "plugins.deepseek.database",
+            get_article_cache=AsyncMock(return_value=None),
+            save_article_cache=AsyncMock(return_value=None),
+        ),
+        "plugins.deepseek.vision": _safe_module_mock(
+            "plugins.deepseek.vision",
+            recognize_sticker=AsyncMock(return_value=None),
+            analyze_image=AsyncMock(return_value="[图片内容: 一只猫]"),
+            extract_vision_text=lambda x: (
+                x.replace("[图片内容: ", "").replace("]", "")
+                if x and isinstance(x, str) and x.startswith("[图片内容:")
+                else (x or "")
+            ),
+        ),
+        "plugins.deepseek.image_reply": _safe_module_mock(
+            "plugins.deepseek.image_reply",
+            classify_image=MagicMock(return_value="photo_pet"),
+            IMAGE_TYPE_STICKER="sticker",
+        ),
+        "plugins.deepseek.utils": None,  # 特殊处理：需要 LRUDict 类
+    }
+
+    # 为 utils 构建特殊的 mock（含 LRUDict）
     class _LRUDict(OrderedDict):
         def __init__(self, max_size=500):
             super().__init__()
@@ -50,8 +86,45 @@ if "plugins.deepseek.utils" not in sys.modules:
                     oldest = next(iter(self))
                     del self[oldest]
             super().__setitem__(key, value)
-    mock_utils.LRUDict = _LRUDict
-    sys.modules["plugins.deepseek.utils"] = mock_utils
+
+    mocks["plugins.deepseek.utils"] = _safe_module_mock(
+        "plugins.deepseek.utils", LRUDict=_LRUDict,
+    )
+
+    for name, mock in mocks.items():
+        if name not in sys.modules:
+            sys.modules[name] = mock
+            _SAVED_MODULES[name] = None  # 标记为需要删除
+        else:
+            _SAVED_MODULES[name] = sys.modules[name]  # 保存原始值（但不应发生）
+            sys.modules[name] = mock
+
+
+def _teardown_mocks():
+    """恢复被 mock 替换的模块。"""
+    mocked = [
+        "plugins.deepseek.config",
+        "plugins.deepseek.api",
+        "plugins.deepseek.database",
+        "plugins.deepseek.vision",
+        "plugins.deepseek.image_reply",
+        "plugins.deepseek.utils",
+    ]
+    for name in mocked:
+        saved = _SAVED_MODULES.get(name)
+        if saved is None:
+            sys.modules.pop(name, None)
+        else:
+            sys.modules[name] = saved
+    _SAVED_MODULES.clear()
+
+
+@pytest.fixture(autouse=True, scope="class")
+def _mock_share_parser_deps():
+    """为每个测试类设置/清理模块 mock，防止污染其他测试文件。"""
+    _setup_mocks()
+    yield
+    _teardown_mocks()
 
 
 class TestIsValidShare:
@@ -229,3 +302,188 @@ class TestParseByPlatform:
         from plugins.deepseek.share_parser import _parse_by_platform
         result = _parse_by_platform("<html></html>", "https://example.com/page")
         assert result is None
+
+
+class TestExtractDouyinRenderData:
+    """测试 _extract_douyin_render_data — RENDER_DATA 提取。"""
+
+    def test_extracts_from_render_data_script(self):
+        """从经典 RENDER_DATA script 标签中提取视频信息。"""
+        from plugins.deepseek.share_parser import _extract_douyin_render_data
+        import json
+        from urllib.parse import quote
+
+        # 模拟抖音 RENDER_DATA 结构
+        aweme_data = {
+            "aweme": {
+                "detail": {
+                    "aweme": {
+                        "desc": "这只猫太可爱了！",
+                        "create_time": 1700000000,
+                        "author": {
+                            "nickname": "萌宠达人",
+                            "avatar_thumb": {
+                                "url_list": ["https://example.com/avatar.jpg"]
+                            }
+                        },
+                        "video": {
+                            "duration": 15000,
+                            "cover": {
+                                "url_list": ["https://example.com/cover.jpg"]
+                            }
+                        },
+                        "statistics": {
+                            "comment_count": 520,
+                            "digg_count": 13000
+                        },
+                        "music": {
+                            "title": "可爱BGM"
+                        }
+                    }
+                }
+            }
+        }
+        encoded = quote(json.dumps(aweme_data, ensure_ascii=False))
+        html = f'<script id="RENDER_DATA" type="application/json">{encoded}</script>'
+
+        result = _extract_douyin_render_data(html)
+        assert result is not None
+        assert result["desc"] == "这只猫太可爱了！"
+        assert result["nickname"] == "萌宠达人"
+        assert result["duration"] == 15000
+        assert result["cover_url"] == "https://example.com/cover.jpg"
+        assert result["comment_count"] == 520
+        assert result["digg_count"] == 13000
+        assert result["music_title"] == "可爱BGM"
+
+    def test_extracts_from_next_data_script(self):
+        """从 __NEXT_DATA__ script 标签中提取。"""
+        from plugins.deepseek.share_parser import _extract_douyin_render_data
+        import json
+
+        aweme_data = {
+            "common": {
+                "aweme": {
+                    "detail": {
+                        "aweme": {
+                            "desc": "Next.js渲染的抖音页面",
+                            "author": {"nickname": "测试用户"},
+                            "video": {"duration": 30, "cover": {"url_list": ["https://img.com/cover.jpg"]}},
+                            "statistics": {"comment_count": 10, "digg_count": 100},
+                        }
+                    }
+                }
+            }
+        }
+        html = f'<script id="__NEXT_DATA__" type="application/json">{json.dumps(aweme_data, ensure_ascii=False)}</script>'
+
+        result = _extract_douyin_render_data(html)
+        assert result is not None
+        assert result["desc"] == "Next.js渲染的抖音页面"
+        assert result["nickname"] == "测试用户"
+
+    def test_no_render_data_returns_none(self):
+        """无 RENDER_DATA 时返回 None。"""
+        from plugins.deepseek.share_parser import _extract_douyin_render_data
+        result = _extract_douyin_render_data("<html><body>普通页面</body></html>")
+        assert result is None
+
+    def test_empty_render_data_returns_none(self):
+        """RENDER_DATA 中无有效视频数据时返回 None。"""
+        from plugins.deepseek.share_parser import _extract_douyin_render_data
+        import json
+        from urllib.parse import quote
+
+        # JSON 中不包含 aweme 信息
+        encoded = quote(json.dumps({"unrelated": "data"}))
+        html = f'<script id="RENDER_DATA" type="application/json">{encoded}</script>'
+
+        result = _extract_douyin_render_data(html)
+        assert result is None
+
+    def test_douyin_parse_with_render_data(self):
+        """完整流程：有 RENDER_DATA 的抖音页面解析。"""
+        from plugins.deepseek.share_parser import _parse_by_platform
+        import json
+        from urllib.parse import quote
+
+        aweme_data = {
+            "aweme": {
+                "detail": {
+                    "aweme": {
+                        "desc": "春天的第一场雨，好美啊🌧️",
+                        "author": {"nickname": "摄影师小王"},
+                        "video": {"duration": 45, "cover": {"url_list": ["https://img.com/cover.jpg"]}},
+                        "statistics": {"comment_count": 88, "digg_count": 2400},
+                        "music": {"title": "Rain Sounds"},
+                    }
+                }
+            }
+        }
+        encoded = quote(json.dumps(aweme_data, ensure_ascii=False))
+        html = f'<script id="RENDER_DATA" type="application/json">{encoded}</script>'
+
+        result = _parse_by_platform(html, "https://www.douyin.com/video/12345")
+        assert result is not None
+        assert result["platform"] == "douyin"
+        assert "春天的第一场雨" in result["summary"]
+        assert result["author"] == "摄影师小王"
+        assert "2400点赞" in result["summary"]
+        assert "88评论" in result["summary"]
+        assert "Rain Sounds" in result["summary"]
+        assert result.get("fetch_failed") is None  # 不应标记为失败
+        assert result["restricted"] is True
+
+    def test_douyin_parse_render_data_fallback_to_meta(self):
+        """无 RENDER_DATA 时回退到 meta 标签提取。"""
+        from plugins.deepseek.share_parser import _parse_by_platform
+
+        html = (
+            '<html><head>'
+            '<meta property="og:title" content="抖音视频标题">'
+            '<meta property="og:description" content="这是视频描述内容足够长">'
+            '<title>抖音</title>'
+            '</head><body></body></html>'
+        )
+        result = _parse_by_platform(html, "https://v.douyin.com/abc123/")
+        assert result is not None
+        assert result["platform"] == "douyin"
+        assert result["title"] == "抖音视频标题"
+        assert result.get("fetch_failed") is None
+
+    def test_douyin_parse_complete_failure(self):
+        """完全无法提取内容时返回 fetch_failed。"""
+        from plugins.deepseek.share_parser import _parse_by_platform
+
+        html = '<html><head><title>抖音</title></head><body></body></html>'
+        result = _parse_by_platform(html, "https://www.douyin.com/video/999")
+        assert result is not None
+        assert result["platform"] == "douyin"
+        assert result["fetch_failed"] is True
+        assert "内容无法读取" in result["summary"]
+
+
+class TestIsValidShareFetchFailed:
+    """测试 _is_valid_share 对 fetch_failed 的处理。"""
+
+    def test_fetch_failed_still_valid_for_bot_response(self):
+        """fetch_failed 的分享仍应通过 _is_valid_share（bot 需告知用户打不开）。
+
+        但不会被缓存到 DB（由 fetch_url_content 控制）。
+        """
+        from plugins.deepseek.share_parser import _is_valid_share
+        assert _is_valid_share({
+            "summary": "[抖音视频链接，内容无法读取]",
+            "restricted": True,
+            "fetch_failed": True,
+            "platform": "douyin",
+        }) is True
+
+    def test_fetch_failed_with_long_summary_still_valid(self):
+        """fetch_failed 但有足够长 summary 的分享仍有效（非 restricted 场景的回退）。"""
+        from plugins.deepseek.share_parser import _is_valid_share
+        # summary 足够长 → 有效（length > 80）
+        assert _is_valid_share({
+            "summary": "这是一段足够长的摘要内容，" * 10,
+            "fetch_failed": True,
+        }) is True
