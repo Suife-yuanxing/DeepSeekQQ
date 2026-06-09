@@ -12,6 +12,12 @@ from typing import List
 from typing import Optional
 from typing import Tuple
 
+try:
+    import zhdate
+    _HAS_ZHDATE = True
+except ImportError:
+    _HAS_ZHDATE = False
+
 from nonebot import logger
 
 # ============================================================
@@ -20,7 +26,7 @@ from nonebot import logger
 
 _WEATHER_BEHAVIORS = {
     "rain": {
-        "triggers": ["雨", "阵雨", "暴雨", "小雨", "中雨", "大雨", "雷阵雨"],
+        "triggers": ["雨", "阵雨", "暴雨", "小雨", "中雨", "大雨", "雷阵雨", "冻雨", "强降雨", "毛毛雨", "降雨"],
         "reactions": [
             "今天下雨了呢...好想窝在家里",
             "外面下雨了，你带伞了吗",
@@ -30,7 +36,7 @@ _WEATHER_BEHAVIORS = {
         ],
     },
     "snow": {
-        "triggers": ["雪", "小雪", "中雪", "大雪", "暴雪", "雨夹雪"],
+        "triggers": ["雪", "小雪", "中雪", "大雪", "暴雪", "雨夹雪", "飘雪", "冰雪", "阵雪"],
         "reactions": [
             "下雪了！好想堆雪人",
             "外面白白的，好漂亮",
@@ -62,7 +68,7 @@ _WEATHER_BEHAVIORS = {
         ],
     },
     "haze": {
-        "triggers": ["雾", "霾", "雾霾", "沙尘"],
+        "triggers": ["雾", "霾", "雾霾", "沙尘", "浮尘", "扬沙", "沙尘暴"],
         "reactions": [
             "今天空气不太好呢...",
             "外面灰蒙蒙的，不想出门",
@@ -70,7 +76,7 @@ _WEATHER_BEHAVIORS = {
         ],
     },
     "sunny": {
-        "triggers": ["晴", "晴天"],
+        "triggers": ["晴", "晴天", "晴朗", "少云"],
         "reactions": [
             "今天天气好好，想出去走走",
             "阳光好好啊~心情也好了",
@@ -78,7 +84,7 @@ _WEATHER_BEHAVIORS = {
         ],
     },
     "cloudy": {
-        "triggers": ["多云", "阴"],
+        "triggers": ["多云", "阴", "阴天", "多云转阴"],
         "reactions": [
             "今天阴天呢，有点懒懒的",
             "多云天气，不冷不热刚刚好",
@@ -366,7 +372,8 @@ def get_verbosity_modifier(
 # 节假日/特殊日期感知（Task 6 Layer 1）
 # ============================================================
 
-_SPECIAL_DATES = {
+# 公历固定节日（每年不变）
+_FIXED_DATES = {
     "1-1": {"name": "元旦", "behaviors": [
         "新年快乐~今年也要好好的！",
         "又是新的一年了呢，一起加油吧",
@@ -374,6 +381,10 @@ _SPECIAL_DATES = {
     "2-14": {"name": "情人节", "behaviors": [
         "今天情人节呢...你有人陪吗",
         "情人节快乐~虽然我也没人陪哈哈",
+    ]},
+    "4-5": {"name": "清明节(近似)", "behaviors": [
+        "清明时节雨纷纷...",
+        "清明节了呢，春天真的来了",
     ]},
     "5-1": {"name": "劳动节", "behaviors": [
         "劳动节快乐~今天偷懒理所当然！",
@@ -403,29 +414,28 @@ _SPECIAL_DATES = {
         "今年最后一天了呢...时间过得好快",
         "跨年啦！新的一年请多指教~",
     ]},
-    # 农历节日按公历近似（每年需调整）
-    "1-29": {"name": "春节", "behaviors": [
+}
+
+# 农历节日定义：(农历月, 农历日, 节日名, 行为列表)
+_LUNAR_DATES_DEF: List[Tuple[int, int, str, List[str]]] = [
+    (1, 1, "春节", [
         "新年快乐！恭喜发财~",
         "过年啦！吃饺子了吗",
         "春节快乐！新的一年要开开心心的",
-    ]},
-    "4-5": {"name": "清明节", "behaviors": [
-        "清明时节雨纷纷...",
-        "清明节了呢，春天真的来了",
-    ]},
-    "6-19": {"name": "端午节", "behaviors": [
+    ]),
+    (5, 5, "端午节", [
         "端午节快乐！吃粽子了吗",
         "端午安康~喜欢甜粽子还是咸粽子",
-    ]},
-    "8-15": {"name": "中秋节", "behaviors": [
-        "中秋快乐！今晚的月亮好圆",
-        "中秋节要和重要的人一起看月亮呢",
-    ]},
-    "8-29": {"name": "七夕", "behaviors": [
+    ]),
+    (7, 7, "七夕", [
         "今天是七夕呢...",
         "七夕快乐~虽然和我没什么关系啦",
-    ]},
-}
+    ]),
+    (8, 15, "中秋节", [
+        "中秋快乐！今晚的月亮好圆",
+        "中秋节要和重要的人一起看月亮呢",
+    ]),
+]
 
 _WEEKDAY_BEHAVIORS = {
     0: {"label": "周一", "behaviors": [
@@ -450,9 +460,42 @@ _WEEKDAY_BEHAVIORS = {
     ]},
 }
 
+# 缓存当年动态生成的完整节日映射
+_cached_special_dates: Optional[Dict[str, dict]] = None
+_cached_special_dates_year: int = 0
+
+
+def _build_special_dates() -> Dict[str, dict]:
+    """动态生成当年公历日期 → 节日映射（含农历漂移计算）。
+
+    首次调用时计算，年内缓存复用。
+    """
+    global _cached_special_dates, _cached_special_dates_year
+    year = datetime.now().year
+    if _cached_special_dates is not None and _cached_special_dates_year == year:
+        return _cached_special_dates
+
+    result = dict(_FIXED_DATES)  # 公历固定节日
+
+    if _HAS_ZHDATE:
+        for lunar_month, lunar_day, name, behaviors in _LUNAR_DATES_DEF:
+            try:
+                solar_date = zhdate.ZhDate(year, lunar_month, lunar_day).to_datetime()
+                key = f"{solar_date.month}-{solar_date.day}"
+                result[key] = {"name": name, "behaviors": behaviors}
+            except Exception:
+                logger.warning(f"[行为引擎] 农历计算失败: {name}")
+    else:
+        # zhdate 未安装时的降级提示
+        logger.debug("[行为引擎] zhdate 未安装，农历节日不可用")
+
+    _cached_special_dates = result
+    _cached_special_dates_year = year
+    return result
+
 
 def get_holiday_behavior(trigger_chance: float = 0.15) -> Optional[str]:
-    """节假日/特殊日期/星期行为感知。"""
+    """节假日/特殊日期/星期行为感知（农历动态计算）。"""
     if random.random() > trigger_chance:
         return None
 
@@ -460,9 +503,10 @@ def get_holiday_behavior(trigger_chance: float = 0.15) -> Optional[str]:
     date_key = f"{now.month}-{now.day}"
     weekday = now.weekday()
 
-    # 特殊日期优先
-    if date_key in _SPECIAL_DATES:
-        return random.choice(_SPECIAL_DATES[date_key]["behaviors"])
+    # 特殊日期优先（动态生成，含农历）
+    special_dates = _build_special_dates()
+    if date_key in special_dates:
+        return random.choice(special_dates[date_key]["behaviors"])
 
     # 星期几行为（30% 概率触发，即总概率 ~4.5%）
     if weekday in _WEEKDAY_BEHAVIORS and random.random() < 0.3:
@@ -516,7 +560,7 @@ def get_hot_topic_behavior(trigger_chance: float = 0.05) -> Optional[str]:
 # "刚发生"微事件池（Task 6 Layer 3）
 # ============================================================
 
-_MICRO_EVENTS = [
+_MICRO_EVENTS: List[str] = [
     "刚刚打翻了一杯水...",
     "诶，刚才好像有只蚊子飞过去",
     "刚想说什么来着，忘了...",
@@ -540,8 +584,20 @@ _MICRO_EVENTS = [
 ]
 
 
+def register_micro_events(events: List[str]):
+    """允许其他模块追加微事件。
+
+    Args:
+        events: 要追加的事件列表
+    """
+    _MICRO_EVENTS.extend(events)
+    logger.debug(f"[行为引擎] 微事件池已扩展至 {len(_MICRO_EVENTS)} 个")
+
+
 def get_micro_event_behavior(trigger_chance: float = 0.02) -> Optional[str]:
     """随机微事件（2%概率）。"""
+    if not _MICRO_EVENTS:
+        return None
     if random.random() > trigger_chance:
         return None
     return random.choice(_MICRO_EVENTS)

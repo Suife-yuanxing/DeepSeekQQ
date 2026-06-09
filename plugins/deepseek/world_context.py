@@ -1,10 +1,12 @@
 """现实世界感知模块（Phase 6）。
 
-接入和风天气 API，为猫娘提供：
+接入 Open-Meteo 免费天气 API，为猫娘提供：
 - 实时天气信息
 - 时间感知（早晨/午后/傍晚/深夜）
 - 季节信息
 - 天气相关生活建议
+
+Open-Meteo: 完全免费，无需 API Key，无需注册。
 """
 import re
 import time
@@ -12,12 +14,12 @@ from dataclasses import dataclass
 from typing import Any
 from typing import Dict
 from typing import Optional
+from typing import Tuple
 
 import aiohttp
 from nonebot import logger
 
 from .api import get_http_session
-from .config import WEATHER_API_KEY
 from .config import WEATHER_CACHE_TTL
 from .config import WEATHER_CITY
 
@@ -59,73 +61,109 @@ def _set_cache(city: str, data: WeatherInfo):
 
 
 # ============================================================
-# 和风天气 API
+# Open-Meteo API（免费，无需 Key）
 # ============================================================
 
-# 和风天气 API（使用标准端点，与 geoapi 一致认证方式）
-_QWEATHER_GEO_URL = "https://geoapi.qweather.com/v2/city/lookup"
-_QWEATHER_NOW_URL = "https://api.qweather.com/v7/weather/now"
-_QWEATHER_AIR_URL = "https://api.qweather.com/v7/air/now"
+_GEOCODING_URL = "https://geocoding-api.open-meteo.com/v1/search"
+_WEATHER_URL = "https://api.open-meteo.com/v1/forecast"
+_AIR_QUALITY_URL = "https://air-quality-api.open-meteo.com/v1/air-quality"
 
-# 常用城市 ID 映射（跳过 geo 查询，直接用 ID）
-_CITY_ID_MAP = {
-    "上海": "101020100", "北京": "101010100", "广州": "101280101",
-    "深圳": "101280601", "杭州": "101210101", "成都": "101270101",
-    "武汉": "101200101", "南京": "101190101", "重庆": "101040100",
-    "西安": "101110101", "苏州": "101190401", "天津": "101030100",
+# 城市→坐标本地缓存（避免每次都 geocoding）
+_CITY_COORD_CACHE: Dict[str, Tuple[float, float]] = {
+    "上海": (31.23, 121.47), "北京": (39.91, 116.40),
+    "广州": (23.13, 113.26), "深圳": (22.54, 114.06),
+    "杭州": (30.29, 120.15), "成都": (30.57, 104.07),
+    "武汉": (30.59, 114.31), "南京": (32.06, 118.80),
+    "重庆": (29.53, 106.50), "西安": (34.26, 108.94),
+    "苏州": (31.30, 120.62), "天津": (39.13, 117.18),
 }
 
+# WMO Weather Code → 中文天气描述
+# 确保 condition 文本能被 behavior_engine._WEATHER_BEHAVIORS 的 trigger 匹配
+_WMO_CODE_MAP: Dict[Any, str] = {
+    0: "晴天",
+    (1, 2, 3): "多云",
+    (45, 48): "雾霾",
+    (51, 53, 55): "小雨",
+    (56, 57): "冻雨",
+    (61, 63, 65): "中雨",
+    (66, 67): "暴雨",
+    (71, 73, 75): "小雪",
+    77: "大雪",
+    (80, 81, 82): "阵雨",
+    (85, 86): "阵雪",
+    (95, 96, 99): "雷阵雨",
+}
 
-async def _qweather_get(url: str, params: dict, timeout_sec: int = 10):
-    """单次 QWeather HTTP GET 调用（供熔断器包装）。
+# 风向角度→中文
+_WIND_DIRS = [
+    (0, "北"), (45, "东北"), (90, "东"), (135, "东南"),
+    (180, "南"), (225, "西南"), (270, "西"), (315, "西北"), (360, "北"),
+]
+
+
+def _wmo_to_condition(code: int) -> str:
+    """将 WMO 天气码转为中文描述。"""
+    for key, val in _WMO_CODE_MAP.items():
+        if isinstance(key, tuple):
+            if code in key:
+                return val
+        elif key == code:
+            return val
+    return f"未知天气(code={code})"
+
+
+def _wind_deg_to_dir(deg: float) -> str:
+    """风向角度→中文风向。"""
+    closest = min(_WIND_DIRS, key=lambda d: abs(d[0] - deg))
+    return closest[1]
+
+
+async def _openmeteo_get(url: str, params: dict, timeout_sec: int = 10):
+    """单次 Open-Meteo HTTP GET 调用。
 
     Returns:
-        (status_code, json_data) 或 None（失败时）
+        dict 或 None（失败时）
     """
     session = await get_http_session()
-    async with session.get(url, params=params, timeout=aiohttp.ClientTimeout(total=timeout_sec)) as resp:
-        if resp.status != 200:
-            return None
-        data = await resp.json()
-        return (resp.status, data)
-
-
-async def _lookup_city(city_name: str) -> Optional[str]:
-    """查询城市 ID。优先使用本地映射，fallback 到 API。"""
-    # 优先使用本地映射
-    if city_name in _CITY_ID_MAP:
-        return _CITY_ID_MAP[city_name]
-
-    # fallback: API 查询
     try:
-        from .circuit_breaker import get_breaker
-        breaker = get_breaker("qweather")
-        params = {"location": city_name, "key": WEATHER_API_KEY, "number": 1}
-        result = None
-        if breaker:
-            result = await breaker.call(
-                lambda: _qweather_get(_QWEATHER_GEO_URL, params),
-                fallback=lambda: None
-            )
-        else:
-            result = await _qweather_get(_QWEATHER_GEO_URL, params)
-        if result and result[0] == 200:
-            _, data = result
-            if data.get("code") == "200" and data.get("location"):
-                return data["location"][0]["id"]
-            logger.warning(f"[天气] Geo API 返回: code={data.get('code')}")
+        async with session.get(url, params=params,
+                               timeout=aiohttp.ClientTimeout(total=timeout_sec)) as resp:
+            if resp.status != 200:
+                logger.warning(f"[天气] Open-Meteo HTTP {resp.status}: {url}")
+                return None
+            return await resp.json()
     except Exception as e:
-        logger.error(f"[天气] 城市查询失败: {e}")
+        logger.warning(f"[天气] Open-Meteo 请求失败: {e}")
+        return None
+
+
+async def _geocode_city(city_name: str) -> Optional[Tuple[float, float]]:
+    """查询城市坐标。优先本地缓存，fallback 到 Geocoding API。"""
+    # 优先本地缓存
+    if city_name in _CITY_COORD_CACHE:
+        return _CITY_COORD_CACHE[city_name]
+
+    try:
+        params = {"name": city_name, "count": 1, "language": "zh",
+                   "format": "json"}
+        data = await _openmeteo_get(_GEOCODING_URL, params)
+        if data and data.get("results"):
+            r = data["results"][0]
+            lat, lon = float(r["latitude"]), float(r["longitude"])
+            # 加入缓存
+            _CITY_COORD_CACHE[city_name] = (lat, lon)
+            logger.debug(f"[天气] Geocoding: {city_name} → ({lat:.2f}, {lon:.2f})")
+            return (lat, lon)
+    except Exception as e:
+        logger.error(f"[天气] Geocoding 失败: {e}")
     return None
 
 
 def extract_city_from_message(msg: str) -> Optional[str]:
     """从用户消息中提取城市名。"""
-    # 常见中国城市名（用于验证提取结果，避免误匹配非城市文本）
     _KNOWN_CITIES = {
-        # _CITY_ID_MAP 中的 12 个
-        *_CITY_ID_MAP.keys(),
-        # 其他常见城市
+        *_CITY_COORD_CACHE.keys(),
         "东莞", "佛山", "宁波", "厦门", "长沙", "郑州", "合肥", "济南",
         "青岛", "大连", "昆明", "福州", "贵阳", "南昌", "哈尔滨", "长春",
         "沈阳", "石家庄", "太原", "兰州", "海口", "银川", "西宁", "拉萨",
@@ -134,10 +172,7 @@ def extract_city_from_message(msg: str) -> Optional[str]:
         "三亚", "桂林", "丽江", "洛阳", "开封", "扬州", "镇江", "徐州",
         "连云港", "威海", "日照", "秦皇岛", "廊坊", "保定", "唐山",
     }
-    # 匹配 "我在XX" / "XX天气" / "XX今天" 等模式
-    # 用 [一-龥&&[^了呢吧吗个过]] 排除常见后缀字，避免"去东莞了"被匹配为"东莞了"
-    # Python re 不支持字符类差集，改用 [^\W\d_了呢吧吗个过] 等效写法
-    _C = r'[一-龥]'  # 单个汉字
+    _C = r'[一-龥]'
     patterns = [
         r'我在(' + _C + r'{2,4})',
         r'(' + _C + r'{2,4})天气',
@@ -151,18 +186,20 @@ def extract_city_from_message(msg: str) -> Optional[str]:
         match = re.search(pattern, msg)
         if match:
             city = match.group(1)
-            # 必须是已知城市名，避免"上课喵"、"教室"等误匹配
             if city in _KNOWN_CITIES:
                 return city
     return None
 
 
 async def get_weather(city: str = None) -> Optional[WeatherInfo]:
-    """获取天气信息（带缓存）。"""
-    if not WEATHER_API_KEY:
-        logger.warning("[天气] WEATHER_API_KEY 未配置")
-        return None
+    """获取天气信息（Open-Meteo，带缓存）。
 
+    Args:
+        city: 城市名。None 则用配置默认城市。
+
+    Returns:
+        WeatherInfo 或 None（获取失败时）
+    """
     if city is None:
         city = WEATHER_CITY
 
@@ -172,55 +209,58 @@ async def get_weather(city: str = None) -> Optional[WeatherInfo]:
         return cached
 
     try:
-        # 1. 查询城市 ID
-        city_id = await _lookup_city(city)
-        if not city_id:
+        # 1. 获取城市坐标
+        coord = await _geocode_city(city)
+        if not coord:
             logger.warning(f"[天气] 城市未找到: {city}")
             return None
 
-        from .circuit_breaker import get_breaker
-        breaker = get_breaker("qweather")
-        params = {"location": city_id, "key": WEATHER_API_KEY}
+        lat, lon = coord
         weather_info = WeatherInfo()
 
         # 2. 获取实时天气
-        now_result = None
-        if breaker:
-            now_result = await breaker.call(
-                lambda: _qweather_get(_QWEATHER_NOW_URL, params),
-                fallback=lambda: None
-            )
+        weather_params = {
+            "latitude": lat,
+            "longitude": lon,
+            "current": "temperature_2m,relative_humidity_2m,apparent_temperature,"
+                      "weather_code,wind_speed_10m,wind_direction_10m",
+            "timezone": "Asia/Shanghai",
+            "forecast_days": 1,
+        }
+        weather_data = await _openmeteo_get(_WEATHER_URL, weather_params)
+        if weather_data and weather_data.get("current"):
+            cur = weather_data["current"]
+            code = cur.get("weather_code", -1)
+            weather_info.condition = _wmo_to_condition(code)
+            weather_info.temp = str(round(cur.get("temperature_2m", 0)))
+            weather_info.feels_like = str(round(cur.get("apparent_temperature", 0)))
+            weather_info.humidity = str(cur.get("relative_humidity_2m", ""))
+            wind_speed = cur.get("wind_speed_10m", 0) or 0
+            weather_info.wind_scale = str(round(wind_speed / 3.6, 1)) if wind_speed else ""
+            wind_deg = cur.get("wind_direction_10m", 0) or 0
+            weather_info.wind_dir = _wind_deg_to_dir(wind_deg)
+            weather_info.text = f"{weather_info.condition} {weather_info.temp}°C"
         else:
-            now_result = await _qweather_get(_QWEATHER_NOW_URL, params)
-        if now_result and now_result[0] == 200:
-            _, data = now_result
-            if data.get("code") != "200":
-                logger.warning(f"[天气] Weather API 返回: code={data.get('code')}, msg={data.get('msg','')}")
-            if data.get("code") == "200" and data.get("now"):
-                now = data["now"]
-                weather_info.condition = now.get("text", "未知")
-                weather_info.temp = now.get("temp", "--")
-                weather_info.feels_like = now.get("feelsLike", "--")
-                weather_info.humidity = now.get("humidity", "--")
-                weather_info.wind_dir = now.get("windDir", "")
-                weather_info.wind_scale = now.get("windScale", "")
+            logger.warning(f"[天气] 天气数据为空: {city}")
+            return None
 
-        # 3. 获取空气质量
-        air_result = None
-        if breaker:
-            air_result = await breaker.call(
-                lambda: _qweather_get(_QWEATHER_AIR_URL, params),
-                fallback=lambda: None
-            )
-        else:
-            air_result = await _qweather_get(_QWEATHER_AIR_URL, params)
-        if air_result and air_result[0] == 200:
-            _, data = air_result
-            if data.get("code") == "200" and data.get("now"):
-                aqi = data["now"].get("aqi", "")
-                category = data["now"].get("category", "")
-                if category:
-                    weather_info.air_quality = f"{category}(AQI:{aqi})"
+        # 3. 获取空气质量（可选，失败不影响主流程）
+        try:
+            air_params = {
+                "latitude": lat,
+                "longitude": lon,
+                "current": "european_aqi",
+                "timezone": "Asia/Shanghai",
+            }
+            air_data = await _openmeteo_get(_AIR_QUALITY_URL, air_params)
+            if air_data and air_data.get("current"):
+                aqi = air_data["current"].get("european_aqi", "")
+                if aqi:
+                    quality_labels = {1: "优", 2: "良", 3: "轻度污染", 4: "中度污染", 5: "重度污染"}
+                    label = quality_labels.get(int(aqi), f"AQI:{aqi}")
+                    weather_info.air_quality = f"{label}(AQI:{aqi})"
+        except Exception:
+            pass  # 空气质量获取失败不影响主流程
 
         # 写入缓存
         _set_cache(city, weather_info)
@@ -282,9 +322,6 @@ def get_season() -> str:
 
 async def build_world_context_prompt(city: str = None) -> str:
     """构建世界上下文 prompt 注入文本。city 可由用户消息或记忆标签提供。"""
-    if not WEATHER_API_KEY:
-        return ""
-
     weather = await get_weather(city)
     if not weather:
         return ""
@@ -299,13 +336,15 @@ async def build_world_context_prompt(city: str = None) -> str:
     if weather.feels_like and weather.feels_like != "--":
         weather_line += f"（体感{weather.feels_like}°C）"
     if weather.wind_dir:
-        weather_line += f"，{weather.wind_dir}{weather.wind_scale}级"
+        wind_str = f"{weather.wind_dir}"
+        if weather.wind_scale:
+            wind_str += f"{weather.wind_scale}级"
+        weather_line += f"，{wind_str}"
     lines.append(weather_line)
 
     if weather.air_quality:
         lines.append(f"- 空气：{weather.air_quality}")
 
-    # 天气生活建议
     suggestion = get_weather_suggestion(weather)
     if suggestion:
         lines.append(f"- 建议：{suggestion}")
@@ -326,7 +365,6 @@ def get_weather_suggestion(weather: WeatherInfo) -> str:
 
     suggestions = []
 
-    # 温度建议
     if temp_val >= 35:
         suggestions.append("今天好热呀，记得多喝水，别中暑了~")
     elif temp_val >= 30:
@@ -336,7 +374,6 @@ def get_weather_suggestion(weather: WeatherInfo) -> str:
     elif temp_val <= 5:
         suggestions.append("今天挺冷的，注意保暖哦~")
 
-    # 天气状况建议
     condition = weather.condition
     if "雨" in condition:
         suggestions.append("外面下雨了，出门记得带伞~")
