@@ -204,10 +204,15 @@ QWEN_VL_API_KEY: str = str(getattr(cfg, "qwen_vl_api_key", "") or "").strip()
 QWEN_VL_MODEL: str = getattr(cfg, "qwen_vl_model", "qwen-vl-plus")
 
 # === MiMo TTS ===
-TTS_ENGINE: str = getattr(cfg, "tts_engine", "baidu")  # "baidu" or "mimo"
+TTS_ENGINE: str = getattr(cfg, "tts_engine", "baidu")  # "baidu" / "mimo" / "volcano"
 MIMO_API_KEY: str = str(getattr(cfg, "mimo_api_key", "") or "").strip()
 MIMO_API_BASE_URL: str = getattr(cfg, "mimo_api_base_url", "https://api.xiaomimimo.com/v1")
 MIMO_TTS_VOICE: str = getattr(cfg, "mimo_tts_voice", "冰糖")  # 冰糖/茉莉/苏打/白桦
+
+# === 火山引擎 TTS ===
+VOLCANO_APP_ID: str = str(getattr(cfg, "volcano_app_id", "") or "").strip()
+VOLCANO_ACCESS_TOKEN: str = str(getattr(cfg, "volcano_access_token", "") or "").strip()
+VOLCANO_VOICE_TYPE: str = getattr(cfg, "volcano_voice_type", "BV002_streaming")  # 默认甜美女声
 
 # === MiMo STT (语音识别) ===
 STT_ENGINE: str = getattr(cfg, "stt_engine", "mimo")  # "mimo" or "baidu"

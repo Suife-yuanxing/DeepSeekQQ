@@ -44,6 +44,8 @@ from .config import VOICE_ENABLED_PRIVATE
 from .config import VOICE_MAX_LENGTH
 from .config import VOICE_NAME
 from .config import VOICE_TRY_CONVERT
+from .config import VOLCANO_APP_ID
+from .config import VOLCANO_ACCESS_TOKEN
 
 BAIDU_TTS_TOKEN: Optional[str] = None
 BAIDU_TTS_TOKEN_EXPIRE: float = 0.0
@@ -160,31 +162,56 @@ async def _generate_baidu_voice(text: str) -> Optional[str]:
         return None
 
 
-async def generate_voice_file(text: str, emotion: Optional[str] = None) -> Optional[str]:
-    """生成语音文件，返回本地路径。支持引擎降级：MiMo 失败自动 fallback 百度。"""
-    if len(text) > VOICE_MAX_LENGTH:
-        logger.warning(f"[语音] 文本过长({len(text)}字)，跳过语音")
+async def generate_voice_file(text: str, emotion: Optional[str] = None, max_length: int = 0) -> Optional[str]:
+    """生成语音文件，返回本地路径。支持引擎降级。
+
+    引擎优先级: volcano > mimo > baidu
+    (每个引擎失败后自动 fallback 到下一个)
+
+    Args:
+        text: 要合成的文本
+        emotion: 情绪标签
+        max_length: 文本最大长度限制（0 则使用全局 VOICE_MAX_LENGTH）
+    """
+    length_limit = max_length if max_length > 0 else VOICE_MAX_LENGTH
+    if len(text) > length_limit:
+        logger.warning(f"[语音] 文本过长({len(text)}字，限制{length_limit})，跳过语音")
         return None
 
+    # 火山引擎 TTS（优先级最高）
+    if TTS_ENGINE == "volcano" and VOLCANO_APP_ID and VOLCANO_ACCESS_TOKEN:
+        from .voice_volcano import generate_volcano_voice
+        result = await generate_volcano_voice(text, emotion)
+        if result:
+            return result
+        logger.warning("[语音] 火山 TTS 失败，降级到 MiMo TTS")
+        # 继续 fallback
+
     # MiMo TTS 引擎
-    if TTS_ENGINE == "mimo":
+    if TTS_ENGINE in ("volcano", "mimo"):  # volcano fallback or mimo direct
         from .voice_mimo import generate_mimo_voice
         result = await generate_mimo_voice(text, emotion)
         if result:
             return result
-        logger.warning("[语音] MiMo TTS 失败，降级到百度 TTS")
+        if TTS_ENGINE == "mimo":
+            logger.warning("[语音] MiMo TTS 失败，降级到百度 TTS")
+            return await _generate_baidu_voice(text)
+
+    # 火山 → MiMo 都失败，降级百度
+    if TTS_ENGINE == "volcano":
+        logger.warning("[语音] 火山+MiMo 均失败，降级到百度 TTS")
         return await _generate_baidu_voice(text)
 
     # 百度 TTS 引擎（默认）
     return await _generate_baidu_voice(text)
 
-async def send_voice(bot: Bot, event: MessageEvent, text: str, emotion: str = None):
+async def send_voice(bot: Bot, event: MessageEvent, text: str, emotion: str = None, max_length: int = 0):
     is_group = isinstance(event, GroupMessageEvent)
     enabled = VOICE_ENABLED_GROUP if is_group else VOICE_ENABLED_PRIVATE
     if not enabled:
         return
 
-    voice_path = await generate_voice_file(text, emotion)
+    voice_path = await generate_voice_file(text, emotion, max_length=max_length)
     if not voice_path or not validate_file(voice_path, 100):
         logger.info("[语音] 无有效语音文件")
         return
@@ -211,8 +238,11 @@ async def send_voice(bot: Bot, event: MessageEvent, text: str, emotion: str = No
         if send_path != voice_path:
             schedule_cleanup(send_path)
 
-def should_send_voice(user_msg: str, reply_text: str, history: List[Dict[str, Any]]) -> bool:
+def should_send_voice(user_msg: str, reply_text: str, history: List[Dict[str, Any]], voice_mode: bool = False) -> bool:
     import random
+    # 语音通话模式下始终发语音
+    if voice_mode:
+        return True
     if "语音测试" in user_msg:
         return True
     if random.random() >= VOICE_CHANCE:
@@ -228,3 +258,82 @@ def should_send_voice(user_msg: str, reply_text: str, history: List[Dict[str, An
     if any(w in user_msg for w in emotional):
         return True
     return random.random() < 0.3
+
+
+# ============================================================
+# 接听/挂断语音
+# ============================================================
+
+_GREETINGS = [
+    "喂？听到我说话了吗~",
+    "嗯嗯，我在呢，说吧~",
+    "喵~接通了！今天想聊什么？",
+    "嗨嗨~电话接通！有好多话想跟你说呢~",
+    "喂喂~是我啦，怎么突然想打电话了？",
+]
+
+_FAREWELLS = [
+    "那我挂啦，下次再聊哦~",
+    "挂了哦，记得想我！",
+    "嗯嗯，拜拜~有空再打给我！",
+    "好呢~那我挂了，早点休息哦。",
+    "拜拜~挂电话啦，mua~",
+]
+
+
+async def send_greeting_voice(bot: Bot, event: MessageEvent):
+    """发送接听语音（进入语音通话模式时调用）。"""
+    import random
+    text = random.choice(_GREETINGS)
+    try:
+        voice_path = await generate_voice_file(text, emotion="开心", max_length=200)
+        if voice_path and validate_file(voice_path, 100):
+            await _send_voice_file(bot, event, voice_path)
+            logger.info(f"[语音通话] 接听语音发送成功: {text}")
+            return
+    except Exception as e:
+        logger.error(f"[语音通话] 接听语音发送失败: {e}")
+    # 语音失败 → 发文字
+    try:
+        from nonebot.adapters.onebot.v11 import Message
+        await bot.send(event, Message(f"[语音通话] {text}"))
+    except Exception:
+        pass
+
+
+async def send_farewell_voice(bot: Bot, event: MessageEvent):
+    """发送挂断语音（退出语音通话模式时调用）。"""
+    import random
+    text = random.choice(_FAREWELLS)
+    try:
+        voice_path = await generate_voice_file(text, emotion="平静", max_length=200)
+        if voice_path and validate_file(voice_path, 100):
+            await _send_voice_file(bot, event, voice_path)
+            logger.info(f"[语音通话] 挂断语音发送成功: {text}")
+            return
+    except Exception as e:
+        logger.error(f"[语音通话] 挂断语音发送失败: {e}")
+    # 语音失败 → 发文字
+    try:
+        from nonebot.adapters.onebot.v11 import Message
+        await bot.send(event, Message(f"[语音通话] {text}"))
+    except Exception:
+        pass
+
+
+async def _send_voice_file(bot: Bot, event: MessageEvent, voice_path: str):
+    """发送语音文件（不传 emotion，因为已经生成好了）。"""
+    send_path = voice_path
+    try:
+        silk_path = await _convert_mp3_to_silk(voice_path)
+        if silk_path and validate_file(silk_path, 100):
+            send_path = silk_path
+
+        async with aiofiles.open(send_path, "rb") as vf:
+            audio_bytes = await vf.read()
+            b64 = base64.b64encode(audio_bytes).decode()
+        await bot.send(event, MessageSegment.record(file=f"base64://{b64}"))
+    finally:
+        schedule_cleanup(voice_path)
+        if send_path != voice_path:
+            schedule_cleanup(send_path)

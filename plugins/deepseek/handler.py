@@ -94,8 +94,18 @@ from .utils import filter_novel_actions
 from .utils import get_session_id
 from .utils import safe_task
 from .utils import split_long_reply
+from .voice import send_farewell_voice
+from .voice import send_greeting_voice
 from .voice import send_voice
 from .voice import should_send_voice
+from .voice import generate_voice_file
+from .voice import _send_voice_file
+from ._audio_utils import validate_file
+from .voice_call import detect_voice_intent
+from .voice_call import enter_voice_mode
+from .voice_call import exit_voice_mode
+from .voice_call import is_in_voice_mode
+from .voice_call import touch_activity
 from .world_context import build_world_context_prompt
 from .world_context import extract_city_from_message
 
@@ -313,6 +323,8 @@ class ChatContext:
     _weather_info: Any = None
     # 场景路由结果（供 prompt_templates 使用）
     scenes: list = field(default_factory=list)
+    # 语音通话模式
+    voice_mode: bool = False
 
 
 # ============================================================
@@ -393,6 +405,50 @@ async def _stage_voice(ctx: ChatContext) -> Optional[str]:
             except Exception:
                 pass
             return _SKIP
+    return None
+
+
+@stage("voice_call")
+async def _stage_voice_call(ctx: ChatContext) -> Optional[str]:
+    """语音通话模式：检测进入/退出意图，切换状态。
+
+    仅私聊生效。群聊消息直接跳过。
+    """
+    if ctx.is_group:
+        return None
+
+    session_id = ctx.session_id
+    intent = detect_voice_intent(ctx.raw_msg)
+
+    if intent == "enter":
+        enter_voice_mode(session_id)
+        ctx.voice_mode = True
+        # fire-and-forget 发接听语音
+        from .utils import safe_task
+        safe_task(send_greeting_voice(ctx.bot, ctx.event))
+        if not ctx.raw_msg or len(ctx.raw_msg) <= 3:
+            # 纯触发词（如"打电话"），不发额外回复
+            return _SKIP
+        # 触发词+内容（如"打电话 你在干嘛"），去掉触发词继续处理
+        for kw in ["语音通话", "语音聊天", "接电话", "打电话", "开语音", "通话"]:
+            if kw in ctx.raw_msg:
+                ctx.raw_msg = ctx.raw_msg.replace(kw, "").strip()
+                break
+
+    elif intent == "exit":
+        if exit_voice_mode(session_id):
+            from .utils import safe_task
+            safe_task(send_farewell_voice(ctx.bot, ctx.event))
+        ctx.voice_mode = False
+        if not ctx.raw_msg or len(ctx.raw_msg) <= 3:
+            # 纯退出词（如"挂了"）
+            return _SKIP
+
+    elif is_in_voice_mode(session_id):
+        # 已在语音模式中，更新活跃时间
+        touch_activity(session_id)
+        ctx.voice_mode = True
+
     return None
 
 
@@ -1042,6 +1098,16 @@ async def _stage_llm(ctx: ChatContext) -> Optional[str]:
             scene_hint=scene_hint or None,
         )
 
+        # 语音通话模式：注入口语化 prompt
+        if ctx.voice_mode:
+            sys_prompt += (
+                "\n【语音通话模式】你现在正在和用户进行语音通话，你的回复会被转成语音说出去。\n"
+                "回复应该更像真实的口语对话：更短的句子、更自然的语气、更多的语气词。\n"
+                "想象你真的在打电话，回复就像你在电话里会说出来的话。\n"
+                "不要长篇大论，不要结构化分析，不要括号动作描写。\n"
+                "控制在2-3句话以内，像正常人打电话一样的节奏。"
+            )
+
         from .database import has_user_message_today
         greeting_type = detect_greeting_type(ctx.raw_msg, ctx.recent_memories)
 
@@ -1297,13 +1363,28 @@ async def _stage_post(ctx: ChatContext) -> Optional[str]:
         "is_night": ctx.schedule.period == "sleeping" if ctx.schedule else False,
     }
 
-    send_as_voice = should_send_voice(ctx.raw_msg, clean_text, ctx.recent_memories)
+    send_as_voice = should_send_voice(ctx.raw_msg, clean_text, ctx.recent_memories, voice_mode=ctx.voice_mode)
+    voice_max_len = 200 if ctx.voice_mode else 0
+
     # === 发消息前取消"正在输入"状态（更自然：打完字→取消输入→发送）===
     await _set_typing_status(ctx.bot, ctx.event, False)
-    if send_as_voice:
+
+    # 语音模式：优先发语音，失败才回退文字
+    if ctx.voice_mode:
+        voice_emotion = ctx.analysis.emotion.dominant if ctx.analysis and ctx.analysis.emotion.confidence >= 0.4 else None
+        voice_path = await generate_voice_file(clean_text, emotion=voice_emotion, max_length=200)
+        if voice_path and validate_file(voice_path, 100):
+            logger.info(f"[语音通话] 发送语音: {clean_text[:30]}...")
+            await _send_voice_file(ctx.bot, ctx.event, voice_path)
+            # 语音模式下纯语音，不发送文字/链接/表情包/图片
+            return
+        else:
+            logger.warning(f"[语音通话] 语音生成失败，回退到文字: {clean_text[:30]}...")
+            # 继续下面的文字发送流程
+    elif send_as_voice:
         logger.warning(f"[决策] 上下文判断发语音，跳过文字: {clean_text[:30]}...")
         voice_emotion = ctx.analysis.emotion.dominant if ctx.analysis and ctx.analysis.emotion.confidence >= 0.4 else None
-        await send_voice(ctx.bot, ctx.event, clean_text, emotion=voice_emotion)
+        await send_voice(ctx.bot, ctx.event, clean_text, emotion=voice_emotion, max_length=voice_max_len)
         if reply_urls or search_items:
             rich_msg = build_rich_message("", reply_urls, search_items, show_links=ctx.is_explicit_search)
             if rich_msg:
