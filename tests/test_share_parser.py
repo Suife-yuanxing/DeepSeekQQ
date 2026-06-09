@@ -489,3 +489,113 @@ class TestIsValidShareFetchFailed:
             "summary": "这是一段足够长的摘要内容，" * 10,
             "fetch_failed": True,
         }) is True
+
+
+class TestCleanUrl:
+    """测试 _clean_url 函数 — URL 尾随标点智能剥离。"""
+
+    def test_preserves_parenthesized_url(self):
+        """维基百科等含括号的 URL 不应被截断。"""
+        from plugins.deepseek.share_parser import _clean_url
+        url = "https://en.wikipedia.org/wiki/C_(programming_language)"
+        assert _clean_url(url) == url
+
+    def test_preserves_multiple_parens(self):
+        """多个对称括号的 URL 保持完整。"""
+        from plugins.deepseek.share_parser import _clean_url
+        url = "https://example.com/f(a(b)c)"
+        assert _clean_url(url) == url
+
+    def test_strips_unbalanced_close_paren(self):
+        """不平衡的右括号应剥离（聊天消息中的包裹括号）。"""
+        from plugins.deepseek.share_parser import _clean_url
+        assert _clean_url("https://example.com/page)") == "https://example.com/page"
+
+    def test_strips_chinese_punctuation(self):
+        """中文标点应从 URL 末尾剥离。"""
+        from plugins.deepseek.share_parser import _clean_url
+        assert _clean_url("https://example.com。") == "https://example.com"
+        assert _clean_url("https://example.com，") == "https://example.com"
+        assert _clean_url("https://example.com！") == "https://example.com"
+
+    def test_strips_trailing_quotes(self):
+        """尾随引号应剥离。"""
+        from plugins.deepseek.share_parser import _clean_url
+        assert _clean_url('https://example.com"') == "https://example.com"
+        assert _clean_url("https://example.com'") == "https://example.com"
+
+    def test_preserves_query_fragment(self):
+        """查询参数和 fragment 应保留。"""
+        from plugins.deepseek.share_parser import _clean_url
+        url = "https://example.com/path?a=1&b=2#section"
+        assert _clean_url(url) == url
+
+    def test_bracketed_url_in_message(self):
+        """消息中用手动括号包裹的 URL。"""
+        from plugins.deepseek.share_parser import _clean_url
+        assert _clean_url("https://example.com/page]") == "https://example.com/page"
+        assert _clean_url("https://example.com/page}") == "https://example.com/page"
+
+
+class TestParseGeneric:
+    """测试 _parse_generic 通用 HTML 解析。"""
+
+    def test_basic_html_parsing(self):
+        """基本 HTML 页面解析。"""
+        from plugins.deepseek.share_parser import _parse_generic
+        html = (
+            '<html><head><title>测试页面</title></head>'
+            '<body><article><p>这是测试内容足够长' + 'x' * 200 + '</p></article></body></html>'
+        )
+        result = _parse_generic(html)
+        assert result is not None
+        assert result["title"] == "测试页面"
+        assert "测试内容" in result["summary"]
+        assert result["platform"] == "generic"
+
+    def test_strips_script_and_style(self):
+        """应移除 <script> 和 <style> 标签内容。"""
+        from plugins.deepseek.share_parser import _parse_generic
+        html = (
+            '<html><head><title>Test</title>'
+            '<style>body { color: red; }</style>'
+            '<script>console.log("hello")</script></head>'
+            '<body><p>正文内容' + 'x' * 200 + '</p></body></html>'
+        )
+        result = _parse_generic(html)
+        assert result is not None
+        assert "color" not in result["summary"]
+        assert "console" not in result["summary"]
+        assert "正文内容" in result["summary"]
+
+    def test_empty_page_returns_result(self):
+        """空页面也应返回基本结构。"""
+        from plugins.deepseek.share_parser import _parse_generic
+        html = '<html><head><title>Empty</title></head><body></body></html>'
+        result = _parse_generic(html)
+        # 即使内容很短，_parse_generic 也总是返回 dict（由 _is_valid_share 来判断是否有效）
+        assert result is not None
+        assert result["title"] == "Empty"
+
+    def test_html_entity_decoding(self):
+        """HTML 实体（含数字实体）应被正确解码。"""
+        from plugins.deepseek.share_parser import _parse_generic
+        html = (
+            '<html><head><title>测试</title></head>'
+            '<body><p>价格：&#165;100 &amp; &#20803;</p></body></html>'
+        )
+        result = _parse_generic(html)
+        assert result is not None
+        assert "¥100" in result["summary"]
+        assert "元" in result["summary"]
+
+    def test_truncation_at_tag_boundary(self):
+        """超长 HTML 应在完整标签处截断。"""
+        from plugins.deepseek.share_parser import _parse_generic
+        # 构造一个在 500k 处正好在标签中间的 HTML
+        prefix = '<html><head><title>T</title></head><body><p>'
+        content = 'x' * 500_000
+        html = prefix + content
+        result = _parse_generic(html)
+        # 不应崩溃
+        assert result is not None

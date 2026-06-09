@@ -76,6 +76,20 @@ _CITY_ID_MAP = {
 }
 
 
+async def _qweather_get(url: str, params: dict, timeout_sec: int = 10):
+    """单次 QWeather HTTP GET 调用（供熔断器包装）。
+
+    Returns:
+        (status_code, json_data) 或 None（失败时）
+    """
+    session = await get_http_session()
+    async with session.get(url, params=params, timeout=aiohttp.ClientTimeout(total=timeout_sec)) as resp:
+        if resp.status != 200:
+            return None
+        data = await resp.json()
+        return (resp.status, data)
+
+
 async def _lookup_city(city_name: str) -> Optional[str]:
     """查询城市 ID。优先使用本地映射，fallback 到 API。"""
     # 优先使用本地映射
@@ -84,13 +98,19 @@ async def _lookup_city(city_name: str) -> Optional[str]:
 
     # fallback: API 查询
     try:
-        session = await get_http_session()
+        from .circuit_breaker import get_breaker
+        breaker = get_breaker("qweather")
         params = {"location": city_name, "key": WEATHER_API_KEY, "number": 1}
-        async with session.get(_QWEATHER_GEO_URL, params=params, timeout=aiohttp.ClientTimeout(total=10)) as resp:
-            if resp.status != 200:
-                logger.warning(f"[天气] Geo API 状态码: {resp.status}")
-                return None
-            data = await resp.json()
+        result = None
+        if breaker:
+            result = await breaker.call(
+                lambda: _qweather_get(_QWEATHER_GEO_URL, params),
+                fallback=lambda: None
+            )
+        else:
+            result = await _qweather_get(_QWEATHER_GEO_URL, params)
+        if result and result[0] == 200:
+            _, data = result
             if data.get("code") == "200" and data.get("location"):
                 return data["location"][0]["id"]
             logger.warning(f"[天气] Geo API 返回: code={data.get('code')}")
@@ -158,35 +178,49 @@ async def get_weather(city: str = None) -> Optional[WeatherInfo]:
             logger.warning(f"[天气] 城市未找到: {city}")
             return None
 
-        session = await get_http_session()
-
-        # 2. 获取实时天气
+        from .circuit_breaker import get_breaker
+        breaker = get_breaker("qweather")
         params = {"location": city_id, "key": WEATHER_API_KEY}
         weather_info = WeatherInfo()
 
-        async with session.get(_QWEATHER_NOW_URL, params=params, timeout=aiohttp.ClientTimeout(total=10)) as resp:
-            if resp.status == 200:
-                data = await resp.json()
-                if data.get("code") != "200":
-                    logger.warning(f"[天气] Weather API 返回: code={data.get('code')}, msg={data.get('msg','')}")
-                if data.get("code") == "200" and data.get("now"):
-                    now = data["now"]
-                    weather_info.condition = now.get("text", "未知")
-                    weather_info.temp = now.get("temp", "--")
-                    weather_info.feels_like = now.get("feelsLike", "--")
-                    weather_info.humidity = now.get("humidity", "--")
-                    weather_info.wind_dir = now.get("windDir", "")
-                    weather_info.wind_scale = now.get("windScale", "")
+        # 2. 获取实时天气
+        now_result = None
+        if breaker:
+            now_result = await breaker.call(
+                lambda: _qweather_get(_QWEATHER_NOW_URL, params),
+                fallback=lambda: None
+            )
+        else:
+            now_result = await _qweather_get(_QWEATHER_NOW_URL, params)
+        if now_result and now_result[0] == 200:
+            _, data = now_result
+            if data.get("code") != "200":
+                logger.warning(f"[天气] Weather API 返回: code={data.get('code')}, msg={data.get('msg','')}")
+            if data.get("code") == "200" and data.get("now"):
+                now = data["now"]
+                weather_info.condition = now.get("text", "未知")
+                weather_info.temp = now.get("temp", "--")
+                weather_info.feels_like = now.get("feelsLike", "--")
+                weather_info.humidity = now.get("humidity", "--")
+                weather_info.wind_dir = now.get("windDir", "")
+                weather_info.wind_scale = now.get("windScale", "")
 
         # 3. 获取空气质量
-        async with session.get(_QWEATHER_AIR_URL, params=params, timeout=aiohttp.ClientTimeout(total=10)) as resp:
-            if resp.status == 200:
-                data = await resp.json()
-                if data.get("code") == "200" and data.get("now"):
-                    aqi = data["now"].get("aqi", "")
-                    category = data["now"].get("category", "")
-                    if category:
-                        weather_info.air_quality = f"{category}(AQI:{aqi})"
+        air_result = None
+        if breaker:
+            air_result = await breaker.call(
+                lambda: _qweather_get(_QWEATHER_AIR_URL, params),
+                fallback=lambda: None
+            )
+        else:
+            air_result = await _qweather_get(_QWEATHER_AIR_URL, params)
+        if air_result and air_result[0] == 200:
+            _, data = air_result
+            if data.get("code") == "200" and data.get("now"):
+                aqi = data["now"].get("aqi", "")
+                category = data["now"].get("category", "")
+                if category:
+                    weather_info.air_quality = f"{category}(AQI:{aqi})"
 
         # 写入缓存
         _set_cache(city, weather_info)

@@ -135,6 +135,7 @@ def _build_system_prompt(
     bot_emotion_memory_hint: str = None,
     fatigue_hint: str = None,
     group_heat_desc: str = None,
+    scene_hint: str = None,  # 来自 prompt_templates 的场景提示
 ) -> str:
     time_context = _get_time_context()
 
@@ -276,10 +277,15 @@ def _build_system_prompt(
         # 尝试获取情绪表达变体
         try:
             from .emotion_deep import get_emotion_expression
+            from .emotion_deep import get_emotion_expression_hint
             affection_score = affection.get("score", 0)
             expression_variant = get_emotion_expression(dominant, affection_score)
             if expression_variant and expression_variant != "正常语气":
                 parts.append(f"【情绪表达】{expression_variant}")
+            # 多样化微情绪表达（吃醋/担心/得意/撒娇/小脾气/无聊/冷淡/犯困）
+            hint = get_emotion_expression_hint(dominant)
+            if hint:
+                parts.append(f"【微情绪】{hint}")
         except Exception:
             pass
 
@@ -298,6 +304,10 @@ def _build_system_prompt(
     # === 群聊热度感知 ===
     if group_heat_desc:
         parts.append(f"【群聊氛围】{group_heat_desc}")
+
+    # === 场景路由提示（来自 prompt_templates）===
+    if scene_hint:
+        parts.append(f"【场景指引】{scene_hint}")
 
     # === 行为模式（天气/季节/随机行为）===
     if behavior_hint:

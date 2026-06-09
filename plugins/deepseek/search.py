@@ -156,16 +156,26 @@ async def search(query: str, max_results: int = None) -> Optional[SearchResult]:
 
     try:
         from tavily import AsyncTavilyClient
-        client = AsyncTavilyClient(api_key=TAVILY_API_KEY)
 
+        async def _do_tavily_search():
+            client = AsyncTavilyClient(api_key=TAVILY_API_KEY)
+            return await client.search(
+                query=query,
+                max_results=max_results,
+                search_depth="advanced",
+                include_answer=True,
+                days=3,
+            )
+
+        from .circuit_breaker import get_breaker
+        breaker = get_breaker("tavily_search")
         logger.info(f"[搜索] 执行搜索: {query[:50]}")
-        response = await client.search(
-            query=query,
-            max_results=max_results,
-            search_depth="advanced",    # 深度搜索，结果更全更新
-            include_answer=True,
-            days=3,                     # 只要最近3天的结果
-        )
+        if breaker:
+            response = await breaker.call(_do_tavily_search, fallback=lambda: None)
+        else:
+            response = await _do_tavily_search()
+        if response is None:
+            return None
 
         results = []
         for item in response.get("results", []):

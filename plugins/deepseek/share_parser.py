@@ -5,6 +5,7 @@
 """
 import asyncio
 import hashlib
+import html as _html
 import json
 import re
 from datetime import datetime
@@ -100,7 +101,7 @@ async def fetch_url_content(url: str) -> Optional[Dict[str, str]]:
     if "douyin.com" in url:
         headers["Referer"] = "https://www.douyin.com/"
 
-    try:
+    async def _do_fetch():
         session = await get_http_session()
         async with session.get(
             url, headers=headers,
@@ -109,9 +110,17 @@ async def fetch_url_content(url: str) -> Optional[Dict[str, str]]:
             if resp.status != 200:
                 return None
             final_url = str(resp.url)
-            html = await resp.text()
-            if len(html) > 500_000:
-                html = html[:500_000]
+            html_content = await resp.text()
+            if len(html_content) > 500_000:
+                # 在最后一个完整标签处截断，避免在标签中间切断
+                truncated = html_content[:500_000]
+                last_gt = truncated.rfind('>')
+                if last_gt > 0:
+                    html = truncated[:last_gt + 1]
+                else:
+                    html = truncated
+            else:
+                html = html_content
 
             result = _parse_by_platform(html, final_url)
             if not result:
@@ -127,6 +136,12 @@ async def fetch_url_content(url: str) -> Optional[Dict[str, str]]:
                 )
             return result
 
+    try:
+        from .circuit_breaker import get_breaker
+        breaker = get_breaker("share_fetch")
+        if breaker:
+            return await breaker.call(_do_fetch, fallback=lambda: None)
+        return await _do_fetch()
     except Exception as e:
         logger.warning(f"[分享] 抓取失败 {url[:60]}: {e}")
         return None
@@ -441,7 +456,10 @@ def _parse_by_platform(html: str, url: str) -> Optional[Dict[str, str]]:
 def _parse_generic(html: str) -> Optional[Dict[str, str]]:
     """通用解析。安全清理大HTML。"""
     if len(html) > 500_000:
-        html = html[:500_000]
+        # 在最后一个完整标签处截断，避免在标签中间切断
+        truncated = html[:500_000]
+        last_gt = truncated.rfind('>')
+        html = truncated[:last_gt + 1] if last_gt > 0 else truncated
 
     text = re.sub(r'<script\b[^<]*(?:(?!</script>)<[^<]*)*</script>', '', html, flags=re.DOTALL | re.IGNORECASE)
     text = re.sub(r'<style\b[^<]*(?:(?!</style>)<[^<]*)*</style>', '', text, flags=re.DOTALL | re.IGNORECASE)
@@ -504,7 +522,9 @@ def _clean_html(html_fragment: str) -> str:
         return ""
     text = html_fragment.replace('</p>', '\n').replace('</div>', '\n').replace('</br>', '\n').replace('<br>', '\n')
     text = re.sub(r'<[^>]+>', '', text)
-    text = text.replace('&nbsp;', ' ').replace('&quot;', '"').replace('&amp;', '&').replace('&lt;', '<').replace('&gt;', '>')
+    # 使用 stdlib html.unescape 解码所有 HTML 实体（含 &#...; / &#x...; / 命名实体）
+    text = _html.unescape(text)
+    text = text.replace('\xa0', ' ')  # nbsp → 普通空格
     text = re.sub(r'\n\s*\n', '\n', text)
     text = re.sub(r'[ \t]+', ' ', text)
     text = '\n'.join(line.strip() for line in text.split('\n') if line.strip())
@@ -561,13 +581,35 @@ async def global_cleanup_shares():
 
 # ==================== 消息段处理器（从 extract_and_cache_shares 拆分） ====================
 
+def _clean_url(url: str) -> str:
+    """清理 URL 末尾的标点符号。
+
+    中文标点直接剥离；英文括号 )]} 仅在 URL 内部不平衡时才剥离，
+    避免截断维基百科等含括号的合法链接。
+
+    >>> _clean_url('https://en.wikipedia.org/wiki/C_(programming_language)。')
+    'https://en.wikipedia.org/wiki/C_(programming_language)'
+    >>> _clean_url('https://example.com/page)')
+    'https://example.com/page'
+    """
+    # 中文标点：几乎不可能出现在合法 URL 末尾
+    url = url.rstrip('。，！？；：、\'"”）】》．')
+    # 成对标点：仅剥离不平衡的 } ] )
+    for close_char, open_char in [(')', '('), (']', '['), ('}', '{')]:
+        while url.endswith(close_char) and url.count(open_char) < url.count(close_char):
+            url = url[:-1]
+    # 其他常见聊天中的尾随标点
+    url = url.rstrip('\'";')
+    return url
+
+
 async def _handle_text_segment(seg, seen_urls: set) -> List[Dict[str, Any]]:
     """处理文本消息段，提取 URL 并抓取内容。"""
     results = []
     text = seg.data.get("text", "")
-    urls = re.findall(r'https?://[^\s\]\)]+', text)
+    urls = re.findall(r'https?://\S+', text)
     for url in urls:
-        url = url.rstrip('.,;:!?)]}\'\"')
+        url = _clean_url(url)
         if url in seen_urls:
             continue
         seen_urls.add(url)

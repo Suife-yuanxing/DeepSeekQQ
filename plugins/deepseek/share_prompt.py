@@ -54,7 +54,7 @@ def _extract_keywords(text: str) -> set:
         "上", "也", "很", "到", "说", "要", "去", "你", "会", "着", "没有", "看", "好",
         "自己", "这", "那"
     }
-    words = re.findall(r'[\u4e00-\u9fa5]{2,6}', text[:500])
+    words = re.findall(r'[\u4e00-\u9fff]{2,6}', text[:500])
     return set(w for w in words if w not in stopwords and len(w) > 1)
 
 

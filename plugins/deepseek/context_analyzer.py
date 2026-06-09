@@ -53,6 +53,8 @@ class EmotionState:
     intensity: float = 0.0    # 情绪强度 0~1
     secondary: str = ""       # 复合情绪标签（如"害羞"）
     is_compound: bool = False # 是否复合情绪
+    quick_emotion: str = ""       # 规则快速判断的情绪标签
+    quick_confidence: float = 0.0 # 规则判断的置信度
 
 
 @dataclass
@@ -208,6 +210,15 @@ async def analyze_context_and_emotion(
     if len(user_msg.strip()) <= 2 and len(history) < 2:
         return AnalysisResult(context=default_context, emotion=default_emotion)
 
+    # 快速规则预检（<1ms，补充 VA 模型）
+    try:
+        from .emotion_classifier import quick_emotion_check
+        quick_label, quick_conf = quick_emotion_check(user_msg)
+        if quick_label and quick_conf >= 0.6:
+            logger.debug(f"[情绪] 快速规则命中: {quick_label} conf={quick_conf:.2f}")
+    except Exception:
+        quick_label, quick_conf = None, 0.0
+
     prompt = _build_analysis_prompt(user_msg, history)
 
     try:
@@ -272,6 +283,8 @@ async def analyze_context_and_emotion(
             intensity=intensity,
             secondary=secondary,
             is_compound=is_compound,
+            quick_emotion=quick_label or "",
+            quick_confidence=quick_conf or 0.0,
         )
 
         # Phase 3：应用环境情绪修正
@@ -489,7 +502,7 @@ _COMFORT_KEYWORDS = [
 ]
 
 
-async def update_bot_emotion(user_msg: str, user_emotion: EmotionState) -> Dict[str, Any]:
+async def update_bot_emotion(user_msg: str, user_emotion: EmotionState, user_id: str = "") -> Dict[str, Any]:
     """更新bot自己的情绪状态。
 
     逻辑：
@@ -497,7 +510,7 @@ async def update_bot_emotion(user_msg: str, user_emotion: EmotionState) -> Dict[
     2. 如果bot当前有负面情绪且用户没有安抚，情绪持续
     3. 如果用户安抚了，加速衰减负面情绪
     4. 自然衰减：负面情绪随时间减弱
-    5. 情绪传染：用户情绪影响 bot 情绪
+    5. 情绪传染：用户情绪影响 bot 情绪（user_id 用于缓冲防抖）
     6. 渐进恢复：生气→傲娇→平静
     """
     old_mood = await get_bot_mood()
@@ -513,7 +526,7 @@ async def update_bot_emotion(user_msg: str, user_emotion: EmotionState) -> Dict[
         logger.info(f"[Bot情绪] 自然消退: {old_mood['dominant']} -> 平静 (过了{int(dt)}秒)")
         result = {"dominant": "平静", "reason": "自然消退"}
         # 情绪传染：平静后也可能被用户情绪影响
-        _try_apply_contagion(result, user_emotion, old_mood)
+        _try_apply_contagion(result, user_emotion, old_mood, user_id)
         return result
 
     # 检查用户是否在安抚
@@ -565,7 +578,7 @@ async def update_bot_emotion(user_msg: str, user_emotion: EmotionState) -> Dict[
                 "recovery_progress": recovery["progress"],
             }
             logger.info(f"[Bot情绪] 恢复中: {old_mood['dominant']} -> {recovery['stage_label']} ({recovery['progress']:.0%})")
-            _try_apply_contagion(result, user_emotion, old_mood)
+            _try_apply_contagion(result, user_emotion, old_mood, user_id)
             return result
 
         # 衰减旧情绪
@@ -575,10 +588,10 @@ async def update_bot_emotion(user_msg: str, user_emotion: EmotionState) -> Dict[
         if abs(decayed_v) < 0.1:
             await update_bot_mood(0.0, 0.2, "平静", "自然消退")
             result = {"dominant": "平静", "reason": "自然消退"}
-            _try_apply_contagion(result, user_emotion, old_mood)
+            _try_apply_contagion(result, user_emotion, old_mood, user_id)
             return result
         result = {"dominant": old_mood["dominant"], "reason": old_mood.get("trigger_reason", ""), "decaying": True}
-        _try_apply_contagion(result, user_emotion, old_mood)
+        _try_apply_contagion(result, user_emotion, old_mood, user_id)
         return result
 
     # 平静状态：检查随机波动 + 情绪传染
@@ -589,14 +602,39 @@ async def update_bot_emotion(user_msg: str, user_emotion: EmotionState) -> Dict[
         return {"dominant": swing["dominant"], "reason": swing["reason"], "swing_hint": swing.get("hint", "")}
 
     result = {"dominant": "平静", "reason": ""}
-    _try_apply_contagion(result, user_emotion, old_mood)
+    _try_apply_contagion(result, user_emotion, old_mood, user_id)
     return result
 
 
-def _try_apply_contagion(result: dict, user_emotion: EmotionState, old_mood: dict):
-    """尝试应用情绪传染到结果中（修改 result 字典）。"""
+def _try_apply_contagion(result: dict, user_emotion: EmotionState, old_mood: dict, user_id: str = ""):
+    """尝试应用情绪传染到结果中（修改 result 字典）。
+
+    使用 EmotionBuffer 防止单条消息误触发传染。
+    """
     if user_emotion.confidence < 0.4:
         return
+
+    # 有 user_id 时使用带缓冲的传染（需要连续 N 条同向情绪才触发）
+    if user_id:
+        try:
+            from .emotion_classifier import apply_emotional_contagion_with_buffer
+            user_label = user_emotion.dominant
+            bot_mood_dict = {
+                "valence": old_mood.get("valence", 0),
+                "arousal": old_mood.get("arousal", 0.2),
+                "dominant": old_mood.get("dominant", "平静"),
+            }
+            buffered = apply_emotional_contagion_with_buffer(
+                user_id, user_label, bot_mood_dict,
+                old_mood.get("affection", 0),
+            )
+            if buffered:
+                result["contagion"] = buffered
+                return
+        except Exception:
+            pass  # fallback 到直接传染
+
+    # 直接传染（无 user_id 或缓冲失败时的回退行为）
     from .emotion_deep import apply_emotional_contagion
     contagion = apply_emotional_contagion(
         user_emotion.valence, user_emotion.arousal,

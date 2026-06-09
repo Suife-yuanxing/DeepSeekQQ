@@ -309,6 +309,10 @@ class ChatContext:
     # 对话疲劳感知
     fatigue_level: int = 0
     fatigue_hint: str = ""
+    # 结构化天气数据（供行为引擎使用，避免 regex 解析格式化字符串）
+    _weather_info: Any = None
+    # 场景路由结果（供 prompt_templates 使用）
+    scenes: list = field(default_factory=list)
 
 
 # ============================================================
@@ -601,6 +605,12 @@ async def _run_core_analysis(ctx: ChatContext, history_for_analysis: list):
                         break
                 if user_city:
                     break
+        # 先获取结构化天气数据（供行为引擎使用）
+        from .world_context import get_weather
+        weather_info = await get_weather(user_city)
+        if weather_info:
+            weather_info._city = user_city
+            ctx._weather_info = weather_info
         return await build_world_context_prompt(user_city)
 
     async def _do_reminders():
@@ -660,7 +670,7 @@ async def _run_batch1_queries(ctx: ChatContext):
         return None
 
     batch1_results = await asyncio.gather(
-        update_bot_emotion(ctx.raw_msg, ctx.analysis.emotion),          # [0]
+        update_bot_emotion(ctx.raw_msg, ctx.analysis.emotion, ctx.user_id),  # [0]
         get_emotion_memory_hint(ctx.user_id, ctx.raw_msg),              # [1]
         get_user_pref_hints(ctx.user_id),                               # [2]
         has_user_message_today(ctx.session_id),                         # [3]
@@ -732,19 +742,37 @@ def _run_sync_computations(ctx: ChatContext) -> str:
             ctx.analysis.context.user_intent,
         )
 
-    # 行为模式
+    # 场景路由（prompt_templates 集成）
+    try:
+        from .prompt_templates import classify_scenes
+        from .handler_helpers import is_question
+        from .handler_helpers import is_greeting
+        ctx.scenes = classify_scenes(
+            user_msg=ctx.raw_msg,
+            is_group=ctx.is_group,
+            has_shares=ctx.has_share,
+            is_question=is_question(ctx.raw_msg),
+            is_greeting=is_greeting(ctx.raw_msg),
+            is_emotional=ctx.analysis.emotion.confidence >= 0.4 and ctx.analysis.emotion.dominant != "平静",
+            has_location=bool(ctx.world_context),
+            is_simple=ctx.complexity == "simple",
+        )
+    except Exception:
+        ctx.scenes = []
+
+    # 行为模式（使用结构化天气数据，避免 regex 解析格式化字符串）
     from .behavior_engine import get_behavior_hint
     weather_condition = ""
     weather_temp = ""
-    if ctx.world_context:
-        weather_match = re.search(r'天气：(\S+)', ctx.world_context)
-        if weather_match:
-            weather_condition = weather_match.group(1)
-        temp_match = re.search(r'(\d+)°C', ctx.world_context)
-        if temp_match:
-            weather_temp = temp_match.group(1)
+    user_city = ""
+    if ctx._weather_info:
+        weather_condition = ctx._weather_info.condition or ""
+        weather_temp = ctx._weather_info.temp or ""
+        user_city = getattr(ctx._weather_info, '_city', "") or ""
     schedule_period = ctx.schedule.period if ctx.schedule else "active"
-    ctx.behavior_hint = get_behavior_hint(weather_condition, weather_temp, schedule_period, bot_mood_dominant) or ""
+    ctx.behavior_hint = get_behavior_hint(
+        weather_condition, weather_temp, schedule_period, bot_mood_dominant, city=user_city
+    ) or ""
 
     return bot_mood_dominant
 
@@ -883,6 +911,25 @@ async def _stage_music(ctx: ChatContext) -> Optional[str]:
 @stage("llm_call")
 async def _stage_llm(ctx: ChatContext) -> Optional[str]:
     shares_now = get_recent_shares(ctx.session_id)
+
+    # 场景路由 — 构建场景提示（prompt_templates 集成）
+    scene_hint = ""
+    if ctx.scenes:
+        try:
+            from .prompt_templates import get_scene_templates
+            from .prompt_templates import get_template
+            template_names = get_scene_templates(ctx.scenes)
+            extra_hints = []
+            for name in template_names:
+                if name in ("greeting_mode", "emotional_mode", "question_mode"):
+                    content = get_template(name)
+                    if content:
+                        extra_hints.append(content)
+            if extra_hints:
+                scene_hint = "\n".join(extra_hints)
+        except Exception:
+            pass
+
     analysis_keywords = [
         "怎么看", "怎么讲", "分析一下", "评价", "观点", "有什么想法",
         "说说", "讲讲", "如何理解", "什么意思", "详细介绍", "详细说说"
@@ -929,6 +976,7 @@ async def _stage_llm(ctx: ChatContext) -> Optional[str]:
             bot_emotion_memory_hint=ctx.bot_emotion_memory_hint or None,
             fatigue_hint=ctx.fatigue_hint or None,
             group_heat_desc=ctx.group_heat_description or None,
+            scene_hint=scene_hint or None,
         )
         sys_prompt += "\n回复风格：专业分析+个性点评。分析部分结构化、有深度，点评部分保持你的猫娘语气。绝对禁止括号动作描写。"
         messages = [{"role": "system", "content": sys_prompt}]
@@ -984,6 +1032,7 @@ async def _stage_llm(ctx: ChatContext) -> Optional[str]:
             bot_emotion_memory_hint=ctx.bot_emotion_memory_hint or None,
             fatigue_hint=ctx.fatigue_hint or None,
             group_heat_desc=ctx.group_heat_description or None,
+            scene_hint=scene_hint or None,
         )
 
         from .database import has_user_message_today

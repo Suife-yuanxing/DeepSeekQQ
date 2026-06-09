@@ -100,3 +100,41 @@ class CircuitBreaker:
             "fail_threshold": self.fail_threshold,
             "recovery_seconds": self.recovery_seconds,
         }
+
+
+# ============================================================
+# 全局熔断器实例（按外部服务隔离）
+# ============================================================
+
+# URL 抓取服务 — 开放 Web，单点故障不影响其他
+_share_breaker = CircuitBreaker("share_fetch", fail_threshold=5, recovery_seconds=120)
+
+# 和风天气 API — 免费版，可能有配额或 IP 限制
+_weather_breaker = CircuitBreaker("qweather", fail_threshold=3, recovery_seconds=180)
+
+# 抖音热搜 — 可能反爬或限流
+_douyin_breaker = CircuitBreaker("douyin", fail_threshold=4, recovery_seconds=300)
+
+# B站热搜 — 较稳定，阈值宽松
+_bilibili_breaker = CircuitBreaker("bilibili", fail_threshold=3, recovery_seconds=180)
+
+# Tavily 搜索 API — 付费 API，关键服务
+_tavily_breaker = CircuitBreaker("tavily_search", fail_threshold=3, recovery_seconds=90)
+
+
+def get_breaker(service: str):
+    """获取指定服务的熔断器实例（供外部模块使用）。
+
+    Args:
+        service: "share_fetch" | "qweather" | "douyin" | "bilibili" | "tavily_search"
+
+    Returns:
+        CircuitBreaker 实例，或 None（未知服务名）
+    """
+    return {
+        "share_fetch": _share_breaker,
+        "qweather": _weather_breaker,
+        "douyin": _douyin_breaker,
+        "bilibili": _bilibili_breaker,
+        "tavily_search": _tavily_breaker,
+    }.get(service)

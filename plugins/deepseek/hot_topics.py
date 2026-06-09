@@ -66,15 +66,23 @@ async def _fetch_douyin(session) -> List[HotTopic]:
     """获取抖音热搜。"""
     topics = []
     try:
-        async with session.get(_DOUYIN_API, timeout=aiohttp.ClientTimeout(total=10)) as resp:
-            if resp.status == 200:
-                data = await resp.json()
-                for item in data.get("word_list", [])[:15]:
-                    title = item.get("word", "").strip()
-                    hot = item.get("hot_value", 0)
-                    if title and len(title) > 2:
-                        topics.append(HotTopic(title=title, hot=f"{hot:,}", category="抖音"))
-                logger.info(f"[热搜] 抖音获取 {len(topics)} 条")
+        from .circuit_breaker import get_breaker
+
+        async def _do_fetch():
+            async with session.get(_DOUYIN_API, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                if resp.status == 200:
+                    return await resp.json()
+                return None
+
+        breaker = get_breaker("douyin")
+        data = await breaker.call(_do_fetch, fallback=lambda: None) if breaker else await _do_fetch()
+        if data:
+            for item in data.get("word_list", [])[:15]:
+                title = item.get("word", "").strip()
+                hot = item.get("hot_value", 0)
+                if title and len(title) > 2:
+                    topics.append(HotTopic(title=title, hot=f"{hot:,}", category="抖音"))
+            logger.info(f"[热搜] 抖音获取 {len(topics)} 条")
     except Exception as e:
         logger.warning(f"[热搜] 抖音API失败: {e}")
     return topics
@@ -84,21 +92,29 @@ async def _fetch_bilibili(session) -> List[HotTopic]:
     """获取B站热搜。"""
     topics = []
     try:
-        async with session.get(_BILIBILI_API, timeout=aiohttp.ClientTimeout(total=10)) as resp:
-            if resp.status == 200:
-                text = await resp.text()
-                if not text.startswith("{"):
-                    logger.warning("[热搜] B站返回非JSON，跳过")
-                    return topics
-                import json
-                data = json.loads(text)
-                trending = data.get("data", {}).get("trending", {})
-                for item in trending.get("list", [])[:15]:
-                    title = item.get("keyword", "").strip()
-                    hot = item.get("heat_score", 0)
-                    if title and len(title) > 2:
-                        topics.append(HotTopic(title=title, hot=f"{hot:,}", category="B站"))
-                logger.info(f"[热搜] B站获取 {len(topics)} 条")
+        from .circuit_breaker import get_breaker
+
+        async def _do_fetch():
+            async with session.get(_BILIBILI_API, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                if resp.status == 200:
+                    text = await resp.text()
+                    if not text.startswith("{"):
+                        logger.warning("[热搜] B站返回非JSON，跳过")
+                        return None
+                    import json
+                    return json.loads(text)
+                return None
+
+        breaker = get_breaker("bilibili")
+        data = await breaker.call(_do_fetch, fallback=lambda: None) if breaker else await _do_fetch()
+        if data:
+            trending = data.get("data", {}).get("trending", {})
+            for item in trending.get("list", [])[:15]:
+                title = item.get("keyword", "").strip()
+                hot = item.get("heat_score", 0)
+                if title and len(title) > 2:
+                    topics.append(HotTopic(title=title, hot=f"{hot:,}", category="B站"))
+            logger.info(f"[热搜] B站获取 {len(topics)} 条")
     except Exception as e:
         logger.warning(f"[热搜] B站API失败: {e}")
     return topics
@@ -158,6 +174,15 @@ async def fetch_trending() -> List[HotTopic]:
 
     random.shuffle(topics)
     logger.info(f"[热搜] 共获取 {len(topics)} 条（抖音/B站/小黑盒）")
+
+    # 更新行为引擎的热点缓存（供随机行为引用）
+    if topics:
+        try:
+            from .behavior_engine import update_hot_topic_cache
+            update_hot_topic_cache(topics)
+        except Exception:
+            pass
+
     return topics
 
 

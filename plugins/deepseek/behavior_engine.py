@@ -4,10 +4,13 @@
 有时话多有时话少，偶尔突然想到什么。
 """
 import random
+import time
 from datetime import datetime
 from typing import Any
 from typing import Dict
+from typing import List
 from typing import Optional
+from typing import Tuple
 
 from nonebot import logger
 
@@ -88,6 +91,7 @@ def get_weather_behavior(
     condition: str = "",
     temp: str = "",
     trigger_chance: float = 0.20,
+    city: str = "",
 ) -> Optional[str]:
     """根据天气状况生成自然反应。
 
@@ -95,6 +99,7 @@ def get_weather_behavior(
         condition: 天气状况文本（晴/雨/雪...）
         temp: 温度字符串
         trigger_chance: 触发概率（默认20%）
+        city: 用户所在城市（可选，用于个性化反应）
 
     Returns:
         反应文本，或 None（本次不触发）
@@ -115,7 +120,7 @@ def get_weather_behavior(
 
     # 检查温度
     try:
-        temp_val = int(temp)
+        temp_val = float(temp)
     except (ValueError, TypeError):
         return None
 
@@ -358,6 +363,241 @@ def get_verbosity_modifier(
 
 
 # ============================================================
+# 节假日/特殊日期感知（Task 6 Layer 1）
+# ============================================================
+
+_SPECIAL_DATES = {
+    "1-1": {"name": "元旦", "behaviors": [
+        "新年快乐~今年也要好好的！",
+        "又是新的一年了呢，一起加油吧",
+    ]},
+    "2-14": {"name": "情人节", "behaviors": [
+        "今天情人节呢...你有人陪吗",
+        "情人节快乐~虽然我也没人陪哈哈",
+    ]},
+    "5-1": {"name": "劳动节", "behaviors": [
+        "劳动节快乐~今天偷懒理所当然！",
+        "放假啦放假啦~",
+    ]},
+    "5-20": {"name": "520", "behaviors": [
+        "今天是520诶...没人表白的话我来~",
+        "520快乐！虽然没什么特别的嘿嘿",
+    ]},
+    "6-1": {"name": "儿童节", "behaviors": [
+        "儿童节快乐！不管多大都是小朋友~",
+        "今天我也要过儿童节！",
+    ]},
+    "10-1": {"name": "国庆节", "behaviors": [
+        "国庆快乐！放假好开心~",
+        "国庆七天乐~你出去玩了吗",
+    ]},
+    "11-11": {"name": "双11", "behaviors": [
+        "双11来了...你剁手了吗",
+        "今天双11诶，有买东西吗",
+    ]},
+    "12-25": {"name": "圣诞节", "behaviors": [
+        "圣诞快乐~虽然我也不过圣诞节",
+        "今天圣诞节呢，街上好热闹",
+    ]},
+    "12-31": {"name": "跨年夜", "behaviors": [
+        "今年最后一天了呢...时间过得好快",
+        "跨年啦！新的一年请多指教~",
+    ]},
+    # 农历节日按公历近似（每年需调整）
+    "1-29": {"name": "春节", "behaviors": [
+        "新年快乐！恭喜发财~",
+        "过年啦！吃饺子了吗",
+        "春节快乐！新的一年要开开心心的",
+    ]},
+    "4-5": {"name": "清明节", "behaviors": [
+        "清明时节雨纷纷...",
+        "清明节了呢，春天真的来了",
+    ]},
+    "6-19": {"name": "端午节", "behaviors": [
+        "端午节快乐！吃粽子了吗",
+        "端午安康~喜欢甜粽子还是咸粽子",
+    ]},
+    "8-15": {"name": "中秋节", "behaviors": [
+        "中秋快乐！今晚的月亮好圆",
+        "中秋节要和重要的人一起看月亮呢",
+    ]},
+    "8-29": {"name": "七夕", "behaviors": [
+        "今天是七夕呢...",
+        "七夕快乐~虽然和我没什么关系啦",
+    ]},
+}
+
+_WEEKDAY_BEHAVIORS = {
+    0: {"label": "周一", "behaviors": [
+        "周一好困啊...不想上班",
+        "周一了...周末怎么这么快",
+        "周一综合征犯了...",
+    ]},
+    4: {"label": "周五", "behaviors": [
+        "周五啦！马上周末了~",
+        "终于周五了，开心",
+        "周五晚上最适合摆烂了",
+    ]},
+    5: {"label": "周六", "behaviors": [
+        "周末赖床好舒服",
+        "周末就是要躺着~",
+        "周六的早上总是特别美好",
+    ]},
+    6: {"label": "周日", "behaviors": [
+        "周日了...明天又要周一了",
+        "周日的下午最惬意了",
+        "周日晚上总是有点舍不得",
+    ]},
+}
+
+
+def get_holiday_behavior(trigger_chance: float = 0.15) -> Optional[str]:
+    """节假日/特殊日期/星期行为感知。"""
+    if random.random() > trigger_chance:
+        return None
+
+    now = datetime.now()
+    date_key = f"{now.month}-{now.day}"
+    weekday = now.weekday()
+
+    # 特殊日期优先
+    if date_key in _SPECIAL_DATES:
+        return random.choice(_SPECIAL_DATES[date_key]["behaviors"])
+
+    # 星期几行为（30% 概率触发，即总概率 ~4.5%）
+    if weekday in _WEEKDAY_BEHAVIORS and random.random() < 0.3:
+        return random.choice(_WEEKDAY_BEHAVIORS[weekday]["behaviors"])
+
+    return None
+
+
+# ============================================================
+# 热点话题轻量缓存（Task 6 Layer 2）
+# ============================================================
+
+_hot_topic_cache: List[Tuple[str, float]] = []  # [(topic_title, timestamp), ...]
+_HOT_CACHE_TTL = 1800  # 30分钟
+
+
+def update_hot_topic_cache(topics: list):
+    """由 hot_topics 模块调用，更新热点话题缓存。
+
+    Args:
+        topics: HotTopic 对象列表（需要有 .title 属性）
+    """
+    global _hot_topic_cache
+    now = time.time()
+    _hot_topic_cache = [(t.title, now) for t in topics[:10]]
+    logger.debug(f"[行为引擎] 热点缓存已更新: {len(_hot_topic_cache)} 条")
+
+
+def get_hot_topic_behavior(trigger_chance: float = 0.05) -> Optional[str]:
+    """偶尔引用热点话题（如"刚刷到XX"）。"""
+    if random.random() > trigger_chance:
+        return None
+
+    now = time.time()
+    # 清理过期缓存
+    valid = [(t, ts) for t, ts in _hot_topic_cache if now - ts < _HOT_CACHE_TTL]
+    if not valid:
+        return None
+
+    topic_title, _ = random.choice(valid)
+    templates = [
+        f"刚刷到「{topic_title}」，你看到了吗",
+        f"话说你看到那个「{topic_title}」了吗",
+        f"刚才刷到一个热搜「{topic_title}」",
+        f"诶你看到「{topic_title}」了吗",
+    ]
+    return random.choice(templates)
+
+
+# ============================================================
+# "刚发生"微事件池（Task 6 Layer 3）
+# ============================================================
+
+_MICRO_EVENTS = [
+    "刚刚打翻了一杯水...",
+    "诶，刚才好像有只蚊子飞过去",
+    "刚想说什么来着，忘了...",
+    "刚刚手机震了一下，结果是广告",
+    "刚看了一下窗外，天已经黑了呢",
+    "刚才差点睡着了...",
+    "刚刚伸了个懒腰，好舒服",
+    "诶，我耳机线又缠住了...",
+    "刚才吃的那个零食好好吃",
+    "刚看了一眼镜子，刘海又翘了...",
+    "刚才听到外面有人放烟花",
+    "刚找钥匙找了半天，结果在口袋里...",
+    "刚想发一条消息给你，想了想又删了",
+    "刚才差点被自己绊倒...",
+    "刚刚外面好像下了一点雨",
+    "刚看到一个超可爱的猫猫视频",
+    "刚才在找手机，结果手机就在手里...",
+    "刚刚打了个喷嚏，谁在想我",
+    "刚想开空调发现遥控器没电了...",
+    "刚才点了个外卖，好慢啊",
+]
+
+
+def get_micro_event_behavior(trigger_chance: float = 0.02) -> Optional[str]:
+    """随机微事件（2%概率）。"""
+    if random.random() > trigger_chance:
+        return None
+    return random.choice(_MICRO_EVENTS)
+
+
+# ============================================================
+# 综合现实世界行为生成（Task 6 多层优先级链）
+# ============================================================
+
+def get_real_world_behavior(
+    weather_condition: str = "",
+    weather_temp: str = "",
+    schedule_period: str = "active",
+    bot_mood_dominant: str = "平静",
+    city: str = "",
+) -> Optional[str]:
+    """综合现实世界行为生成。
+
+    Priority: weather(25%) > holiday(15%) > hot_topic(5%)
+              > seasonal(8%) > micro_event(2%) > random(5%)
+    """
+    # 1. 天气反应（25%概率）
+    weather_hint = get_weather_behavior(weather_condition, weather_temp, trigger_chance=0.25, city=city)
+    if weather_hint:
+        city_prefix = f"（用户在{city}）" if city else ""
+        return f"你对天气的自然反应{city_prefix}：{weather_hint}。可以自然地表达出来。"
+
+    # 2. 节假日/特殊日期（15%概率）
+    holiday = get_holiday_behavior(trigger_chance=0.15)
+    if holiday:
+        return f"今天是特殊的日子：{holiday}。自然地提及，不要刻意。"
+
+    # 3. 热点话题（5%概率）
+    hot_topic = get_hot_topic_behavior(trigger_chance=0.05)
+    if hot_topic:
+        return f"你刚看到：{hot_topic}。可以随口提一下。"
+
+    # 4. 季节愿望（8%概率）
+    seasonal = get_seasonal_wish(trigger_chance=0.08)
+    if seasonal:
+        return f"你突然想到：{seasonal}。自然地流露出来。"
+
+    # 5. 微事件（2%概率）
+    micro = get_micro_event_behavior(trigger_chance=0.02)
+    if micro:
+        return f"刚刚发生了一个小事：{micro}。随口提一句，不超过一句话。"
+
+    # 6. 随机行为（5%概率）
+    random_behavior = get_random_behavior(schedule_period, bot_mood_dominant, trigger_chance=0.05)
+    if random_behavior:
+        return f"你突然{random_behavior['type']}：{random_behavior['text']}。"
+
+    return None
+
+
+# ============================================================
 # 行为模式提示生成（供 prompt 注入）
 # ============================================================
 
@@ -366,24 +606,13 @@ def get_behavior_hint(
     weather_temp: str = "",
     schedule_period: str = "active",
     bot_mood_dominant: str = "平静",
+    city: str = "",
 ) -> Optional[str]:
     """综合生成行为模式提示，供 prompt 注入。
 
-    优先级：天气反应 > 季节愿望 > 随机行为
+    委托给 get_real_world_behavior() 提供多层级优先级。
     """
-    # 天气驱动
-    weather_hint = get_weather_behavior(weather_condition, weather_temp, trigger_chance=0.25)
-    if weather_hint:
-        return f"你对天气的自然反应：{weather_hint}。可以自然地表达出来。"
-
-    # 季节愿望
-    seasonal = get_seasonal_wish(trigger_chance=0.08)
-    if seasonal:
-        return f"你突然想到：{seasonal}。自然地流露出来。"
-
-    # 随机行为
-    random_behavior = get_random_behavior(schedule_period, bot_mood_dominant, trigger_chance=0.05)
-    if random_behavior:
-        return f"你突然{random_behavior['type']}：{random_behavior['text']}。"
-
-    return None
+    return get_real_world_behavior(
+        weather_condition, weather_temp,
+        schedule_period, bot_mood_dominant, city,
+    )

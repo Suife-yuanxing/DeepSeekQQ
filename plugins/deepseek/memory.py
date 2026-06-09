@@ -319,10 +319,14 @@ async def _extract_memory_tags(user_id: str, session_id: str, user_msg: str, rep
             return
         await save_memory_tags(user_id, tags)
         logger.info(f"[记忆] 提取并保存了 {len(tags)} 条标签")
-        # 使向量索引缓存失效，下次检索时重建
+        # 使向量索引缓存失效，异步重建
         try:
             from .vector_search import _user_retrievers
+            from .vector_search import index_user_memories
+            was_cached = user_id in _user_retrievers
             _user_retrievers.pop(user_id, None)
+            if was_cached:
+                safe_task(index_user_memories(user_id))
         except Exception:
             pass
     except Exception as e:
