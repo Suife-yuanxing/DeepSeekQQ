@@ -212,7 +212,7 @@ MIMO_TTS_VOICE: str = getattr(cfg, "mimo_tts_voice", "冰糖")  # 冰糖/茉莉/
 # === 火山引擎 TTS ===
 VOLCANO_APP_ID: str = str(getattr(cfg, "volcano_app_id", "") or "").strip()
 VOLCANO_ACCESS_TOKEN: str = str(getattr(cfg, "volcano_access_token", "") or "").strip()
-VOLCANO_VOICE_TYPE: str = getattr(cfg, "volcano_voice_type", "BV002_streaming")  # 默认甜美女声
+VOLCANO_VOICE_TYPE: str = getattr(cfg, "volcano_voice_type", "BV407_streaming")  # 默认甜萌女声（可爱撒娇温柔）
 
 # === MiMo STT (语音识别) ===
 STT_ENGINE: str = getattr(cfg, "stt_engine", "mimo")  # "mimo" or "baidu"

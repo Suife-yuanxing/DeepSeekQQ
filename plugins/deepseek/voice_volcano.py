@@ -38,26 +38,27 @@ from .config import VOICE_DIR
 # 火山引擎 TTS API 端点
 VOLCANO_TTS_URL = "https://openspeech.bytedance.com/api/v1/tts"
 
-# 情绪 → 音色映射（猫娘人设联动）
+# 情绪 → 音色映射（猫娘人设联动 — 可爱撒娇温柔为主调）
+# BV407 = 甜萌女声（可爱/撒娇/甜），BV406 = 温柔女声（温柔/难过/担心）
 EMOTION_VOICE_MAP = {
-    "开心": "BV405_streaming",   # 情感女声-开心
-    "兴奋": "BV701_streaming",   # 活泼
-    "害羞": "BV406_streaming",   # 温柔
-    "傲娇": "BV408_streaming",   # 情感女声-傲娇
-    "平静": "BV004_streaming",   # 自然
-    "无聊": "BV004_streaming",   # 自然
-    "难过": "BV406_streaming",   # 温柔
-    "生气": "BV408_streaming",   # 傲娇
-    "担心": "BV406_streaming",   # 温柔
-    "害怕": "BV406_streaming",   # 温柔
-    "期待": "BV701_streaming",   # 活泼
-    "感动": "BV406_streaming",   # 温柔
-    "嫌弃": "BV408_streaming",   # 傲娇
-    "撒娇": "BV407_streaming",   # 情感女声-撒娇
-    "爱": "BV002_streaming",     # 甜美
-    "温柔": "BV406_streaming",   # 温柔
+    "开心": "BV407_streaming",   # 甜萌-可爱开心
+    "兴奋": "BV407_streaming",   # 甜萌-可爱兴奋
+    "害羞": "BV407_streaming",   # 甜萌-可爱害羞
+    "傲娇": "BV407_streaming",   # 甜萌-可爱傲娇
+    "平静": "BV406_streaming",   # 温柔-温柔平静
+    "无聊": "BV406_streaming",   # 温柔-温柔无聊
+    "难过": "BV406_streaming",   # 温柔-温柔难过
+    "生气": "BV407_streaming",   # 甜萌-可爱生气（不是高冷）
+    "担心": "BV406_streaming",   # 温柔-温柔担心
+    "害怕": "BV406_streaming",   # 温柔-温柔害怕
+    "期待": "BV407_streaming",   # 甜萌-可爱期待
+    "感动": "BV406_streaming",   # 温柔-温柔感动
+    "嫌弃": "BV407_streaming",   # 甜萌-可爱嫌弃
+    "撒娇": "BV407_streaming",   # 甜萌-撒娇本命
+    "爱": "BV407_streaming",     # 甜萌-可爱爱意
+    "温柔": "BV406_streaming",   # 温柔-温柔本命
 }
-DEFAULT_VOICE = "BV002_streaming"  # 默认甜美女声
+DEFAULT_VOICE = "BV407_streaming"  # 默认甜萌女声（可爱撒娇温柔主调）
 
 
 async def generate_volcano_voice(

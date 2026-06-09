@@ -46,11 +46,13 @@ class TestGenerateVolcanoVoice:
 
     def test_voice_type_override(self):
         from plugins.deepseek.voice_volcano import EMOTION_VOICE_MAP
-        # 验证覆盖逻辑：开心 → BV405_streaming
-        assert EMOTION_VOICE_MAP["开心"] == "BV405_streaming"
-        # 撒娇 → BV407_streaming
+        # 验证覆盖逻辑：开心 → BV407_streaming（可爱主调）
+        assert EMOTION_VOICE_MAP["开心"] == "BV407_streaming"
+        # 撒娇 → BV407_streaming（本命音色）
         assert EMOTION_VOICE_MAP["撒娇"] == "BV407_streaming"
+        # 温柔 → BV406_streaming（温柔专音）
+        assert EMOTION_VOICE_MAP["温柔"] == "BV406_streaming"
 
     def test_default_voice(self):
         from plugins.deepseek.voice_volcano import DEFAULT_VOICE
-        assert DEFAULT_VOICE == "BV002_streaming"
+        assert DEFAULT_VOICE == "BV407_streaming"
