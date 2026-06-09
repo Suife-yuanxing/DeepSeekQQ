@@ -166,6 +166,15 @@ class TestIsValidShare:
             "summary": "抖音视频标题", "restricted": True, "platform": "douyin",
         }) is True
 
+    def test_bilibili_video_restricted_content(self):
+        """B站视频 restricted 标识应覆盖短摘要长度校验。"""
+        from plugins.deepseek.share_parser import _is_valid_share
+        assert _is_valid_share({
+            "summary": "B站视频标题",
+            "restricted": True,
+            "platform": "bilibili",
+        }) is True
+
 
 class TestCleanHtml:
     """测试 _clean_html 清洗函数。"""
@@ -304,6 +313,37 @@ class TestParseByPlatform:
         from plugins.deepseek.share_parser import _parse_by_platform
         result = _parse_by_platform("<html></html>", "https://example.com/page")
         assert result is None
+
+    def test_bilibili_video_url(self):
+        """B站视频 URL 应路由到 bilibili 平台。"""
+        from plugins.deepseek.share_parser import _parse_by_platform
+
+        html = (
+            '<html><head>'
+            '<meta property="og:title" content="测试B站视频标题">'
+            '<meta property="og:description" content="测试B站视频描述">'
+            '</head><body></body></html>'
+        )
+        result = _parse_by_platform(html, "https://www.bilibili.com/video/BV1xx411c7ZZ")
+        assert result is not None
+        assert result["platform"] == "bilibili"
+        assert result["restricted"] is True
+        assert "B站视频" in result["summary"]
+
+    def test_bilibili_short_url(self):
+        """b23.tv 短链接应路由到 bilibili 平台。"""
+        from plugins.deepseek.share_parser import _parse_by_platform
+
+        html = (
+            '<html><head>'
+            '<meta property="og:title" content="B站短链接视频">'
+            '<meta property="og:description" content="短链接描述测试">'
+            '</head><body></body></html>'
+        )
+        result = _parse_by_platform(html, "https://b23.tv/abcd1234")
+        assert result is not None
+        assert result["platform"] == "bilibili"
+        assert result["restricted"] is True
 
 
 class TestExtractDouyinRenderData:
@@ -463,6 +503,114 @@ class TestExtractDouyinRenderData:
         assert result["platform"] == "douyin"
         assert result["fetch_failed"] is True
         assert "内容无法读取" in result["summary"]
+
+
+class TestExtractBilibiliVideoData:
+    """测试 _extract_bilibili_video_data — B站视频 INITIAL_STATE 提取。"""
+
+    def test_extracts_from_initial_state_script(self):
+        """从 window.__INITIAL_STATE__ 中提取B站视频数据。"""
+        from plugins.deepseek.share_parser import _extract_bilibili_video_data
+        import json
+
+        video_data = {
+            "videoData": {
+                "title": "【测试】B站视频标题",
+                "desc": "这是视频的详细描述",
+                "duration": 185,
+                "pic": "https://i0.hdslb.com/bfs/archive/test.jpg",
+                "pubdate": 1715000000,
+                "owner": {"name": "测试UP主"},
+                "stat": {
+                    "view": 123456,
+                    "danmaku": 5000,
+                    "reply": 2345,
+                    "favorite": 8900,
+                    "coin": 3400,
+                    "share": 1200,
+                    "like": 45678,
+                },
+            }
+        }
+        init_state = json.dumps({"videoData": video_data["videoData"]})
+        html = f'<html><head><script>window.__INITIAL_STATE__ = {init_state};</script></head><body></body></html>'
+
+        result = _extract_bilibili_video_data(html)
+        assert result is not None
+        assert result["desc"] == "【测试】B站视频标题"
+        assert result["nickname"] == "测试UP主"
+        assert result["duration"] == 185
+        assert result["cover_url"] == "https://i0.hdslb.com/bfs/archive/test.jpg"
+        assert result["view_count"] == 123456
+        assert result["digg_count"] == 45678
+        assert result["comment_count"] == 2345
+        assert result["danmaku_count"] == 5000
+        assert result["favorite_count"] == 8900
+        assert result["desc_long"] == "这是视频的详细描述"
+
+    def test_falls_back_to_og_meta(self):
+        """没有 INITIAL_STATE 时回退到 og meta 标签。"""
+        from plugins.deepseek.share_parser import _extract_bilibili_video_data
+
+        html = (
+            '<html><head>'
+            '<meta property="og:title" content="OG标题测试">'
+            '<meta property="og:description" content="OG描述测试">'
+            '<meta property="og:image" content="https://example.com/cover.jpg">'
+            '</head><body></body></html>'
+        )
+        result = _extract_bilibili_video_data(html)
+        assert result is not None
+        assert result["desc"] == "OG标题测试"
+        assert result["desc_long"] == "OG描述测试"
+        assert result["cover_url"] == "https://example.com/cover.jpg"
+
+    def test_no_data_returns_none(self):
+        """无 INITIAL_STATE 也无 og meta 时返回 None。"""
+        from plugins.deepseek.share_parser import _extract_bilibili_video_data
+
+        html = '<html><head><title>空白页</title></head><body></body></html>'
+        result = _extract_bilibili_video_data(html)
+        assert result is None
+
+    def test_parse_by_platform_with_initial_state(self):
+        """通过 _parse_by_platform 完整流程：B站视频 + INITIAL_STATE。"""
+        from plugins.deepseek.share_parser import _parse_by_platform
+        import json
+
+        video_data = {
+            "videoData": {
+                "title": "完整流程测试视频",
+                "desc": "完整流程测试描述",
+                "duration": 245,
+                "pic": "https://i0.hdslb.com/bfs/archive/flow.jpg",
+                "owner": {"name": "流程UP主"},
+                "stat": {
+                    "view": 50000,
+                    "danmaku": 1200,
+                    "reply": 800,
+                    "favorite": 3000,
+                    "coin": 1500,
+                    "share": 400,
+                    "like": 12000,
+                },
+            }
+        }
+        init_state = json.dumps({"videoData": video_data["videoData"]})
+        html = f'<html><head><script>window.__INITIAL_STATE__ = {init_state};</script></head><body></body></html>'
+
+        result = _parse_by_platform(html, "https://www.bilibili.com/video/BV1xx411c7ZZ")
+        assert result is not None
+        assert result["platform"] == "bilibili"
+        assert result["restricted"] is True
+        assert result["title"] == "完整流程测试视频"
+        assert result["author"] == "流程UP主"
+        assert "完整流程测试视频" in result["summary"]
+        assert "50000播放" in result["summary"]
+        assert "12000点赞" in result["summary"]
+        assert "1200弹幕" in result["summary"]
+        assert "完整流程测试描述" in result["summary"]
+        assert result.get("fetch_failed") is None
 
 
 class TestIsValidShareFetchFailed:

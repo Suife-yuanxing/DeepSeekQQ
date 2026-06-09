@@ -420,7 +420,13 @@ async def _stage_share_only(ctx: ChatContext) -> Optional[str]:
         # 图片分享走LLM回复流程，不在此阶段跳过
         if last_share and last_share.get("type") == "图片":
             return None
-        if not ctx.is_group or ctx.event.is_tome() or random.random() < 0.3:
+        # 视频平台分享（抖音/B站）：群聊中也总是回复，让bot主动分析视频
+        is_video_share = (
+            last_share and last_share.get("restricted")
+            and last_share.get("platform") in ("douyin", "bilibili")
+            and last_share.get("type") == "网页"
+        )
+        if is_video_share or not ctx.is_group or ctx.event.is_tome() or random.random() < 0.3:
             if last_share and last_share.get("type") == "表情":
                 await _handle_emoji_share(ctx, last_share)
             else:
@@ -1465,11 +1471,26 @@ async def _handle_link_share(ctx: ChatContext):
         share_desc = "用户发了一个链接，没有其他文字。"
 
     # 构建系统提示
-    share_sys = (
-        "你是一只猫娘，正在QQ上和人聊天。用户给你发了一个链接/分享，没有说其他话。"
-        "用你的性格（猫系、会调侃、嘴硬、偶尔撒娇、有点小好色）回复1句话，表示你看到了。"
-        "口语化、短句、像发QQ消息。不要加括号动作。只输出回复内容。"
+    # 判断是否为视频平台分享（需主动讨论而非仅确认）
+    is_video_share = (
+        last_share and last_share.get("restricted")
+        and last_share.get("platform") in ("douyin", "bilibili")
     )
+
+    if is_video_share:
+        share_sys = (
+            "你是一只猫娘，正在QQ上和人聊天。用户给你发了一个视频分享，没有说其他话。"
+            "用你的性格（猫系、会调侃、嘴硬、偶尔撒娇、有点小好色）回复1-3句话，"
+            "主动评论/吐槽/讨论这个视频的内容（基于标题和描述）。"
+            "不要只说「看到了」「收到」「让我看看」这种废话，要说点有内容的。"
+            "口语化、短句、像发QQ消息。不要加括号动作。只输出回复内容。"
+        )
+    else:
+        share_sys = (
+            "你是一只猫娘，正在QQ上和人聊天。用户给你发了一个链接/分享，没有说其他话。"
+            "用你的性格（猫系、会调侃、嘴硬、偶尔撒娇、有点小好色）回复1句话，表示你看到了。"
+            "口语化、短句、像发QQ消息。不要加括号动作。只输出回复内容。"
+        )
 
     # 如果内容无法读取，添加反编造规则
     if fetch_failed:
