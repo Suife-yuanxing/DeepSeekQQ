@@ -172,8 +172,11 @@ async def on_start():
 
     # 追问系统：每2分钟检查超时未回复的会话
     async def _follow_up_check():
+        try:
+            bot = nonebot.get_bot()
+        except ValueError:
+            return  # bot 尚未连接，跳过本轮检查
         from .follow_up import check_follow_ups
-        bot = nonebot.get_bot()
         await check_follow_ups(bot)
     loop_manager.register("追问检查", _follow_up_check, 120)
 
