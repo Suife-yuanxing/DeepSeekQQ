@@ -16,19 +16,16 @@ class TestVolcanoEmotionVoiceMap:
     def test_known_emotions_have_voice(self):
         from plugins.deepseek.voice_volcano import EMOTION_VOICE_MAP
         known = ["开心", "难过", "生气", "撒娇", "担心", "期待", "感动", "嫌弃", "害羞", "傲娇", "爱"]
+        BIGTTS_VOICE = "zh_female_jiaochuannv_uranus_bigtts"
         for emo in known:
             assert emo in EMOTION_VOICE_MAP, f"情绪 '{emo}' 应有音色映射"
-            assert EMOTION_VOICE_MAP[emo].endswith("_streaming"), f"音色 '{EMOTION_VOICE_MAP[emo]}' 应以 _streaming 结尾"
+            assert EMOTION_VOICE_MAP[emo] == BIGTTS_VOICE, f"音色 '{EMOTION_VOICE_MAP[emo]}' 应为大模型娇喘女声"
 
-    def test_all_voices_are_valid(self):
+    def test_all_voices_are_bigtts(self):
         from plugins.deepseek.voice_volcano import EMOTION_VOICE_MAP
-        valid_voices = {
-            "BV001_streaming", "BV002_streaming", "BV004_streaming",
-            "BV405_streaming", "BV406_streaming", "BV407_streaming",
-            "BV408_streaming", "BV700_streaming", "BV701_streaming",
-        }
+        BIGTTS_VOICE = "zh_female_jiaochuannv_uranus_bigtts"
         for emo, voice in EMOTION_VOICE_MAP.items():
-            assert voice in valid_voices, f"'{emo}' 的音色 '{voice}' 不是有效的 BV*_streaming 音色"
+            assert voice == BIGTTS_VOICE, f"'{emo}' 的音色应为大模型娇喘女声，实际: {voice}"
 
 
 class TestGenerateVolcanoVoice:
@@ -46,13 +43,12 @@ class TestGenerateVolcanoVoice:
 
     def test_voice_type_override(self):
         from plugins.deepseek.voice_volcano import EMOTION_VOICE_MAP
-        # 验证覆盖逻辑：开心 → BV407_streaming（可爱主调）
-        assert EMOTION_VOICE_MAP["开心"] == "BV407_streaming"
-        # 撒娇 → BV407_streaming（本命音色）
-        assert EMOTION_VOICE_MAP["撒娇"] == "BV407_streaming"
-        # 温柔 → BV406_streaming（温柔专音）
-        assert EMOTION_VOICE_MAP["温柔"] == "BV406_streaming"
+        BIGTTS = "zh_female_jiaochuannv_uranus_bigtts"
+        # 所有情绪统一使用大模型娇喘女声
+        assert EMOTION_VOICE_MAP["开心"] == BIGTTS
+        assert EMOTION_VOICE_MAP["撒娇"] == BIGTTS
+        assert EMOTION_VOICE_MAP["温柔"] == BIGTTS
 
     def test_default_voice(self):
         from plugins.deepseek.voice_volcano import DEFAULT_VOICE
-        assert DEFAULT_VOICE == "BV407_streaming"
+        assert DEFAULT_VOICE == "zh_female_jiaochuannv_uranus_bigtts"

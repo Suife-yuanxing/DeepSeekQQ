@@ -38,27 +38,26 @@ from .config import VOICE_DIR
 # 火山引擎 TTS API 端点
 VOLCANO_TTS_URL = "https://openspeech.bytedance.com/api/v1/tts"
 
-# 情绪 → 音色映射（猫娘人设联动 — 可爱撒娇温柔为主调）
-# BV407 = 甜萌女声（可爱/撒娇/甜），BV406 = 温柔女声（温柔/难过/担心）
+# 情绪 → 音色映射（猫娘人设联动 — 娇喘女声大模型音色为主调）
 EMOTION_VOICE_MAP = {
-    "开心": "BV407_streaming",   # 甜萌-可爱开心
-    "兴奋": "BV407_streaming",   # 甜萌-可爱兴奋
-    "害羞": "BV407_streaming",   # 甜萌-可爱害羞
-    "傲娇": "BV407_streaming",   # 甜萌-可爱傲娇
-    "平静": "BV406_streaming",   # 温柔-温柔平静
-    "无聊": "BV406_streaming",   # 温柔-温柔无聊
-    "难过": "BV406_streaming",   # 温柔-温柔难过
-    "生气": "BV407_streaming",   # 甜萌-可爱生气（不是高冷）
-    "担心": "BV406_streaming",   # 温柔-温柔担心
-    "害怕": "BV406_streaming",   # 温柔-温柔害怕
-    "期待": "BV407_streaming",   # 甜萌-可爱期待
-    "感动": "BV406_streaming",   # 温柔-温柔感动
-    "嫌弃": "BV407_streaming",   # 甜萌-可爱嫌弃
-    "撒娇": "BV407_streaming",   # 甜萌-撒娇本命
-    "爱": "BV407_streaming",     # 甜萌-可爱爱意
-    "温柔": "BV406_streaming",   # 温柔-温柔本命
+    "开心": "zh_female_jiaochuannv_uranus_bigtts",
+    "兴奋": "zh_female_jiaochuannv_uranus_bigtts",
+    "害羞": "zh_female_jiaochuannv_uranus_bigtts",
+    "傲娇": "zh_female_jiaochuannv_uranus_bigtts",
+    "平静": "zh_female_jiaochuannv_uranus_bigtts",
+    "无聊": "zh_female_jiaochuannv_uranus_bigtts",
+    "难过": "zh_female_jiaochuannv_uranus_bigtts",
+    "生气": "zh_female_jiaochuannv_uranus_bigtts",
+    "担心": "zh_female_jiaochuannv_uranus_bigtts",
+    "害怕": "zh_female_jiaochuannv_uranus_bigtts",
+    "期待": "zh_female_jiaochuannv_uranus_bigtts",
+    "感动": "zh_female_jiaochuannv_uranus_bigtts",
+    "嫌弃": "zh_female_jiaochuannv_uranus_bigtts",
+    "撒娇": "zh_female_jiaochuannv_uranus_bigtts",
+    "爱": "zh_female_jiaochuannv_uranus_bigtts",
+    "温柔": "zh_female_jiaochuannv_uranus_bigtts",
 }
-DEFAULT_VOICE = "BV407_streaming"  # 默认甜萌女声（可爱撒娇温柔主调）
+DEFAULT_VOICE = "zh_female_jiaochuannv_uranus_bigtts"  # 娇喘女声-大模型
 
 
 async def generate_volcano_voice(
