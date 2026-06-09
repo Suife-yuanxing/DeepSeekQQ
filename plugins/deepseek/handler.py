@@ -587,7 +587,8 @@ async def _run_full_analysis(ctx: ChatContext, history_for_analysis: list):
 async def _run_core_analysis(ctx: ChatContext, history_for_analysis: list):
     """第一批并行：分析 + 搜索 + 天气 + 提醒。"""
     async def _do_analysis():
-        return await analyze_context_and_emotion(ctx.raw_msg, history_for_analysis, ctx.user_id)
+        current_shares = get_recent_shares(ctx.session_id) if ctx.has_share else None
+        return await analyze_context_and_emotion(ctx.raw_msg, history_for_analysis, ctx.user_id, current_shares)
 
     async def _do_search():
         search_decision = should_search(ctx.raw_msg)

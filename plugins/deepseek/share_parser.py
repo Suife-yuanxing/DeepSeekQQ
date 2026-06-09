@@ -50,14 +50,18 @@ def _is_valid_share(s: Dict[str, Any]) -> bool:
 
     校验逻辑：
     1. 无摘要 → 无效
-    2. needs_paste / 小黑盒 → 有效（虽然抓不到内容，但有标题等基本信息）
-    3. restricted → 有效（受限平台，有标题/描述即可）
-    4. 摘要 < 80 字符 → 无效（内容太短，解析失败）
-    5. 包含无效标记词 → 无效（只抓到了页面框架而非正文）
+    2. 图片类型 → 有效（视觉识别结果，不管长短）
+    3. needs_paste / 小黑盒 → 有效（虽然抓不到内容，但有标题等基本信息）
+    4. restricted → 有效（受限平台，有标题/描述即可）
+    5. 摘要 < 80 字符 → 无效（内容太短，解析失败）
+    6. 包含无效标记词 → 无效（只抓到了页面框架而非正文）
     """
     summary = s.get("summary", "")
     if not summary:
         return False
+    # 小黑盒等需要用户粘贴正文的平台：即使抓不到内容也算有效
+    if s.get("type") == "图片":
+        return True
     # 小黑盒等需要用户粘贴正文的平台：即使抓不到内容也算有效
     if s.get("needs_paste") or s.get("platform") == "小黑盒":
         return True

@@ -139,7 +139,7 @@ def apply_environmental_modifiers(emotion: 'EmotionState') -> 'EmotionState':
 # 核心分析函数
 # ============================================================
 
-def _build_analysis_prompt(user_msg: str, history: List[Dict[str, Any]]) -> str:
+def _build_analysis_prompt(user_msg: str, history: List[Dict[str, Any]], shares: Optional[List[Dict[str, Any]]] = None) -> str:
     """构建合并分析 prompt"""
     # 取最近3条消息作为上下文
     recent = history[-6:] if len(history) > 6 else history
@@ -148,10 +148,29 @@ def _build_analysis_prompt(user_msg: str, history: List[Dict[str, Any]]) -> str:
         for m in recent
     ])
 
+    # 当前消息中的分享/图片信息（帮助指代消解）
+    current_context = ""
+    if shares:
+        from .vision import extract_vision_text
+        image_shares = [s for s in shares if s.get("type") == "图片"]
+        link_shares = [s for s in shares if s.get("type") in ("网页", "链接")]
+        if image_shares:
+            vision_text = extract_vision_text(image_shares[-1].get("summary", ""))
+            if vision_text:
+                current_context += f"\n【用户本条消息附带的图片内容】{vision_text[:200]}"
+            else:
+                current_context += "\n【用户本条消息附带了一张图片】"
+        if link_shares:
+            for ls in link_shares[-2:]:
+                src = ls.get("source", "")
+                summary = ls.get("summary", "")
+                if summary:
+                    current_context += f"\n【用户本条消息附带的链接】{src}: {summary[:200]}"
+
     return f"""分析以下对话，同时返回上下文理解和情绪判断。
 
 【最近对话】
-{history_text}
+{history_text}{current_context}
 
 【用户最新消息】
 {user_msg}
@@ -163,7 +182,7 @@ def _build_analysis_prompt(user_msg: str, history: List[Dict[str, Any]]) -> str:
     "is_continuation": true/false,
     "topic_shift": 0.0-1.0,
     "topic": "当前话题简述（10字内）",
-    "reference": "如果用户消息有指代词(它/那个/这个/他/她)，解析出指代对象，否则留空",
+    "reference": "如果用户消息有指代词(它/那个/这个/他/她)，解析出指代对象，否则留空。注意：如果用户本条消息附带了图片，指代词很可能是指图片中的内容",
     "intent": "闲聊/提问/分享/指令/情绪表达"
   }},
   "emotion": {{
@@ -196,8 +215,15 @@ async def analyze_context_and_emotion(
     user_msg: str,
     history: List[Dict[str, Any]],
     user_id: str,
+    shares: Optional[List[Dict[str, Any]]] = None,
 ) -> AnalysisResult:
     """一次 API 调用完成上下文分析 + 情绪分析。
+
+    Args:
+        user_msg: 用户消息文本
+        history: 对话历史
+        user_id: 用户ID
+        shares: 当前消息中的分享/图片（用于指代消解）
 
     Returns:
         AnalysisResult 包含 ContextAnalysis 和 EmotionState
@@ -219,7 +245,7 @@ async def analyze_context_and_emotion(
     except Exception:
         quick_label, quick_conf = None, 0.0
 
-    prompt = _build_analysis_prompt(user_msg, history)
+    prompt = _build_analysis_prompt(user_msg, history, shares)
 
     try:
         messages = [
