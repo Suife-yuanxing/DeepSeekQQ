@@ -9,24 +9,28 @@ API 格式（OpenAI 兼容）:
 预置音色: 冰糖(活泼少女) / 茉莉(知性女声) / 苏打(阳光少年) / 白桦(成熟男声)
 风格标签: 开心/害羞/傲娇/撒娇/慵懒/难过/生气 等
 """
-import os
-import binascii
-import base64
 import asyncio
+import base64
+import binascii
+import os
 from datetime import datetime
 from typing import Optional
 
-import aiohttp
 import aiofiles
-
+import aiohttp
 from nonebot import logger
 
+from ._audio_utils import ensure_dir
+from ._audio_utils import make_audio_path
+from ._audio_utils import safe_remove
+from ._audio_utils import validate_file
+from ._audio_utils import write_audio_file
 from .api import get_http_session
-from .config import (
-    MIMO_API_KEY, MIMO_API_BASE_URL, MIMO_TTS_VOICE,
-    VOICE_MAX_LENGTH, VOICE_DIR,
-)
-from ._audio_utils import ensure_dir, safe_remove, validate_file, write_audio_file, make_audio_path
+from .config import MIMO_API_BASE_URL
+from .config import MIMO_API_KEY
+from .config import MIMO_TTS_VOICE
+from .config import VOICE_DIR
+from .config import VOICE_MAX_LENGTH
 
 # 默认风格（无情绪时使用）
 DEFAULT_STYLE = "温柔甜美，自然可爱"

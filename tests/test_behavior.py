@@ -172,11 +172,11 @@ class TestVerbosityModifier:
         assert mod > 1.0
 
     def test_weekend_bonus(self):
-        """周末应有额外活跃度"""
+        """周末应有额外活跃度（多次采样消除随机波动）"""
         from plugins.deepseek.behavior_engine import get_verbosity_modifier
-        weekday_mod = get_verbosity_modifier(is_weekend=False)
-        weekend_mod = get_verbosity_modifier(is_weekend=True)
-        assert weekend_mod >= weekday_mod
+        weekday_avg = sum(get_verbosity_modifier(is_weekend=False) for _ in range(100)) / 100
+        weekend_avg = sum(get_verbosity_modifier(is_weekend=True) for _ in range(100)) / 100
+        assert weekend_avg >= weekday_avg
 
     def test_modifier_in_range(self):
         """修正系数应在 0.4~1.5 范围内"""

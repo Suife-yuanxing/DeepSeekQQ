@@ -5,11 +5,13 @@
 """
 import random
 import time
-from typing import Optional, Dict, Any, List
 from datetime import datetime
+from typing import Any
+from typing import Dict
+from typing import List
+from typing import Optional
 
 from nonebot import logger
-
 
 # ============================================================
 # 专属昵称 — 根据关系和互动给用户起昵称

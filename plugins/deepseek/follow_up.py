@@ -3,18 +3,23 @@
 当bot发了提问/分享/调侃等消息，用户没回复时，过一段时间自然地追问。
 根据追问次数递进情绪：期待 → 好奇 → 委屈/傲娇。
 """
-import time
 import random
-from typing import Dict, Any, Optional, List
-from dataclasses import dataclass, field
+import time
+from dataclasses import dataclass
+from dataclasses import field
+from typing import Any
+from typing import Dict
+from typing import List
+from typing import Optional
 
 from nonebot import logger
-from nonebot.adapters.onebot.v11 import Bot, MessageEvent
+from nonebot.adapters.onebot.v11 import Bot
+from nonebot.adapters.onebot.v11 import MessageEvent
 
 from .api import call_deepseek_api
 from .memory import save_reply
-from .utils import get_session_id, filter_novel_actions
-
+from .utils import filter_novel_actions
+from .utils import get_session_id
 
 # ============================================================
 # 消息类型定义

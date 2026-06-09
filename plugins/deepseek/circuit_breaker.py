@@ -12,7 +12,10 @@
 import asyncio
 import inspect
 import time
-from typing import Callable, Any, Optional
+from typing import Any
+from typing import Callable
+from typing import Optional
+
 from nonebot import logger
 
 

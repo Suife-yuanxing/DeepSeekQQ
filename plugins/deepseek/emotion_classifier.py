@@ -1,8 +1,11 @@
 """情绪分级处理 — 规则粗筛 + LLM细判，降低API调用成本。"""
 import re
-from typing import Tuple, Optional, Dict, Any
-from nonebot import logger
+from typing import Any
+from typing import Dict
+from typing import Optional
+from typing import Tuple
 
+from nonebot import logger
 
 # 情绪关键词库（轻量级规则判断）
 EMOTION_KEYWORDS = {
@@ -140,12 +143,23 @@ def get_emotion_buffer(user_id: str) -> EmotionBuffer:
 
 
 def apply_emotional_contagion_with_buffer(
+    user_id: str,
     user_emotion: str,
     bot_mood: Dict[str, Any],
     affection: float
 ) -> Optional[Dict[str, float]]:
-    """带缓冲的情绪传染"""
-    buffer = get_emotion_buffer("current_user")  # 实际使用时传入真实user_id
+    """带缓冲的情绪传染。
+
+    每个用户独立缓冲区：需要同一用户连续N条同向情绪消息才触发传染，
+    避免单条消息误触发。
+
+    Args:
+        user_id: 用户唯一标识（QQ号）
+        user_emotion: 用户当前情绪标签
+        bot_mood: bot 当前情绪状态
+        affection: 好感度分数
+    """
+    buffer = get_emotion_buffer(user_id)
     buffer.add_emotion(user_emotion)
 
     should_contagion, contagion_type = buffer.should_contagion()

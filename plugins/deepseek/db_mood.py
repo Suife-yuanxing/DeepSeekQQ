@@ -1,8 +1,11 @@
 """mood 表操作 — bot 情绪、用户情绪、猫娘心情、情绪快照。"""
+import random
 import time
 from datetime import datetime
-from typing import Dict, Any, Optional, List
-import random
+from typing import Any
+from typing import Dict
+from typing import List
+from typing import Optional
 
 from .db_core import get_db
 
@@ -33,6 +36,23 @@ async def update_catgirl_mood(user_msg: str) -> Dict[str, Any]:
 
 
 # ---------- bot_mood ----------
+# 情绪自然持续时间（秒），超过后自动回归基线
+_BOT_MOOD_DURATION = {
+    "生气": 900,
+    "难过": 1800,
+    "害羞": 300,
+    "开心": 600,
+    "兴奋": 600,
+    "担心": 1200,
+    "撒娇": 600,
+    "小脾气": 600,
+    "吃醋": 600,
+    "无聊": 900,
+    "冷淡": 600,
+    "犯困": 900,
+}
+
+
 async def get_bot_mood() -> Dict[str, Any]:
     db = await get_db()
     async with db.execute(
@@ -41,14 +61,35 @@ async def get_bot_mood() -> Dict[str, Any]:
         row = await cursor.fetchone()
         if not row:
             return {"valence": 0.0, "arousal": 0.2, "dominant": "平静", "trigger_reason": "", "trigger_time": 0, "last_updated": 0}
-        return {
-            "valence": row["valence"],
-            "arousal": row["arousal"],
-            "dominant": row["dominant"],
-            "trigger_reason": row["trigger_reason"],
-            "trigger_time": row["trigger_time"],
-            "last_updated": row["last_updated"],
-        }
+
+    dominant = row["dominant"]
+    trigger_time = row["trigger_time"]
+    last_updated = row["last_updated"]
+
+    # 自然衰减：非平静状态下，超过持续时间自动回归基线
+    if dominant != "平静":
+        import time
+        now = time.time()
+        duration = _BOT_MOOD_DURATION.get(dominant, 600)
+        dt = now - max(trigger_time, last_updated)
+
+        if dt > duration:
+            # 已经过了足够久，自动恢复平静
+            await db.execute(
+                "UPDATE bot_mood SET valence=0.0, arousal=0.2, dominant='平静', trigger_reason='自然消退', trigger_time=?, last_updated=? WHERE id=1",
+                (now, now)
+            )
+            await db.commit()
+            return {"valence": 0.0, "arousal": 0.2, "dominant": "平静", "trigger_reason": "自然消退", "trigger_time": now, "last_updated": now}
+
+    return {
+        "valence": row["valence"],
+        "arousal": row["arousal"],
+        "dominant": row["dominant"],
+        "trigger_reason": row["trigger_reason"],
+        "trigger_time": row["trigger_time"],
+        "last_updated": row["last_updated"],
+    }
 
 
 async def update_bot_mood(valence: float, arousal: float, dominant: str, reason: str = ""):

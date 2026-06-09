@@ -9,12 +9,13 @@ analyze_image 返回 VisionResult 命名元组，包含:
   - description: 图片描述文本
   - source: 识别来源 ("qwen_vl" | "ollama" | "ocr" | "placeholder" | "error")
 """
-import base64
 import asyncio
+import base64
 import logging
 from collections import OrderedDict
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Optional
+from typing import Tuple
 
 import aiohttp
 
@@ -85,7 +86,8 @@ async def analyze_image(
 
 async def _try_qwen_vl(img_b64: str, prompt: str) -> Optional[str]:
     """第1层：调用通义千问 VL API 识别图片。"""
-    from .config import QWEN_VL_API_KEY, QWEN_VL_MODEL
+    from .config import QWEN_VL_API_KEY
+    from .config import QWEN_VL_MODEL
 
     if not QWEN_VL_API_KEY:
         return None

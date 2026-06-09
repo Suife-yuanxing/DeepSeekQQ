@@ -10,10 +10,12 @@
 - 不给模板，引导 LLM 根据图片实际内容自然聊起来
 """
 import re
-from typing import Dict, Any, Optional, List
+from typing import Any
+from typing import Dict
+from typing import List
+from typing import Optional
 
 from nonebot import logger
-
 
 # ============================================================
 # 图片类型定义

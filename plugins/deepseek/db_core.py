@@ -1,7 +1,8 @@
 """数据库连接池管理。全局单连接复用，aiosqlite 线程安全。"""
 import asyncio
-import aiosqlite
 from typing import Optional
+
+import aiosqlite
 from nonebot import logger
 
 from .config import DB_PATH

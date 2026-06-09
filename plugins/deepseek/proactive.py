@@ -8,22 +8,27 @@ from datetime import datetime
 from typing import Optional
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from nonebot import logger
 from nonebot.adapters.onebot.v11 import Message as OBMessage
 
-from .config import PROACTIVE_CONFIG, MY_QQ
-from .database import (
-    get_today_proactive_count, log_proactive, get_silent_private_users,
-    get_affection, has_recent_message, get_recent_greetings,
-    has_proactive_today, get_today_proactive_count_by_scene,
-    get_bot_mood, get_last_conversation_context,
-    get_relevant_memory_tags,
-)
-from .api import call_deepseek_api
-from .memory import save_reply
-from .utils import filter_novel_actions
-from .sticker import parse_sticker_tag
 from . import hot_topics
-from nonebot import logger
+from .api import call_deepseek_api
+from .config import MY_QQ
+from .config import PROACTIVE_CONFIG
+from .database import get_affection
+from .database import get_bot_mood
+from .database import get_last_conversation_context
+from .database import get_recent_greetings
+from .database import get_relevant_memory_tags
+from .database import get_silent_private_users
+from .database import get_today_proactive_count
+from .database import get_today_proactive_count_by_scene
+from .database import has_proactive_today
+from .database import has_recent_message
+from .database import log_proactive
+from .memory import save_reply
+from .sticker import parse_sticker_tag
+from .utils import filter_novel_actions
 
 _scheduler: Optional[AsyncIOScheduler] = None
 _registered_bot_id: Optional[int] = None
@@ -233,8 +238,8 @@ async def _get_weather_alert_for_user(user_id: str) -> Optional[str]:
     返回 None 表示天气正常，不需要提醒。
     """
     try:
-        from .world_context import get_weather
         from .config import WEATHER_CITY
+        from .world_context import get_weather
 
         # 使用默认城市（后续可以扩展为从用户偏好获取）
         city = WEATHER_CITY
@@ -351,11 +356,14 @@ async def _should_send_morning(uid: str) -> dict:
     Returns:
         {"should_send": bool, "reason": str, "context": str}
     """
-    from .database import (
-        get_last_night_end_time, get_last_night_mood_summary,
-        get_last_greeting_time, has_user_message_today, has_proactive_today
-    )
-    from datetime import datetime, timedelta
+    from datetime import datetime
+    from datetime import timedelta
+
+    from .database import get_last_greeting_time
+    from .database import get_last_night_end_time
+    from .database import get_last_night_mood_summary
+    from .database import has_proactive_today
+    from .database import has_user_message_today
 
     session_id = f"private_{uid}"
 
@@ -530,7 +538,8 @@ async def _try_push_hot_topic(bot, user_id: str, ctx: dict = None) -> bool:
             topic.image_url = image_url
 
         # 构建富消息
-        from nonebot.adapters.onebot.v11 import MessageSegment, Message
+        from nonebot.adapters.onebot.v11 import Message
+        from nonebot.adapters.onebot.v11 import MessageSegment
         rich_msg = Message()
         rich_msg += MessageSegment.text(msg)
 
@@ -688,20 +697,20 @@ async def register_proactive_jobs(bot):
     bot_id = id(bot)
     if _scheduler and _registered_bot_id == bot_id:
         return
-    
+
     if _scheduler:
         try:
             _scheduler.shutdown(wait=True)
         except Exception:
             pass
-    
+
     # 使用 NoneBot 现有的事件循环，避免冲突
     try:
         import nonebot
         loop = nonebot.get_driver().loop
     except Exception:
         loop = asyncio.get_event_loop()
-    
+
     _scheduler = AsyncIOScheduler(event_loop=loop)
     _registered_bot_id = bot_id
 
@@ -746,7 +755,8 @@ async def _get_proactive_targets() -> list:
     只对好感度 >= 20（认识的人）的用户发送，最多 10 人。
     """
     try:
-        from .database import get_active_sessions, get_affection
+        from .database import get_active_sessions
+        from .database import get_affection
         active = await get_active_sessions(hours=168)  # 最近一周
         targets = []
         for sid in active:

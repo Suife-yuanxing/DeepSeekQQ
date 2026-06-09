@@ -9,8 +9,8 @@ from pathlib import Path
 from typing import Optional
 
 import requests
-from PIL import Image
 from nonebot import logger
+from PIL import Image
 
 _ocr_engine = None
 

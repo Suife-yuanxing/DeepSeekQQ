@@ -4,10 +4,17 @@
 """
 
 import asyncio
-from typing import Dict, List, Optional, Callable, Awaitable
-from dataclasses import dataclass, field
+from dataclasses import dataclass
+from dataclasses import field
+from typing import Awaitable
+from typing import Callable
+from typing import Dict
+from typing import List
+from typing import Optional
+
 from nonebot import logger
-from nonebot.adapters.onebot.v11 import Bot, MessageEvent
+from nonebot.adapters.onebot.v11 import Bot
+from nonebot.adapters.onebot.v11 import MessageEvent
 
 
 @dataclass
@@ -135,7 +142,8 @@ class MessageDebouncer:
         if not messages:
             raise ValueError("无法合并空消息列表")
 
-        from nonebot.adapters.onebot.v11 import Message, MessageSegment
+        from nonebot.adapters.onebot.v11 import Message
+        from nonebot.adapters.onebot.v11 import MessageSegment
 
         # 取最后一条作为基础
         merged = messages[-1]
@@ -160,7 +168,9 @@ class MessageDebouncer:
             parts.append(MessageSegment.text("\n".join(text_parts)))
 
         if parts:
-            merged._message = Message(parts)
+            # OneBot V11 的 get_message() 返回 self.message 字段，
+            # 直接设置 message 属性（pydantic field）而非私有 _message
+            merged.message = Message(parts)
 
         # 记录合并信息（用于日志）
         merged._debounce_merged_count = len(messages)

@@ -5,11 +5,15 @@ API 端点:
 - 歌词: GET  https://music.163.com/api/song/lyric?id=xxx&lv=1
 - 详情: GET  https://music.163.com/api/song/detail?ids=[xxx]
 """
-import re
-import aiohttp
 import logging
-from typing import Optional, Dict, List, Tuple
+import re
 from dataclasses import dataclass
+from typing import Dict
+from typing import List
+from typing import Optional
+from typing import Tuple
+
+import aiohttp
 
 logger = logging.getLogger("music_api")
 
@@ -92,15 +96,14 @@ async def search_song(keyword: str, limit: int = 5) -> List[SongInfo]:
         "offset": 0,
     }
     try:
-        async with aiohttp.ClientSession() as session:
-            async with session.post(url, data=data, headers=_HEADERS,
-                                     timeout=aiohttp.ClientTimeout(total=8)) as resp:
-                if resp.status != 200:
-                    logger.warning(f"[音乐] 搜索失败 status={resp.status}")
-                    return []
-                result = await resp.json()
-                songs = result.get("result", {}).get("songs", [])
-                return [SongInfo.from_api(s) for s in songs if s.get("id")]
+        async with aiohttp.ClientSession() as session, session.post(url, data=data, headers=_HEADERS,
+                                 timeout=aiohttp.ClientTimeout(total=8)) as resp:
+            if resp.status != 200:
+                logger.warning(f"[音乐] 搜索失败 status={resp.status}")
+                return []
+            result = await resp.json()
+            songs = result.get("result", {}).get("songs", [])
+            return [SongInfo.from_api(s) for s in songs if s.get("id")]
     except Exception as e:
         logger.error(f"[音乐] 搜索异常: {e}")
         return []
@@ -111,16 +114,15 @@ async def get_song_detail(song_id: int) -> Optional[SongInfo]:
     url = "https://music.163.com/api/song/detail"
     params = {"ids": f"[{song_id}]"}
     try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url, params=params, headers=_HEADERS,
-                                    timeout=aiohttp.ClientTimeout(total=8)) as resp:
-                if resp.status != 200:
-                    return None
-                result = await resp.json()
-                songs = result.get("songs", [])
-                if not songs:
-                    return None
-                return SongInfo.from_detail(songs[0])
+        async with aiohttp.ClientSession() as session, session.get(url, params=params, headers=_HEADERS,
+                                timeout=aiohttp.ClientTimeout(total=8)) as resp:
+            if resp.status != 200:
+                return None
+            result = await resp.json()
+            songs = result.get("songs", [])
+            if not songs:
+                return None
+            return SongInfo.from_detail(songs[0])
     except Exception as e:
         logger.error(f"[音乐] 获取详情异常: {e}")
         return None
@@ -134,16 +136,15 @@ async def get_lyrics(song_id: int) -> Optional[List[str]]:
     url = "https://music.163.com/api/song/lyric"
     params = {"id": song_id, "lv": 1, "kv": 1, "tv": -1}
     try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url, params=params, headers=_HEADERS,
-                                    timeout=aiohttp.ClientTimeout(total=8)) as resp:
-                if resp.status != 200:
-                    return None
-                result = await resp.json()
-                lrc_text = result.get("lrc", {}).get("lyric", "")
-                if not lrc_text:
-                    return None
-                return _parse_lrc(lrc_text)
+        async with aiohttp.ClientSession() as session, session.get(url, params=params, headers=_HEADERS,
+                                timeout=aiohttp.ClientTimeout(total=8)) as resp:
+            if resp.status != 200:
+                return None
+            result = await resp.json()
+            lrc_text = result.get("lrc", {}).get("lyric", "")
+            if not lrc_text:
+                return None
+            return _parse_lrc(lrc_text)
     except Exception as e:
         logger.error(f"[音乐] 获取歌词异常: {e}")
         return None

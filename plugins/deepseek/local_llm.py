@@ -5,10 +5,11 @@
 """
 import asyncio
 import json
-from typing import List, Dict, Optional
+from typing import Dict
+from typing import List
+from typing import Optional
 
 import aiohttp
-
 from nonebot import logger
 
 OLLAMA_HOST = "http://localhost:11434"

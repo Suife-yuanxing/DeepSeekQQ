@@ -3,32 +3,47 @@
 - 异步文件 IO
 - 可选 ffmpeg -> silk 转码
 """
-import os
-import shutil
 import asyncio
 import base64
+import os
+import shutil
 import urllib.parse
 from datetime import datetime
-from typing import Optional, List, Dict, Any
-import aiohttp
+from typing import Any
+from typing import Dict
+from typing import List
+from typing import Optional
+
 import aiofiles
-
-from nonebot.adapters.onebot.v11 import Bot, MessageEvent, GroupMessageEvent, MessageSegment
-
-from .config import (
-    BAIDU_TTS_AK, BAIDU_TTS_SK,
-    VOICE_ENABLED_PRIVATE, VOICE_ENABLED_GROUP,
-    VOICE_CHANCE, VOICE_MAX_LENGTH, VOICE_TRY_CONVERT, VOICE_NAME,
-    VOICE_DIR,
-    BAIDU_TTS_PER, BAIDU_TTS_SPD, BAIDU_TTS_PIT, BAIDU_TTS_VOL,
-    TTS_ENGINE,
-)
-from .api import get_http_session
-from ._audio_utils import (
-    ensure_dir, safe_remove, validate_file, write_audio_file,
-    make_audio_path, schedule_cleanup, convert_audio_with_ffmpeg,
-)
+import aiohttp
 from nonebot import logger
+from nonebot.adapters.onebot.v11 import Bot
+from nonebot.adapters.onebot.v11 import GroupMessageEvent
+from nonebot.adapters.onebot.v11 import MessageEvent
+from nonebot.adapters.onebot.v11 import MessageSegment
+
+from ._audio_utils import convert_audio_with_ffmpeg
+from ._audio_utils import ensure_dir
+from ._audio_utils import make_audio_path
+from ._audio_utils import safe_remove
+from ._audio_utils import schedule_cleanup
+from ._audio_utils import validate_file
+from ._audio_utils import write_audio_file
+from .api import get_http_session
+from .config import BAIDU_TTS_AK
+from .config import BAIDU_TTS_PER
+from .config import BAIDU_TTS_PIT
+from .config import BAIDU_TTS_SK
+from .config import BAIDU_TTS_SPD
+from .config import BAIDU_TTS_VOL
+from .config import TTS_ENGINE
+from .config import VOICE_CHANCE
+from .config import VOICE_DIR
+from .config import VOICE_ENABLED_GROUP
+from .config import VOICE_ENABLED_PRIVATE
+from .config import VOICE_MAX_LENGTH
+from .config import VOICE_NAME
+from .config import VOICE_TRY_CONVERT
 
 BAIDU_TTS_TOKEN: Optional[str] = None
 BAIDU_TTS_TOKEN_EXPIRE: float = 0.0
@@ -180,7 +195,7 @@ async def send_voice(bot: Bot, event: MessageEvent, text: str, emotion: str = No
         silk_path = await _convert_mp3_to_silk(voice_path)
         if silk_path and validate_file(silk_path, 100):
             send_path = silk_path
-            logger.info(f"[语音] 使用 silk 格式发送")
+            logger.info("[语音] 使用 silk 格式发送")
         else:
             logger.info("[语音] silk 转码不可用，使用 mp3 直发")
 

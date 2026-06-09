@@ -4,11 +4,14 @@
 使用 ffmpeg 提取 PCM 数据后分析音频特征。
 增强版：增加频谱特征和语速分析，提升情绪识别准确率。
 """
-import os
 import asyncio
-import struct
 import math
-from typing import Optional, Dict, Any, List
+import os
+import struct
+from typing import Any
+from typing import Dict
+from typing import List
+from typing import Optional
 
 from nonebot import logger
 

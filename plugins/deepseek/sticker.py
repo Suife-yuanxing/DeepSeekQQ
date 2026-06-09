@@ -7,17 +7,24 @@
 - 联网检索补充
 - 发送表情包
 """
-import os
-import re
 import json
+import os
 import random
+import re
 from pathlib import Path
-from typing import List, Tuple, Optional, Dict
+from typing import Dict
+from typing import List
+from typing import Optional
+from typing import Tuple
 
 from nonebot import logger
-from nonebot.adapters.onebot.v11 import MessageSegment, Message
+from nonebot.adapters.onebot.v11 import Message
+from nonebot.adapters.onebot.v11 import MessageSegment
 
-from .config import STICKER_DIR, STICKER_ENABLED, STICKER_KEEP_PROBABILITY, MAX_CONSECUTIVE_STICKERS
+from .config import MAX_CONSECUTIVE_STICKERS
+from .config import STICKER_DIR
+from .config import STICKER_ENABLED
+from .config import STICKER_KEEP_PROBABILITY
 
 # ============================================================
 # 标签库（支持 v1 单标签 + v2 多标签+场景）

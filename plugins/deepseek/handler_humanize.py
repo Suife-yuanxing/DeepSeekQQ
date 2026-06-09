@@ -1,8 +1,9 @@
 """拟人化处理 — 错别字纠正、改变主意、不确定表达、节奏增强、颜文字。"""
 import random
 import re
-from typing import List, Optional, Dict
-
+from typing import Dict
+from typing import List
+from typing import Optional
 
 _TYPO_PAIRS = [
     ("的", "地"), ("怎么", "这么"), ("觉得", "决得"),

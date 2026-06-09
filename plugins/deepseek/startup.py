@@ -5,31 +5,41 @@ ECC 风格改造：
 - 数据库迁移机制
 - 会话状态持久化（启停时保存/恢复）
 """
-import os
 import asyncio
+import os
 import shutil
 from pathlib import Path
 
 import nonebot
-from nonebot import get_driver, logger
 from fastapi import FastAPI
 from fastapi.responses import FileResponse
+from nonebot import get_driver
+from nonebot import logger
 
-from .config import VOICE_DIR, SERVER_HOST, SERVER_PORT, REMINDER_CHECK_INTERVAL, VOICE_TOKEN
-from .database import (
-    init_db, close_db, checkpoint_db, decay_memory_tags, prune_memory_tags,
-    save_session_state, get_active_sessions
-)
-from .migrations import run_migrations
-from .loop_manager import loop_manager
 from .api import close_http_session
-from .proactive import register_proactive_jobs, shutdown_proactive
-from .share_parser import global_cleanup_shares
-from .reminder import check_and_fire_reminders
-from .sticker_search import cleanup_old_downloads
-from .plugin_manager import load_plugins_from_dir, startup_all_plugins, shutdown_all_plugins
+from .config import REMINDER_CHECK_INTERVAL
+from .config import SERVER_HOST
+from .config import SERVER_PORT
+from .config import VOICE_DIR
+from .config import VOICE_TOKEN
+from .database import checkpoint_db
+from .database import close_db
+from .database import decay_memory_tags
+from .database import get_active_sessions
+from .database import init_db
+from .database import prune_memory_tags
+from .database import save_session_state
 from .image_gen import cleanup_old_images
-
+from .loop_manager import loop_manager
+from .migrations import run_migrations
+from .plugin_manager import load_plugins_from_dir
+from .plugin_manager import shutdown_all_plugins
+from .plugin_manager import startup_all_plugins
+from .proactive import register_proactive_jobs
+from .proactive import shutdown_proactive
+from .reminder import check_and_fire_reminders
+from .share_parser import global_cleanup_shares
+from .sticker_search import cleanup_old_downloads
 
 driver = get_driver()
 
@@ -71,7 +81,9 @@ async def on_start():
         logger.warning(f"语音文件服务挂载失败: {e}")
 
     has_ff = shutil.which("ffmpeg") is not None
-    from .config import RANDOM_REPLY_CHANCE, VOICE_ENABLED_PRIVATE, VOICE_ENABLED_GROUP
+    from .config import RANDOM_REPLY_CHANCE
+    from .config import VOICE_ENABLED_GROUP
+    from .config import VOICE_ENABLED_PRIVATE
     logger.info("✅ DeepSeek猫娘插件已启动~ 喵！")
     logger.info(f"ffmpeg 检测: {'已安装 ✅' if has_ff else '未安装 ❌ 语音可能无法发送'}")
     logger.info(f"语音开关: 私聊={VOICE_ENABLED_PRIVATE}, 群聊={VOICE_ENABLED_GROUP}")
@@ -149,6 +161,15 @@ async def on_start():
         log_performance_summary()
     loop_manager.register("性能报告", _perf_report, 3600)
 
+    # Token 统计持久化：每30分钟保存一次（防止意外崩溃丢失）
+    async def _token_persist():
+        try:
+            from .token_tracker import get_tracker
+            get_tracker().persist()
+        except Exception:
+            pass
+    loop_manager.register("Token统计持久化", _token_persist, 1800)
+
     # 追问系统：每2分钟检查超时未回复的会话
     async def _follow_up_check():
         from .follow_up import check_follow_ups
@@ -161,11 +182,12 @@ async def on_start():
 
     # === 启动 ScreenMCP Worker (手机控制) ===
     try:
-        from .config import PHONE_CONTROL_ENABLED, SCREENMCP_API_KEY
+        from .config import PHONE_CONTROL_ENABLED
+        from .config import SCREENMCP_API_KEY
         if PHONE_CONTROL_ENABLED and SCREENMCP_API_KEY:
             from .screenmcp_worker import start_worker
             await start_worker(SCREENMCP_API_KEY, 8765)
-            logger.info(f"[手机] ScreenMCP Worker 已启动，端口 8765")
+            logger.info("[手机] ScreenMCP Worker 已启动，端口 8765")
         else:
             logger.info("[手机] 手机控制未启用或未配置 API Key")
     except Exception as e:
@@ -198,6 +220,14 @@ async def _on_shutdown():
             logger.info(f"[记忆] 已保存 {len(active)} 个活跃会话状态")
     except Exception as e:
         logger.warning(f"[记忆] 会话状态保存失败: {e}")
+
+    # 持久化 Token 统计数据
+    try:
+        from .token_tracker import get_tracker
+        get_tracker().persist()
+        logger.info("[Token] 统计数据已持久化")
+    except Exception as e:
+        logger.warning(f"[Token] 统计数据持久化失败: {e}")
 
     await shutdown_all_plugins()
     await shutdown_proactive()

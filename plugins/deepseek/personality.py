@@ -6,10 +6,11 @@
 - 习惯：特定场景的固定行为
 """
 import random
-from typing import Optional, Dict, Any
+from typing import Any
+from typing import Dict
+from typing import Optional
 
 from nonebot import logger
-
 
 # ============================================================
 # 默认口头禅种子

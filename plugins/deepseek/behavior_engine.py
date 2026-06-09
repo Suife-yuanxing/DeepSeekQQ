@@ -4,11 +4,12 @@
 有时话多有时话少，偶尔突然想到什么。
 """
 import random
-from typing import Optional, Dict, Any
 from datetime import datetime
+from typing import Any
+from typing import Dict
+from typing import Optional
 
 from nonebot import logger
-
 
 # ============================================================
 # 天气驱动行为 — 根据天气自然反应

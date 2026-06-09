@@ -6,8 +6,11 @@ import asyncio
 import random
 from typing import Optional
 
-from nonebot.adapters.onebot.v11 import Bot, MessageEvent, Message, MessageSegment
 from nonebot import logger
+from nonebot.adapters.onebot.v11 import Bot
+from nonebot.adapters.onebot.v11 import Message
+from nonebot.adapters.onebot.v11 import MessageEvent
+from nonebot.adapters.onebot.v11 import MessageSegment
 
 
 async def send_and_maybe_recall(
@@ -82,9 +85,12 @@ async def maybe_share_something(bot: Bot, event: MessageEvent, share_chance: flo
 
         elif share_type == "song":
             # 搜索一首随机歌曲并发送音乐卡片
-            from .music_api import search_song, get_lyrics, extract_lyrics_snippet
+            from .music import _build_intro_message
+            from .music import _send_lyrics_snippet
+            from .music_api import extract_lyrics_snippet
+            from .music_api import get_lyrics
+            from .music_api import search_song
             from .music_card import send_music_card
-            from .music import _build_intro_message, _send_lyrics_snippet
             queries = ["热歌", "经典", "华语流行", "周杰伦", "林俊杰", "陈奕迅", "薛之谦", "邓紫棋", "周深", "毛不易"]
             query = random.choice(queries)
             results = await search_song(query, limit=5)

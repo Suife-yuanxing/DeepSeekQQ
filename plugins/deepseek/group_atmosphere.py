@@ -3,10 +3,12 @@
 基于最近消息的密度、参与者数量、节奏间隔等判断。
 增强版：增加群活跃度感知和动态发言概率。
 """
-import time
 import random
-from typing import List, Dict, Any, Optional
-
+import time
+from typing import Any
+from typing import Dict
+from typing import List
+from typing import Optional
 
 # ============================================================
 # 群活跃度感知 — 基于消息密度判断群聊状态
@@ -211,7 +213,8 @@ async def get_group_social_context(group_id: str, current_msg: str) -> Dict[str,
 
     try:
         # 社交关系摘要
-        from .db_social import get_group_relationships_summary, get_group_meme_hint
+        from .db_social import get_group_meme_hint
+        from .db_social import get_group_relationships_summary
         result["social_hint"] = await get_group_relationships_summary(group_id)
 
         # 群聊梗匹配

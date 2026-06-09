@@ -4,8 +4,15 @@
 """
 import asyncio
 import time
-from typing import Callable, Coroutine, Any, Dict, Optional, List
-from dataclasses import dataclass, field
+from dataclasses import dataclass
+from dataclasses import field
+from typing import Any
+from typing import Callable
+from typing import Coroutine
+from typing import Dict
+from typing import List
+from typing import Optional
+
 from nonebot import logger
 
 

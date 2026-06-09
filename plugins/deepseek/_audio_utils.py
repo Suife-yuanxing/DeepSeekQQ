@@ -1,13 +1,13 @@
 """音频/语音共享工具函数。
 voice/voice_mimo/stt/stt_mimo 共同依赖的底层操作。
 """
-import os
 import asyncio
-from typing import Optional, List
+import os
+from typing import List
+from typing import Optional
 
 import aiofiles
 from nonebot import logger
-
 
 # ============================================================
 # 文件系统工具

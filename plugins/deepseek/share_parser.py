@@ -3,23 +3,31 @@
 支持平台：B站、小红书、抖音、通用链接
 功能：分享卡片去重、按平台解析、内存缓存 TTL 清理、全局 URL 抓取冷却
 """
-import re
-import json
-import hashlib
 import asyncio
+import hashlib
+import json
+import re
 from datetime import datetime
-from typing import Optional, List, Dict, Any
+from typing import Any
+from typing import Dict
+from typing import List
+from typing import Optional
 from urllib.parse import unquote
 
 import aiohttp
-
-from .config import SHARE_TTL, URL_FETCH_COOLDOWN
-from .database import get_article_cache, save_article_cache
-from .api import get_http_session
-from .vision import recognize_sticker, analyze_image, extract_vision_text
-from .image_reply import classify_image, IMAGE_TYPE_STICKER
-from .utils import LRUDict
 from nonebot import logger
+
+from .api import get_http_session
+from .config import SHARE_TTL
+from .config import URL_FETCH_COOLDOWN
+from .database import get_article_cache
+from .database import save_article_cache
+from .image_reply import IMAGE_TYPE_STICKER
+from .image_reply import classify_image
+from .utils import LRUDict
+from .vision import analyze_image
+from .vision import extract_vision_text
+from .vision import recognize_sticker
 
 _recent_shares: Dict[str, List[Dict[str, Any]]] = {}
 _QQ_FACE_MAP={"0":"微笑","1":"撇嘴","2":"色","3":"发呆","4":"得意","5":"流泪","6":"害羞","7":"闭嘴","8":"睡","9":"大哭","10":"尴尬","11":"发怒","12":"调皮","13":"呲牙","14":"惊讶","15":"难过","16":"酷","17":"冷汗","18":"抓狂","19":"吐","20":"偷笑","21":"愉快","22":"白眼","23":"傲慢","24":"饥饿","25":"困","26":"惊恐","27":"流汗","28":"憨笑","29":"悠闲","30":"奋斗","31":"咒骂","32":"疑问","33":"嘘","34":"晕","35":"折磨","36":"衰","37":"骷髅","38":"敲打","39":"再见","40":"发抖","41":"爱情","42":"跳跳","43":"猪头","44":"拥抱","45":"蛋糕","46":"闪电","47":"炸弹","48":"刀","49":"足球","50":"便便","51":"咖啡","52":"饭","53":"玫瑰","54":"凋谢","55":"爱心","56":"心碎","57":"礼物","58":"太阳","59":"月亮","60":"赞","61":"踩","62":"握手","63":"胜利","64":"飞吻","65":"怄火","66":"西瓜","67":"冷酷","68":"色眯眯","69":"好怕怕","73":"裂开","75":"叹气","76":"戳一戳","77":"托腮","78":"歪嘴笑","79":"左看看","80":"右看看","81":"委屈","82":"裂开","96":"抱拳","97":"勾引","98":"拳头","99":"差劲","100":"爱你","101":"NO","102":"OK","103":"转圈","104":"挥手","105":"飞奔","106":"偷看","107":"吓","108":"委屈"}
@@ -195,7 +203,7 @@ def _extract_douyin_render_data(html: str) -> Optional[Dict[str, Any]]:
 
     info: Dict[str, Any] = {}
 
-    if "desc" in aweme and aweme["desc"]:
+    if aweme.get("desc"):
         info["desc"] = str(aweme["desc"])
 
     author = aweme.get("author", {})

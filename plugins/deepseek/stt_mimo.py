@@ -8,18 +8,19 @@ API 格式（OpenAI 兼容）:
 
 支持格式: mp3, wav, amr, pcm, m4a 等
 """
-import os
 import asyncio
+import os
 from typing import Optional
 
-import aiohttp
 import aiofiles
-
+import aiohttp
 from nonebot import logger
 
-from .api import get_http_session
-from .config import MIMO_STT_API_KEY, MIMO_STT_API_BASE_URL, MIMO_STT_MODEL
 from ._audio_utils import validate_file
+from .api import get_http_session
+from .config import MIMO_STT_API_BASE_URL
+from .config import MIMO_STT_API_KEY
+from .config import MIMO_STT_MODEL
 
 
 async def call_mimo_stt(audio_path: str, language: str = "zh") -> Optional[str]:

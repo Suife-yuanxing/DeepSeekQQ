@@ -6,10 +6,12 @@
 - 低概率注入到 prompt 中，让 LLM 自然运用
 """
 import random
-from typing import Optional, Dict, Any, List
+from typing import Any
+from typing import Dict
+from typing import List
+from typing import Optional
 
 from nonebot import logger
-
 
 # ============================================================
 # 网络梗词典

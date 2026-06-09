@@ -6,21 +6,29 @@
 - 以猫娘口吻主动挑起话题
 - 附带话题链接和配图
 """
-import re
+import hashlib
 import os
+import random
+import re
 import ssl
 import time
-import random
-import hashlib
-from typing import List, Dict, Any, Optional
-from dataclasses import dataclass, field
+from dataclasses import dataclass
+from dataclasses import field
+from typing import Any
+from typing import Dict
+from typing import List
+from typing import Optional
 
 import aiohttp
 from nonebot import logger
-from nonebot.adapters.onebot.v11 import MessageSegment, Message
+from nonebot.adapters.onebot.v11 import Message
+from nonebot.adapters.onebot.v11 import MessageSegment
 
-from .config import MY_QQ, MAX_DAILY_PUSH, PUSH_COOLDOWN_HOURS
-from .api import get_http_session, call_deepseek_api
+from .api import call_deepseek_api
+from .api import get_http_session
+from .config import MAX_DAILY_PUSH
+from .config import MY_QQ
+from .config import PUSH_COOLDOWN_HOURS
 from .database import get_silent_private_users
 from .memory import save_reply
 
@@ -337,7 +345,9 @@ async def check_and_push_topics(bot) -> None:
     """检查并推送热点话题。由定时任务调用。"""
     global _last_push_time, _today_push_count, _last_push_date
 
-    from datetime import datetime, timezone, timedelta
+    from datetime import datetime
+    from datetime import timedelta
+    from datetime import timezone
     now = datetime.now(timezone(timedelta(hours=8)))
 
     # 重置每日计数

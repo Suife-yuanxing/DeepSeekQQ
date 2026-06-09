@@ -3,13 +3,20 @@
 ECC 风格改造：渐进式加载 — 人设拆分为模块，按上下文条件拼装。
 """
 import random
-from datetime import datetime, timezone, timedelta
-from typing import List, Dict, Any, Optional
+from datetime import datetime
+from datetime import timedelta
+from datetime import timezone
+from typing import Any
+from typing import Dict
+from typing import List
+from typing import Optional
 
-from .share_prompt import format_shares_for_prompt
-from .context_analyzer import ContextAnalysis, EmotionState, emotion_to_prompt_hint
-from .meme_lexicon import pick_meme
+from .context_analyzer import ContextAnalysis
+from .context_analyzer import EmotionState
+from .context_analyzer import emotion_to_prompt_hint
 from .dialogue_rhythm import RHYTHM_RULES
+from .meme_lexicon import pick_meme
+from .share_prompt import format_shares_for_prompt
 
 
 def _get_time_context() -> str:
@@ -127,6 +134,7 @@ def _build_system_prompt(
     reply_gap_hint: str = None,
     bot_emotion_memory_hint: str = None,
     fatigue_hint: str = None,
+    group_heat_desc: str = None,
 ) -> str:
     time_context = _get_time_context()
 
@@ -286,6 +294,10 @@ def _build_system_prompt(
     # === 群聊社交：角色定位 ===
     if group_role_hint:
         parts.append(f"【群聊角色】{group_role_hint}")
+
+    # === 群聊热度感知 ===
+    if group_heat_desc:
+        parts.append(f"【群聊氛围】{group_heat_desc}")
 
     # === 行为模式（天气/季节/随机行为）===
     if behavior_hint:

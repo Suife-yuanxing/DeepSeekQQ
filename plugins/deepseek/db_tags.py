@@ -1,9 +1,11 @@
 """memory_tags 表操作 — 记忆标签的增删改查、衰减、清理。"""
 from datetime import datetime
-from typing import List, Dict
-import aiosqlite
+from typing import Dict
+from typing import List
 
+import aiosqlite
 from nonebot import logger
+
 from .db_core import get_db
 
 
@@ -104,3 +106,17 @@ async def boost_memory_tag(user_id: str, content: str, boost: float = 0.1):
         (boost, now, str(user_id), content)
     )
     await db.commit()
+
+
+async def get_all_memory_tags_for_user(user_id: str) -> List[dict]:
+    """获取用户的所有记忆标签，用于向量索引初始化。"""
+    db = await get_db()
+    async with db.execute(
+        """SELECT id, tag_type, content, weight, confidence, hit_count, last_used
+           FROM memory_tags
+           WHERE user_id = ? AND confidence >= 0.15
+           ORDER BY (confidence * weight) DESC""",
+        (str(user_id),)
+    ) as cursor:
+        rows = await cursor.fetchall()
+        return [dict(r) for r in rows]

@@ -4,12 +4,15 @@
 数据只保留最近 1 小时，定期清理。
 """
 import time
-from typing import Dict, Any, Optional, List
-from collections import defaultdict, deque
+from collections import defaultdict
+from collections import deque
 from datetime import datetime
+from typing import Any
+from typing import Dict
+from typing import List
+from typing import Optional
 
 from nonebot import logger
-
 
 # ============================================================
 # 响应时间追踪

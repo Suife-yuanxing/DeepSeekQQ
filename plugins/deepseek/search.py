@@ -6,16 +6,19 @@
 - 搜索结果注入 prompt
 """
 import re
-from typing import Optional, List, Dict, Any
 from dataclasses import dataclass
+from typing import Any
+from typing import Dict
+from typing import List
+from typing import Optional
 
 from nonebot import logger
 
-from .config import (
-    TAVILY_API_KEY, SEARCH_ENABLED, SEARCH_MAX_RESULTS,
-    SEARCH_CACHE_TTL
-)
 from . import api
+from .config import SEARCH_CACHE_TTL
+from .config import SEARCH_ENABLED
+from .config import SEARCH_MAX_RESULTS
+from .config import TAVILY_API_KEY
 
 # ============================================================
 # 数据结构
@@ -182,7 +185,7 @@ async def search(query: str, max_results: int = None) -> Optional[SearchResult]:
 
         # 质量检查：结果太少或太短时用同义词重试一次
         if len(results) < 2 or all(len(r.get("snippet", "")) < 30 for r in results):
-            logger.info(f"[搜索] 结果质量低，尝试同义词重搜")
+            logger.info("[搜索] 结果质量低，尝试同义词重搜")
             alt_query = _get_synonym_query(query)
             if alt_query != query:
                 alt_result = await _tavily_search(client, alt_query, max_results)

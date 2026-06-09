@@ -4,10 +4,12 @@
 话题跳转自然衔接，沉默后不尴尬地"在吗"而是直接分享点什么。
 """
 import random
-from typing import List, Optional, Dict, Any
+from typing import Any
+from typing import Dict
+from typing import List
+from typing import Optional
 
 from nonebot import logger
-
 
 # ============================================================
 # 智能破冰 — 基于用户最近活跃话题
@@ -20,8 +22,8 @@ async def get_smart_icebreaker(
 ) -> Optional[str]:
     """智能破冰内容生成（基于用户兴趣）"""
     try:
-        from .db_preferences import get_user_preferences
         from .db_memories_deep import get_shared_memories
+        from .db_preferences import get_user_preferences
 
         # 策略1：基于用户最近话题
         prefs = await get_user_preferences(user_id)

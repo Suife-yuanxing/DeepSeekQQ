@@ -12,15 +12,15 @@
   - 手机通过 USB 连接到服务器
   - ADB 已安装且设备已授权
 """
+import base64
 import os
 import re
 import subprocess
-import base64
 import tempfile
-from typing import Optional, Tuple
+from typing import Optional
+from typing import Tuple
 
 from nonebot import logger
-
 
 # ============================================================
 # ADB 命令执行
@@ -267,7 +267,7 @@ def execute_adb_command(raw_msg: str) -> Optional[str]:
         x, y = int(m.group(1)), int(m.group(2))
         if tap(x, y):
             return f"📱 已点击 ({x}, {y})"
-        return f"📱 点击失败"
+        return "📱 点击失败"
 
     # 输入文字
     m = re.search(r"(?:输入|打字|输入文字)\s*[：:]?\s*(.+)", msg)

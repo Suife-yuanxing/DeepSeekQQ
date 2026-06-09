@@ -12,15 +12,17 @@
   - 响应：{"id":1, "status":"ok", "result":{...}}
   - 心跳：{"type":"ping"} → {"type":"pong"}
 """
+import asyncio
 import json
 import time
-import asyncio
 import uuid
-from typing import Optional, Dict, Set
+from typing import Dict
+from typing import Optional
+from typing import Set
 
 import aiohttp
-from aiohttp import web, WSMsgType
-
+from aiohttp import WSMsgType
+from aiohttp import web
 from nonebot import logger
 
 # ============================================================
@@ -115,7 +117,7 @@ async def handle_ws(request: web.Request) -> web.WebSocketResponse:
                 "resume_from": 0,
                 "phone_connected": state.is_phone_connected(),
             })
-            logger.info(f"[Worker] Controller 已连接")
+            logger.info("[Worker] Controller 已连接")
 
         elif role == "phone":
             conn = Connection(ws, "phone", device_id)
@@ -253,9 +255,9 @@ async def start_worker(api_key: str, port: int = WORKER_PORT):
     if cert_file.exists() and key_file.exists():
         ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
         ssl_context.load_cert_chain(str(cert_file), str(key_file))
-        logger.info(f"[Worker] SSL 证书已加载")
+        logger.info("[Worker] SSL 证书已加载")
     else:
-        logger.warning(f"[Worker] 未找到 SSL 证书，使用明文 WS（Android 可能无法连接）")
+        logger.warning("[Worker] 未找到 SSL 证书，使用明文 WS（Android 可能无法连接）")
 
     # 启动 HTTP (8765) 和 HTTPS (8766) 两个端口
     site_http = web.TCPSite(runner, "0.0.0.0", port)

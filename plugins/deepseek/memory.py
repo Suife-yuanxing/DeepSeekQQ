@@ -5,43 +5,55 @@
 缓存上限：防止内存泄漏
 """
 import asyncio
-import re
 import json
 import random
+import re
 import time
 from datetime import datetime
-from typing import List, Dict, Any, Optional
+from typing import Any
+from typing import Dict
+from typing import List
+from typing import Optional
+
+from nonebot import logger
 
 from . import api
-from .config import MAX_MEMORY, AFFECTION_LEVELS, COMPRESS_MESSAGE_THRESHOLD, COMPRESS_TOKEN_THRESHOLD
-from nonebot import logger
-from .database import (
-    save_message, get_recent_memories, trim_memories,
-    count_memories, get_oldest_memories, get_keep_ids, delete_memories_except,
-    get_affection, update_affection,
-    get_catgirl_mood, update_catgirl_mood,
-    get_memory_summary, append_memory_summary,
-    save_memory_tags, get_relevant_memory_tags, boost_memory_tag,
-    get_user_mood, update_user_preference, get_top_preference,
-    save_reply_quality, get_quality_stats,
-    get_session_state, save_session_state,
-)
+from .config import AFFECTION_LEVELS
+from .config import COMPRESS_MESSAGE_THRESHOLD
+from .config import COMPRESS_TOKEN_THRESHOLD
+from .config import MAX_MEMORY
 from .context_analyzer import AnalysisResult
+from .database import append_memory_summary
+from .database import boost_memory_tag
+from .database import count_memories
+from .database import delete_memories_except
+from .database import get_affection
+from .database import get_catgirl_mood
+from .database import get_keep_ids
+from .database import get_memory_summary
+from .database import get_oldest_memories
+from .database import get_quality_stats
+from .database import get_recent_memories
+from .database import get_relevant_memory_tags
+from .database import get_session_state
+from .database import get_top_preference
+from .database import get_user_mood
+from .database import save_memory_tags
+from .database import save_message
+from .database import save_reply_quality
+from .database import save_session_state
+from .database import trim_memories
+from .database import update_affection
+from .database import update_catgirl_mood
+from .database import update_user_preference
 from .topic_tracker import update_topic_tracker
+from .utils import safe_task
 
 # ---------- 记忆冷却控制 ----------
 _recently_used_memories: Dict[str, List[str]] = {}  # user_id -> [最近用过的记忆内容]
 MEMORY_COOLDOWN_ROUNDS = 3   # 同一记忆至少间隔3轮才再次使用
 
 
-def _safe_task(coro):
-    """包装异步任务，捕获异常避免静默丢失。"""
-    async def _wrapper():
-        try:
-            await coro
-        except Exception as e:
-            logger.warning(f"[记忆] 后台任务异常: {e}")
-    return asyncio.create_task(_wrapper())
 MAX_MEMORY_PER_REPLY = 1     # 每次回复最多插入1条记忆
 _MEMORY_CACHE_MAX_USERS = 200  # 最大缓存用户数，超过时清理最旧的
 
@@ -95,45 +107,44 @@ async def save_reply(session_id: str, user_id: str, raw_msg: str, reply_text: st
     """保存助手回复，并异步提取记忆标签。"""
     await save_message(session_id, "assistant", reply_text)
     await trim_memories(session_id, MAX_MEMORY)
-    _safe_task(_extract_memory_tags(user_id, session_id, raw_msg, reply_text))
+    safe_task(_extract_memory_tags(user_id, session_id, raw_msg, reply_text))
     # 功能③：异步学习用户偏好
-    _safe_task(_learn_preferences(user_id, raw_msg, reply_text, session_id))
+    safe_task(_learn_preferences(user_id, raw_msg, reply_text, session_id))
     # 功能⑦：异步评估回复质量
-    _safe_task(_evaluate_reply_quality(user_id, session_id, raw_msg, reply_text))
+    safe_task(_evaluate_reply_quality(user_id, session_id, raw_msg, reply_text))
     # 跨会话状态更新（含 bot 情绪快照）
-    _safe_task(_update_session_state(session_id, raw_msg, reply_text, bot_mood))
+    safe_task(_update_session_state(session_id, raw_msg, reply_text, bot_mood))
     # 记忆系统深化：提取共同回忆和私人梗
-    _safe_task(_extract_shared_memories(user_id, raw_msg, reply_text))
-    _safe_task(_extract_private_memes(user_id, raw_msg, reply_text))
-    _safe_task(_extract_important_dates(user_id, raw_msg))
+    safe_task(_extract_shared_memories(user_id, raw_msg, reply_text))
+    safe_task(_extract_private_memes(user_id, raw_msg, reply_text))
+    safe_task(_extract_important_dates(user_id, raw_msg))
     # 社交能力增强：提取社交关系和群聊梗
-    _safe_task(_extract_social_references(user_id, raw_msg))
-    _safe_task(_extract_group_memes(session_id, user_id, raw_msg, reply_text))
+    safe_task(_extract_social_references(user_id, raw_msg))
+    safe_task(_extract_group_memes(session_id, user_id, raw_msg, reply_text))
     # 话题追踪：维护对话话题链，避免重复提问
-    _safe_task(update_topic_tracker(session_id, raw_msg, reply_text))
+    safe_task(update_topic_tracker(session_id, raw_msg, reply_text))
     # 策略性压缩：基于消息数或估算 token 数触发
     msg_count = await count_memories(session_id)
     if msg_count >= COMPRESS_MESSAGE_THRESHOLD:
-        from .utils import safe_task
         safe_task(_summarize_and_compress(session_id))
     elif msg_count >= 15:
         # 估算 token 数：粗略按字符数 / 1.5
         recent = await get_recent_memories(session_id, 15)
         est_tokens = sum(len(m["content"]) for m in recent) // 1.5
         if est_tokens > COMPRESS_TOKEN_THRESHOLD:
-            from .utils import safe_task
             safe_task(_summarize_and_compress(session_id))
 
 
 def _is_memory_relevant(memory_content: str, user_msg: str) -> bool:
-    """判断记忆是否与当前用户消息相关。"""
-    user_keywords = set(re.findall(r'[一-龥]{2,6}', user_msg))
+    """判断记忆是否与当前用户消息相关（关键词 + 语义）。"""
+    # 标准 CJK 区间：基本汉字 + 扩展 A 区
+    user_keywords = set(re.findall(r'[一-鿿]{2,6}', user_msg))
     if not user_keywords:
         return False
     for kw in user_keywords:
         if kw in memory_content:
             return True
-    mem_keywords = set(re.findall(r'[一-龥]{2,6}', memory_content))
+    mem_keywords = set(re.findall(r'[一-鿿]{2,6}', memory_content))
     for kw in mem_keywords:
         if kw in user_msg:
             return True
@@ -141,7 +152,7 @@ def _is_memory_relevant(memory_content: str, user_msg: str) -> bool:
 
 
 async def _get_relevant_memories(user_id: str, session_id: str, current_msg: str, limit: int = 5) -> List[str]:
-    """获取相关记忆提示语。置信度 + 冷却 + 相关性过滤。"""
+    """获取相关记忆提示语。置信度 + 冷却 + 关键词相关性 + 语义回退。"""
     _cleanup_memory_cache()
     try:
         now = datetime.now().timestamp()
@@ -164,6 +175,21 @@ async def _get_relevant_memories(user_id: str, session_id: str, current_msg: str
                 continue
             candidates.append((content, row.get("confidence", 0.5)))
 
+        # 关键词匹配不到时，尝试语义检索
+        if not candidates:
+            try:
+                from .vector_search import hybrid_search_memories
+                semantic_results = hybrid_search_memories(user_id, current_msg, top_k=limit)
+                for r in semantic_results:
+                    content = r.get("text", "")
+                    if content and content not in cooldown_list:
+                        # 去掉 [preference] 等前缀
+                        clean = content.split("] ", 1)[-1] if "] " in content else content
+                        score = r.get("score", 0.3)
+                        candidates.append((clean, min(0.7, score)))
+            except Exception:
+                pass  # 语义检索失败不阻塞
+
         # 按置信度加权随机选择
         if candidates:
             # 置信度高的更容易被选中
@@ -180,7 +206,6 @@ async def _get_relevant_memories(user_id: str, session_id: str, current_msg: str
             _recently_used_memories[user_id] = _recently_used_memories[user_id][-MEMORY_COOLDOWN_ROUNDS:]
 
             # 提升被引用标签的置信度
-            from .utils import safe_task
             safe_task(boost_memory_tag(user_id, selected_content))
 
             return [f"[{selected_content}]"]
@@ -188,8 +213,8 @@ async def _get_relevant_memories(user_id: str, session_id: str, current_msg: str
         # 摘要记忆 fallback
         summary = await get_memory_summary(session_id)
         if summary:
-            summary_keywords = set(re.findall(r'[一-龥]{2,}', summary))
-            user_keywords = set(re.findall(r'[一-龥]{2,}', current_msg))
+            summary_keywords = set(re.findall(r'[一-鿿]{2,}', summary))
+            user_keywords = set(re.findall(r'[一-鿿]{2,}', current_msg))
             has_overlap = bool(summary_keywords & user_keywords)
             if has_overlap or random.random() < 0.8:
                 return [f"[之前聊过的：{summary[:150]}]"]
@@ -207,7 +232,8 @@ async def _summarize_and_compress(session_id: str):
         return
 
     # 摘要缓存：避免重复压缩
-    from .context_optimizer import get_cached_summary, set_cached_summary
+    from .context_optimizer import get_cached_summary
+    from .context_optimizer import set_cached_summary
     cached = get_cached_summary(session_id, cnt)
     if cached:
         logger.debug(f"[记忆] 使用缓存摘要: {session_id[:20]}...")
@@ -238,6 +264,7 @@ async def _summarize_and_compress(session_id: str):
     # 尝试解析结构化摘要，失败则用原文
     try:
         import json as _json
+
         from .utils import clean_json_text
         clean = clean_json_text(summary)
         parsed = _json.loads(clean)
@@ -292,6 +319,12 @@ async def _extract_memory_tags(user_id: str, session_id: str, user_msg: str, rep
             return
         await save_memory_tags(user_id, tags)
         logger.info(f"[记忆] 提取并保存了 {len(tags)} 条标签")
+        # 使向量索引缓存失效，下次检索时重建
+        try:
+            from .vector_search import _user_retrievers
+            _user_retrievers.pop(user_id, None)
+        except Exception:
+            pass
     except Exception as e:
         logger.info(f"[记忆] 提取失败（非关键错误）: {e}")
 
@@ -684,7 +717,8 @@ async def recover_session_context(session_id: str, user_id: str) -> Optional[Dic
         # 检查情绪快照（情绪记忆功能）
         mood_care_hint = None
         try:
-            from .db_mood import get_last_mood_snapshot, get_mood_care_hint
+            from .db_mood import get_last_mood_snapshot
+            from .db_mood import get_mood_care_hint
             snapshot = await get_last_mood_snapshot(user_id)
             if snapshot:
                 mood_care_hint = get_mood_care_hint(snapshot)
@@ -910,7 +944,8 @@ async def get_shared_memory_hint(user_id: str, current_msg: str) -> Optional[str
     增强版：增加话题关联度检查，只在高关联时触发
     """
     try:
-        from .db_memories_deep import get_recall_candidates, calculate_topic_relevance
+        from .db_memories_deep import calculate_topic_relevance
+        from .db_memories_deep import get_recall_candidates
 
         # 提取当前话题关键词
         current_keywords = re.findall(r'[一-鿿]{2,6}', current_msg)
@@ -972,8 +1007,10 @@ async def get_private_meme_hint(user_id: str, current_msg: str) -> Optional[str]
 async def get_date_hint(user_id: str) -> Optional[str]:
     """获取重要日期提示，供 prompt 注入。"""
     try:
-        from .db_memories_deep import get_today_dates, get_upcoming_dates
         from datetime import datetime
+
+        from .db_memories_deep import get_today_dates
+        from .db_memories_deep import get_upcoming_dates
         today = datetime.now().strftime("%m-%d")
         today_dates = await get_today_dates(user_id, today)
         if today_dates:

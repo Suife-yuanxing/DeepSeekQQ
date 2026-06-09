@@ -13,15 +13,18 @@ Worker 协议（兼容 ScreenMCP）：
   - 仅 MY_QQ 用户可触发（权限检查在 handler.py 中）
   - 禁止危险操作
 """
-import re
-import json
 import asyncio
-from typing import Optional, Dict, Any
+import json
+import re
+from typing import Any
+from typing import Dict
+from typing import Optional
 
 import aiohttp
-
 from nonebot import logger
-from .config import PHONE_CONTROL_ENABLED, SCREENMCP_API_KEY
+
+from .config import PHONE_CONTROL_ENABLED
+from .config import SCREENMCP_API_KEY
 
 # ============================================================
 # 常量

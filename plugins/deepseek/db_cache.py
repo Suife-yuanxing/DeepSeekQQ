@@ -1,6 +1,8 @@
 """article_cache 表操作 — 文章缓存。"""
 from datetime import datetime
-from typing import Optional, Dict, Any
+from typing import Any
+from typing import Dict
+from typing import Optional
 
 from .db_core import get_db
 

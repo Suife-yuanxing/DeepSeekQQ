@@ -1,10 +1,15 @@
 """affection 表操作 — 好感度、等级、里程碑、衰减。"""
-from datetime import datetime, timedelta
-from typing import Dict, Any, Optional, List
+from datetime import datetime
+from datetime import timedelta
+from typing import Any
+from typing import Dict
+from typing import List
+from typing import Optional
 
 from nonebot import logger
-from .db_core import get_db
+
 from .config import AFFECTION_LEVELS
+from .db_core import get_db
 
 
 async def get_affection(user_id: str) -> Dict[str, Any]:

@@ -5,12 +5,13 @@
 2. 原生 music 段（OneBot v11 标准）
 3. 纯文本 + 封面图 + 链接（保底）
 """
+import html
 import json
 import logging
-import html
 from typing import Optional
 
-from nonebot.adapters.onebot.v11 import Message, MessageSegment
+from nonebot.adapters.onebot.v11 import Message
+from nonebot.adapters.onebot.v11 import MessageSegment
 
 logger = logging.getLogger("music_card")
 

@@ -1,10 +1,12 @@
 """群聊成员画像和社交记忆。"""
-import time
 import json
-from typing import Dict, Any, Optional, List
+import time
+from typing import Any
+from typing import Dict
+from typing import List
+from typing import Optional
 
 from .db_core import get_db
-
 
 # ============================================================
 # 动态群聊梗冷却 — 根据梗的热度调整冷却时间

@@ -5,8 +5,10 @@
 """
 import random
 import time
-from typing import List, Dict, Any, Optional
-
+from typing import Any
+from typing import Dict
+from typing import List
+from typing import Optional
 
 # 收尾/敷衍关键词
 _CLOSING_WORDS = frozenset([

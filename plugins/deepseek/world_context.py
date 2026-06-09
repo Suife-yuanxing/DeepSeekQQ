@@ -8,16 +8,18 @@
 """
 import re
 import time
-import re
-from typing import Optional, Dict, Any
 from dataclasses import dataclass
+from typing import Any
+from typing import Dict
+from typing import Optional
 
 import aiohttp
 from nonebot import logger
 
-from .config import WEATHER_API_KEY, WEATHER_CITY, WEATHER_CACHE_TTL
 from .api import get_http_session
-
+from .config import WEATHER_API_KEY
+from .config import WEATHER_CACHE_TTL
+from .config import WEATHER_CITY
 
 # ============================================================
 # 数据结构
@@ -202,7 +204,9 @@ async def get_weather(city: str = None) -> Optional[WeatherInfo]:
 
 def get_time_of_day() -> str:
     """获取当前时间段描述。"""
-    from datetime import datetime, timezone, timedelta
+    from datetime import datetime
+    from datetime import timedelta
+    from datetime import timezone
     hour = datetime.now(timezone(timedelta(hours=8))).hour
     if 5 <= hour < 9:
         return "清晨"
@@ -216,7 +220,7 @@ def get_time_of_day() -> str:
         return "傍晚"
     elif 19 <= hour < 22:
         return "晚上"
-    elif 22 <= hour or hour < 2:
+    elif hour >= 22 or hour < 2:
         return "深夜"
     else:
         return "凌晨"
@@ -224,7 +228,9 @@ def get_time_of_day() -> str:
 
 def get_season() -> str:
     """获取当前季节。"""
-    from datetime import datetime, timezone, timedelta
+    from datetime import datetime
+    from datetime import timedelta
+    from datetime import timezone
     month = datetime.now(timezone(timedelta(hours=8))).month
     if month in (3, 4, 5):
         return "春天"

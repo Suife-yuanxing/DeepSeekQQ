@@ -1,6 +1,8 @@
 """分享相关的 Prompt 生成逻辑。"""
 import re
-from typing import List, Dict, Any
+from typing import Any
+from typing import Dict
+from typing import List
 
 from .share_parser import _is_valid_share
 
@@ -18,12 +20,12 @@ def format_shares_for_prompt(shares: List[Dict[str, Any]], user_msg: str = "") -
         if s.get('summary'):
             lines.append(f"   摘要: {s['summary'][:400]}")
         if s.get('needs_paste') and s.get('platform') == '小黑盒':
-            lines.append(f"   ⚠️ 小黑盒的内容网页端无法自动读取。请用户把正文复制粘贴过来，我再帮你分析~")
+            lines.append("   ⚠️ 小黑盒的内容网页端无法自动读取。请用户把正文复制粘贴过来，我再帮你分析~")
         elif s.get('fetch_failed'):
             # 内容抓取失败，明确告诉 LLM 不要编造
-            lines.append(f"   ❌ 该链接内容无法读取（可能是视频或需要登录）。直接告诉用户「我这边打不开这个链接诶」或「没看到内容哦」，绝对不要编造任何内容！")
+            lines.append("   ❌ 该链接内容无法读取（可能是视频或需要登录）。直接告诉用户「我这边打不开这个链接诶」或「没看到内容哦」，绝对不要编造任何内容！")
         elif s.get('platform') == 'douyin':
-            lines.append(f"   📹 这是一个抖音视频，基于标题和描述回复，可以吐槽/讨论视频主题。")
+            lines.append("   📹 这是一个抖音视频，基于标题和描述回复，可以吐槽/讨论视频主题。")
         elif s.get('restricted'):
             lines.append(
                 f"   ⚠️ 该内容来自{s.get('platform', '第三方平台')}，网页端无法获取完整正文，需要登录APP查看。请基于标题和自身知识回答，不要编造正文细节。"
@@ -90,7 +92,7 @@ def build_analysis_prompt(shares: List[Dict[str, Any]], user_question: str) -> s
     for i, s in enumerate(target_shares, 1):
         block = f"【内容{i}】类型：{s.get('type', '未知')} | 来源：{s.get('source', '未知')}"
         if s.get("platform") == "douyin":
-            block += f"\n📹 状态：这是一个抖音视频，仅有标题和描述可用。基于视频主题回复，可以讨论、吐槽、发表看法。"
+            block += "\n📹 状态：这是一个抖音视频，仅有标题和描述可用。基于视频主题回复，可以讨论、吐槽、发表看法。"
         elif s.get("restricted") and not s.get("needs_paste"):
             block += f"\n⚠️ 状态：该内容来自{s.get('platform', '第三方平台')}，网页端无法获取完整正文，仅有标题和描述。"
             block += f"\n标题描述：{s.get('summary', '')[:300]}"

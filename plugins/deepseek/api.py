@@ -9,10 +9,17 @@ import asyncio
 import json
 import logging
 import time
-from typing import List, Dict, Any, Optional
+from typing import Any
+from typing import Dict
+from typing import List
+from typing import Optional
+
 import aiohttp
 
-from .config import API_KEY, MODEL, BASE_URL, API_MAX_TOKENS
+from .config import API_KEY
+from .config import API_MAX_TOKENS
+from .config import BASE_URL
+from .config import MODEL
 from .utils import clean_api_response
 
 logger = logging.getLogger("deepseek.api")
@@ -103,7 +110,8 @@ async def _call_deepseek_raw(messages: List[Dict[str, str]], temperature: float 
 async def _call_local_llm(messages: List[Dict[str, str]], temperature: float = 0.7) -> Optional[str]:
     """降级方案：调用本地 Ollama 模型。"""
     try:
-        from .local_llm import call_ollama_chat, check_ollama_available
+        from .local_llm import call_ollama_chat
+        from .local_llm import check_ollama_available
         if not await check_ollama_available():
             logger.warning("[API] 本地 Ollama 服务也不可用")
             return None
@@ -149,6 +157,18 @@ async def call_deepseek_api(messages: List[Dict[str, str]], temperature: float =
             from .performance_monitor import track_api_call
             tokens_est = len(result) // 2  # 粗略估算输出 token
             track_api_call(task_type, api_duration, tokens_used=tokens_est, success=True)
+        except Exception:
+            pass
+        # Token 成本追踪
+        try:
+            from .token_tracker import get_tracker
+            input_chars = sum(len(m.get("content", "")) for m in messages)
+            get_tracker().record(
+                task_type=task_type,
+                model=MODEL,
+                input_chars=input_chars,
+                output_chars=len(result),
+            )
         except Exception:
             pass
         return result

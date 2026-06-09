@@ -3,11 +3,13 @@
 """
 
 from nonebot import on_message
-from nonebot.adapters.onebot.v11 import Bot, MessageEvent
+from nonebot.adapters.onebot.v11 import Bot
+from nonebot.adapters.onebot.v11 import MessageEvent
 
+from . import startup
+from . import web_admin  # 管理后台 Web UI
 from .handler import handle_chat
 from .message_debounce import debouncer
-from . import startup
 
 chat_handler = on_message(priority=5, block=False)
 

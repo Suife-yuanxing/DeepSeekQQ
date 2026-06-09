@@ -2,10 +2,13 @@
 
 版本化迁移文件，按顺序执行，支持状态追踪。
 """
-import aiosqlite
-from typing import List, Callable, Coroutine, Any
-from nonebot import logger
+from typing import Any
+from typing import Callable
+from typing import Coroutine
+from typing import List
 
+import aiosqlite
+from nonebot import logger
 
 # 迁移列表：(版本号, 迁移函数)
 MIGRATIONS: List[tuple] = []

@@ -4,66 +4,101 @@
 """
 from datetime import datetime
 from typing import Optional
+
 from nonebot import logger
 
-from .db_core import get_db, checkpoint_db, close_db
-from .db_memories import (
-    save_message, get_recent_memories, trim_memories, count_memories,
-    get_oldest_memories, get_keep_ids, delete_memories_except,
-    has_recent_message, has_user_message_today, get_last_bot_reply_time,
-)
-from .db_affection import (
-    get_affection, update_affection, decay_affection,
-    get_affection_decay_hint, check_and_trigger_milestone,
-)
-from .db_mood import (
-    get_catgirl_mood, update_catgirl_mood,
-    get_bot_mood, update_bot_mood,
-    get_user_mood, update_user_mood, decay_user_mood,
-    save_mood_snapshot, get_last_mood_snapshot, get_mood_care_hint,
-)
-from .db_tags import (
-    save_memory_tags, decay_memory_tags, prune_memory_tags,
-    get_relevant_memory_tags, boost_memory_tag,
-)
-from .db_session import (
-    save_session_state, get_session_state, get_active_sessions,
-    get_last_conversation_context, get_memory_summary, append_memory_summary,
-    get_or_create_user_profile, update_user_profile,
-    update_relationship_style, get_relationship_style,
-    get_undisclosed_facts, mark_disclosed,
-)
-from .db_reminders import (
-    save_reminder, get_due_reminders, mark_reminder_done,
-    reschedule_reminder, get_user_reminders, cancel_reminder,
-    find_reminder_by_content,
-)
-from .db_preferences import (
-    get_user_preferences, get_top_preference, update_user_preference,
-    save_reply_quality, get_quality_stats,
-)
-from .db_proactive import (
-    get_today_proactive_count, log_proactive, get_recent_greetings,
-    has_proactive_today, get_today_proactive_count_by_scene,
-    get_silent_private_users,
-)
-from .db_cache import get_article_cache, save_article_cache
-from .db_memories_deep import (
-    save_shared_memory, get_shared_memories, get_recall_candidates, boost_shared_memory,
-    save_private_meme, get_private_memes, find_matching_meme,
-    save_important_date, get_important_dates, get_today_dates, get_upcoming_dates,
-    decay_shared_memories,
-)
-from .db_social import (
-    record_relationship, get_relationships, get_relationship,
-    save_group_meme, get_group_memes, find_matching_group_meme,
-    record_social_reference, get_social_references,
-    get_group_relationships_summary, get_group_meme_hint,
-    get_social_reference_hint, get_group_role_hint, decay_relationships,
-)
-
 from .config import AFFECTION_LEVELS
-
+from .db_affection import check_and_trigger_milestone
+from .db_affection import decay_affection
+from .db_affection import get_affection
+from .db_affection import get_affection_decay_hint
+from .db_affection import update_affection
+from .db_cache import get_article_cache
+from .db_cache import save_article_cache
+from .db_core import checkpoint_db
+from .db_core import close_db
+from .db_core import get_db
+from .db_memories import count_memories
+from .db_memories import delete_memories_except
+from .db_memories import get_keep_ids
+from .db_memories import get_last_bot_reply_time
+from .db_memories import get_oldest_memories
+from .db_memories import get_recent_memories
+from .db_memories import has_recent_message
+from .db_memories import has_user_message_today
+from .db_memories import save_message
+from .db_memories import trim_memories
+from .db_memories_deep import boost_shared_memory
+from .db_memories_deep import decay_shared_memories
+from .db_memories_deep import find_matching_meme
+from .db_memories_deep import get_important_dates
+from .db_memories_deep import get_private_memes
+from .db_memories_deep import get_recall_candidates
+from .db_memories_deep import get_shared_memories
+from .db_memories_deep import get_today_dates
+from .db_memories_deep import get_upcoming_dates
+from .db_memories_deep import save_important_date
+from .db_memories_deep import save_private_meme
+from .db_memories_deep import save_shared_memory
+from .db_mood import decay_user_mood
+from .db_mood import get_bot_mood
+from .db_mood import get_catgirl_mood
+from .db_mood import get_last_mood_snapshot
+from .db_mood import get_mood_care_hint
+from .db_mood import get_user_mood
+from .db_mood import save_mood_snapshot
+from .db_mood import update_bot_mood
+from .db_mood import update_catgirl_mood
+from .db_mood import update_user_mood
+from .db_preferences import get_quality_stats
+from .db_preferences import get_top_preference
+from .db_preferences import get_user_preferences
+from .db_preferences import save_reply_quality
+from .db_preferences import update_user_preference
+from .db_proactive import get_recent_greetings
+from .db_proactive import get_silent_private_users
+from .db_proactive import get_today_proactive_count
+from .db_proactive import get_today_proactive_count_by_scene
+from .db_proactive import has_proactive_today
+from .db_proactive import log_proactive
+from .db_reminders import cancel_reminder
+from .db_reminders import find_reminder_by_content
+from .db_reminders import get_due_reminders
+from .db_reminders import get_user_reminders
+from .db_reminders import mark_reminder_done
+from .db_reminders import reschedule_reminder
+from .db_reminders import save_reminder
+from .db_session import append_memory_summary
+from .db_session import get_active_sessions
+from .db_session import get_last_conversation_context
+from .db_session import get_memory_summary
+from .db_session import get_or_create_user_profile
+from .db_session import get_relationship_style
+from .db_session import get_session_state
+from .db_session import get_undisclosed_facts
+from .db_session import mark_disclosed
+from .db_session import save_session_state
+from .db_session import update_relationship_style
+from .db_session import update_user_profile
+from .db_social import decay_relationships
+from .db_social import find_matching_group_meme
+from .db_social import get_group_meme_hint
+from .db_social import get_group_memes
+from .db_social import get_group_relationships_summary
+from .db_social import get_group_role_hint
+from .db_social import get_relationship
+from .db_social import get_relationships
+from .db_social import get_social_reference_hint
+from .db_social import get_social_references
+from .db_social import record_relationship
+from .db_social import record_social_reference
+from .db_social import save_group_meme
+from .db_tags import boost_memory_tag
+from .db_tags import decay_memory_tags
+from .db_tags import get_all_memory_tags_for_user
+from .db_tags import get_relevant_memory_tags
+from .db_tags import prune_memory_tags
+from .db_tags import save_memory_tags
 
 # ============================================================
 # 早晚安优化：昨晚聊天结束时间查询
@@ -74,8 +109,10 @@ async def get_last_night_end_time(session_id: str) -> Optional[float]:
 
     用于动态调整早安时间：如果昨晚聊到很晚，第二天早安推迟。
     """
+    from datetime import datetime
+    from datetime import timedelta
+
     from .db_core import get_db
-    from datetime import datetime, timedelta
     db = await get_db()
     now = datetime.now()
     # 昨天 18:00 到今天 06:00 的消息
@@ -96,8 +133,10 @@ async def get_last_night_mood_summary(session_id: str) -> Optional[str]:
 
     返回：'positive'/'negative'/'neutral'/None
     """
+    from datetime import datetime
+    from datetime import timedelta
+
     from .db_core import get_db
-    from datetime import datetime, timedelta
     db = await get_db()
     now = datetime.now()
     yesterday_6pm = (now - timedelta(days=1)).replace(hour=18, minute=0, second=0).timestamp()
@@ -144,9 +183,10 @@ async def get_last_greeting_time(user_id: str, greeting_type: str) -> Optional[f
 
 async def record_farewell(user_id: str, session_id: str):
     """记录用户道别时间（用于晚安后调侃逻辑）。"""
-    from .db_core import get_db
     import json
     import time
+
+    from .db_core import get_db
     db = await get_db()
     # 读取现有 snapshot，合并 farewell_time 而非覆盖
     async with db.execute(
@@ -170,8 +210,9 @@ async def record_farewell(user_id: str, session_id: str):
 
 async def get_last_farewell_time(session_id: str) -> Optional[float]:
     """获取上次道别时间。"""
-    from .db_core import get_db
     import json
+
+    from .db_core import get_db
     db = await get_db()
     async with db.execute(
         "SELECT bot_mood_snapshot FROM session_state WHERE session_id = ?",
@@ -251,9 +292,13 @@ async def init_db():
             hit_count INTEGER DEFAULT 0,
             created_at REAL,
             last_used REAL,
+            tier TEXT DEFAULT 'short_term',
             UNIQUE(user_id, tag_type, content)
         )
     """)
+    await db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_memory_tags_confidence ON memory_tags(user_id, confidence DESC)"
+    )
     try:
         await db.execute("ALTER TABLE memory_tags ADD COLUMN confidence REAL DEFAULT 0.5")
     except Exception:
@@ -292,6 +337,9 @@ async def init_db():
             scene TEXT DEFAULT ''
         )
     """)
+    await db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_proactive_user_scene ON proactive_log(user_id, scene, timestamp)"
+    )
     await db.execute("""
         CREATE TABLE IF NOT EXISTS user_mood (
             user_id TEXT PRIMARY KEY,
@@ -315,6 +363,7 @@ async def init_db():
         )
     """)
     await db.execute("CREATE INDEX IF NOT EXISTS idx_reminders_trigger ON reminders(status, trigger_time)")
+    await db.execute("CREATE INDEX IF NOT EXISTS idx_reminders_user ON reminders(user_id, status)")
     await db.execute("""
         CREATE TABLE IF NOT EXISTS user_preferences (
             user_id TEXT NOT NULL,
@@ -410,7 +459,9 @@ async def init_db():
             timestamp REAL
         )
     """)
-    await db.execute("CREATE INDEX IF NOT EXISTS idx_emotion_log_ts ON emotion_log(timestamp)")
+    # 替换旧的无用索引（仅有 timestamp），改为复合索引覆盖常用查询
+    await db.execute("DROP INDEX IF EXISTS idx_emotion_log_ts")
+    await db.execute("CREATE INDEX IF NOT EXISTS idx_emotion_log_user ON emotion_log(user_id, timestamp)")
     await db.execute("""
         CREATE TABLE IF NOT EXISTS user_profiles (
             user_id TEXT PRIMARY KEY,

@@ -1,24 +1,43 @@
 """user_preferences + reply_quality 表操作。"""
+import time
 from datetime import datetime
-from typing import Dict, Any, Optional
+from typing import Any
+from typing import Dict
+from typing import Optional
 
 from .db_core import get_db
+
+# 偏好衰减率：每天衰减 1%，避免所有偏好值随时间膨胀到 1.0
+_PREF_DECAY_PER_DAY = 0.01
+# 最低偏好值（不完全归零，保留痕迹）
+_PREF_MIN_VALUE = 0.05
 
 
 # ---------- user_preferences ----------
 async def get_user_preferences(user_id: str) -> Dict[str, Dict[str, float]]:
+    """获取用户所有偏好，读取时自动应用时间衰减。"""
     db = await get_db()
+    now = time.time()
     result: Dict[str, Dict[str, float]] = {}
     async with db.execute(
-        "SELECT pref_type, pref_key, pref_value, sample_count FROM user_preferences WHERE user_id = ?",
+        "SELECT pref_type, pref_key, pref_value, sample_count, last_updated FROM user_preferences WHERE user_id = ?",
         (str(user_id),)
     ) as cursor:
         rows = await cursor.fetchall()
         for r in rows:
             ptype = r["pref_type"]
+            pref_value = r["pref_value"]
+            last_updated = r["last_updated"] or now
+
+            # 时间衰减：每天衰减 _PREF_DECAY_PER_DAY（至少间隔1小时才衰减，避免浮点精度问题）
+            days_since = (now - last_updated) / 86400.0
+            if days_since > (1.0 / 24.0) and pref_value > _PREF_MIN_VALUE:
+                decay = _PREF_DECAY_PER_DAY * days_since
+                pref_value = round(max(_PREF_MIN_VALUE, pref_value - decay), 6)
+
             if ptype not in result:
                 result[ptype] = {}
-            result[ptype][r["pref_key"]] = r["pref_value"]
+            result[ptype][r["pref_key"]] = pref_value
     return result
 
 

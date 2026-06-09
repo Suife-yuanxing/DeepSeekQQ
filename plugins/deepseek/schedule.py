@@ -3,8 +3,8 @@
 猫娘人设：年轻女生作息，不是严格规律，有随机性。
 """
 import random
-from datetime import datetime
 from dataclasses import dataclass
+from datetime import datetime
 
 
 @dataclass

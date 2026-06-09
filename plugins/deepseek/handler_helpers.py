@@ -1,11 +1,13 @@
 """handler 辅助函数 — 引用决策、问候检测、消息分析。"""
+import random
 import re
 import time
-import random
 from typing import Optional
 
-from nonebot.adapters.onebot.v11 import MessageEvent, GroupMessageEvent, Message, MessageSegment
-
+from nonebot.adapters.onebot.v11 import GroupMessageEvent
+from nonebot.adapters.onebot.v11 import Message
+from nonebot.adapters.onebot.v11 import MessageEvent
+from nonebot.adapters.onebot.v11 import MessageSegment
 
 # ============================================================
 # 引用回复消息构造

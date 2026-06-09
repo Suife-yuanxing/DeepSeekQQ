@@ -5,11 +5,14 @@
 """
 import re
 import time
-from typing import List, Dict, Any, Optional, Tuple
 from collections import OrderedDict
+from typing import Any
+from typing import Dict
+from typing import List
+from typing import Optional
+from typing import Tuple
 
 from nonebot import logger
-
 
 # ============================================================
 # 智能消息选择

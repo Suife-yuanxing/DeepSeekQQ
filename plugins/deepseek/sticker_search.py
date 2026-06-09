@@ -7,21 +7,24 @@
 - 自动添加标签到 sticker_tags.json
 - 表情包分类管理
 """
-import os
-import re
-import json
-import time
-import random
 import asyncio
-from typing import Optional, List, Dict
+import json
+import os
+import random
+import re
+import time
 from pathlib import Path
+from typing import Dict
+from typing import List
+from typing import Optional
 
-import aiohttp
 import aiofiles
+import aiohttp
 from nonebot import logger
 
-from .config import STICKER_DIR, TAVILY_API_KEY
 from .api import get_http_session
+from .config import STICKER_DIR
+from .config import TAVILY_API_KEY
 
 # 下载缓存目录
 DOWNLOAD_DIR = os.path.join(STICKER_DIR, "downloaded")

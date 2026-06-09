@@ -6,12 +6,15 @@
 3. 会话恢复时注入话题链到 prompt
 """
 
-import re
 import json
+import re
 import time
-from typing import List, Dict, Any, Optional
-from nonebot import logger
+from typing import Any
+from typing import Dict
+from typing import List
+from typing import Optional
 
+from nonebot import logger
 
 # 话题关键词提取（去掉停用词）
 _STOPWORDS = {

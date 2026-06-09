@@ -6,22 +6,28 @@
 - 定时触发提醒
 - 上下文感知（提醒未到期时的自然回复）
 """
-import re
 import json
+import re
 import time
-from datetime import datetime, timedelta
-from typing import Optional, List, Dict, Any
 from dataclasses import dataclass
+from datetime import datetime
+from datetime import timedelta
+from typing import Any
+from typing import Dict
+from typing import List
+from typing import Optional
 
 import pytz
 from nonebot import logger
 
 from . import api
-from .database import (
-    save_reminder, get_due_reminders, mark_reminder_done,
-    reschedule_reminder, get_user_reminders, cancel_reminder,
-    find_reminder_by_content
-)
+from .database import cancel_reminder
+from .database import find_reminder_by_content
+from .database import get_due_reminders
+from .database import get_user_reminders
+from .database import mark_reminder_done
+from .database import reschedule_reminder
+from .database import save_reminder
 
 TZ = pytz.timezone('Asia/Shanghai')
 
@@ -220,7 +226,7 @@ async def _generate_reminder_reply(scene: str, **kwargs) -> str:
         elif scene == "cancel_success":
             prompt = f"用户取消了提醒 #{kwargs['rid']}。用你的性格回复确认，1句话，口语化，不要括号动作。"
         elif scene == "cancel_fail":
-            prompt = f"用户想取消提醒但ID不对。用你的性格回复，让他再确认一下ID，1句话，口语化，不要括号动作。"
+            prompt = "用户想取消提醒但ID不对。用你的性格回复，让他再确认一下ID，1句话，口语化，不要括号动作。"
         elif scene == "no_reminder":
             prompt = "用户想取消提醒但没有提供ID。用你的性格回复，让他告诉你ID，1句话，口语化，不要括号动作。"
         elif scene == "fire":

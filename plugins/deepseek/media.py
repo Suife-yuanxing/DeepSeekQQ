@@ -6,12 +6,15 @@
 - 生成带链接的自然回复
 """
 import re
-from typing import List, Dict, Any, Tuple
 from dataclasses import dataclass
+from typing import Any
+from typing import Dict
+from typing import List
+from typing import Tuple
 
-from nonebot.adapters.onebot.v11 import MessageSegment, Message
 from nonebot import logger
-
+from nonebot.adapters.onebot.v11 import Message
+from nonebot.adapters.onebot.v11 import MessageSegment
 
 # ============================================================
 # URL 检测

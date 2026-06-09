@@ -10,25 +10,30 @@
 1. MiMo STT（OpenAI 兼容 whisper）
 2. 百度语音识别（兜底）
 """
-import os
 import asyncio
 import json
+import os
 import time
-from typing import Optional
 from pathlib import Path
+from typing import Optional
 
-import aiohttp
 import aiofiles
+import aiohttp
 from nonebot import logger
-from nonebot.adapters.onebot.v11 import MessageEvent, MessageSegment
+from nonebot.adapters.onebot.v11 import MessageEvent
+from nonebot.adapters.onebot.v11 import MessageSegment
 
-from .config import BAIDU_TTS_AK, BAIDU_TTS_SK, STT_ENGINE
+from ._audio_utils import convert_audio_with_ffmpeg
+from ._audio_utils import ensure_dir
+from ._audio_utils import safe_remove
+from ._audio_utils import schedule_cleanup_multi
+from ._audio_utils import validate_file
+from ._audio_utils import write_audio_file
 from .api import get_http_session
+from .config import BAIDU_TTS_AK
+from .config import BAIDU_TTS_SK
+from .config import STT_ENGINE
 from .voice import _get_baidu_token
-from ._audio_utils import (
-    ensure_dir, safe_remove, validate_file, write_audio_file,
-    schedule_cleanup_multi, convert_audio_with_ffmpeg,
-)
 
 
 async def _get_baidu_vop_token() -> str:

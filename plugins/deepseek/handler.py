@@ -3,46 +3,101 @@
 借鉴 ECC 的 Hook 系统，将消息处理拆分为有序的 Pipeline 阶段。
 每个阶段可短路（返回 SKIP 跳过后续），新增功能只需注册一个阶段。
 """
-import os
-import time
 import asyncio
+import os
 import random
 import re
+import time
+from dataclasses import dataclass
+from dataclasses import field
 from datetime import datetime
 from pathlib import Path
-from typing import List, Optional, Any, Callable, Coroutine
-from dataclasses import dataclass, field
+from typing import Any
+from typing import Callable
+from typing import Coroutine
+from typing import List
+from typing import Optional
 
-from nonebot.adapters.onebot.v11 import Bot, MessageEvent, GroupMessageEvent, Message, MessageSegment
 from nonebot import logger
+from nonebot.adapters.onebot.v11 import Bot
+from nonebot.adapters.onebot.v11 import GroupMessageEvent
+from nonebot.adapters.onebot.v11 import Message
+from nonebot.adapters.onebot.v11 import MessageEvent
+from nonebot.adapters.onebot.v11 import MessageSegment
 
-from .config import REPLY_LENGTH_CONFIG, RANDOM_REPLY_CHANCE, ANALYSIS_HISTORY_LIMIT, CHAT_HISTORY_MULTIPLIER, PHONE_CONTROL_ENABLED, MY_QQ, STT_ENABLED
-from .prompt import _build_system_prompt, estimate_reply_length
-from .utils import split_long_reply, calc_message_delay, get_session_id, check_rate_limit, filter_novel_actions, safe_task
-from .memory import save_reply, apply_affection_delta, save_and_get_context_with_history, get_user_pref_hints, recover_session_context
-from .share_parser import extract_and_cache_shares, get_recent_shares
-from .share_prompt import build_analysis_prompt
 from .api import call_deepseek_api
-from .voice import send_voice, should_send_voice
-from .stt import recognize_voice
-from .context_analyzer import analyze_context_and_emotion, AnalysisResult, update_bot_emotion
-from .search import should_search, search, format_search_for_prompt, extract_search_query
-from .reminder import is_reminder_request, create_reminder, list_reminders, cancel_reminder_by_id, get_pending_reminders_context, _generate_reminder_reply
-from .world_context import build_world_context_prompt, extract_city_from_message
-from .media import split_reply_and_links, extract_shareable_from_search, build_rich_message
-from .sticker import parse_sticker_tag, should_send_sticker_fallback, filter_sticker_tag, select_sticker_with_search
-from .security import scan_input, get_blocked_reply
-from .plugin_manager import get_enabled_plugins
-from .image_gen import should_generate_image, generate_image, _extract_draw_prompt
+from .config import ANALYSIS_HISTORY_LIMIT
+from .config import CHAT_HISTORY_MULTIPLIER
+from .config import MY_QQ
+from .config import PHONE_CONTROL_ENABLED
+from .config import RANDOM_REPLY_CHANCE
+from .config import REPLY_LENGTH_CONFIG
+from .config import STT_ENABLED
+from .context_analyzer import AnalysisResult
+from .context_analyzer import analyze_context_and_emotion
+from .context_analyzer import update_bot_emotion
+from .handler_helpers import detect_greeting_type
+from .handler_helpers import get_morning_time_hint
+from .handler_helpers import get_night_affection_hint
+from .handler_helpers import has_time_gap
+from .handler_helpers import is_greeting
+from .handler_helpers import is_multi_topic
+from .handler_helpers import is_night_farewell
+from .handler_helpers import is_question
+from .handler_helpers import make_quote_reply
 
 # 拆分出的子模块
-from .handler_helpers import (
-    make_reply, make_quote_reply, is_multi_topic,
-    is_question, is_greeting, detect_greeting_type, get_morning_time_hint,
-    get_night_affection_hint, has_time_gap, should_quote, parse_target_lines,
-    is_night_farewell,
-)
-from .handler_humanize import introduce_typo, introduce_mind_change, introduce_uncertainty, maybe_add_kaomoji
+from .handler_helpers import make_reply
+from .handler_helpers import parse_target_lines
+from .handler_helpers import should_quote
+from .handler_humanize import introduce_mind_change
+from .handler_humanize import introduce_typo
+from .handler_humanize import introduce_uncertainty
+from .handler_humanize import maybe_add_kaomoji
+from .image_gen import _extract_draw_prompt
+from .image_gen import generate_image
+from .image_gen import should_generate_image
+from .media import build_rich_message
+from .media import extract_shareable_from_search
+from .media import split_reply_and_links
+from .memory import apply_affection_delta
+from .memory import get_user_pref_hints
+from .memory import recover_session_context
+from .memory import save_and_get_context_with_history
+from .memory import save_reply
+from .plugin_manager import get_enabled_plugins
+from .prompt import _build_system_prompt
+from .prompt import estimate_reply_length
+from .reminder import _generate_reminder_reply
+from .reminder import cancel_reminder_by_id
+from .reminder import create_reminder
+from .reminder import get_pending_reminders_context
+from .reminder import is_reminder_request
+from .reminder import list_reminders
+from .search import extract_search_query
+from .search import format_search_for_prompt
+from .search import search
+from .search import should_search
+from .security import get_blocked_reply
+from .security import scan_input
+from .share_parser import extract_and_cache_shares
+from .share_parser import get_recent_shares
+from .share_prompt import build_analysis_prompt
+from .sticker import filter_sticker_tag
+from .sticker import parse_sticker_tag
+from .sticker import select_sticker_with_search
+from .sticker import should_send_sticker_fallback
+from .stt import recognize_voice
+from .utils import calc_message_delay
+from .utils import check_rate_limit
+from .utils import filter_novel_actions
+from .utils import get_session_id
+from .utils import safe_task
+from .utils import split_long_reply
+from .voice import send_voice
+from .voice import should_send_voice
+from .world_context import build_world_context_prompt
+from .world_context import extract_city_from_message
 
 # 向后兼容：现有测试引用的内部函数名
 _parse_target_lines = parse_target_lines
@@ -145,41 +200,41 @@ def _build_reply_gap_hint(gap_seconds: float, affection: dict, schedule, bot_moo
             return random.choice([
                 f"用户{int(gap_hour)}个多小时没回消息了，可以撒娇说\"终于回我了~\"",
                 f"等了{int(gap_hour)}个多小时，语气有点委屈但不生气",
-                f"好久没回消息了，可以假装生气一下但不要太认真",
+                "好久没回消息了，可以假装生气一下但不要太认真",
             ])
         elif 3 <= gap_hour < 8:
             return random.choice([
-                f"用户好几个小时没理我了，可以小声抱怨一下",
-                f"等了好几个小时，语气有点小委屈",
+                "用户好几个小时没理我了，可以小声抱怨一下",
+                "等了好几个小时，语气有点小委屈",
             ])
     elif affection_score >= 50:
         # 中好感度：关心式
         if 15 <= gap_min < 60:
             return random.choice([
                 f"用户过了{int(gap_min)}分钟才回复，可以自然地接上话题",
-                f"隔了一会儿才回，语气自然不要刻意提",
+                "隔了一会儿才回，语气自然不要刻意提",
             ])
         elif 1 <= gap_hour < 3:
             return random.choice([
-                f"用户1个多小时没回，可以问一下是不是在忙",
-                f"隔了挺久才回，自然地聊回来就好",
+                "用户1个多小时没回，可以问一下是不是在忙",
+                "隔了挺久才回，自然地聊回来就好",
             ])
         elif 3 <= gap_hour < 8:
             return random.choice([
-                f"用户好几个小时没回，可以问问去干嘛了",
-                f"好几个小时没消息了，可以自然地说\"好久不见~\"",
+                "用户好几个小时没回，可以问问去干嘛了",
+                "好几个小时没消息了，可以自然地说\"好久不见~\"",
             ])
     else:
         # 低好感度：平淡式
         if 1 <= gap_hour < 3:
             return random.choice([
-                f"用户隔了比较久才回复，正常接话就好",
-                f"过了一段时间才回，不用刻意提",
+                "用户隔了比较久才回复，正常接话就好",
+                "过了一段时间才回，不用刻意提",
             ])
         elif gap_hour >= 3:
             return random.choice([
-                f"用户好几个小时没回，简单接话即可",
-                f"隔了很久，正常回复不要刻意提间隔",
+                "用户好几个小时没回，简单接话即可",
+                "隔了很久，正常回复不要刻意提间隔",
             ])
 
     return ""
@@ -248,6 +303,9 @@ class ChatContext:
     reply_gap_hint: str = ""
     # 跨会话情绪记忆
     bot_emotion_memory_hint: str = ""
+    # 群聊热度状态机
+    group_heat_state: str = ""           # dormant / idle / active
+    group_heat_description: str = ""     # 群活跃度自然语言描述
     # 对话疲劳感知
     fatigue_level: int = 0
     fatigue_hint: str = ""
@@ -313,7 +371,8 @@ async def _stage_voice(ctx: ChatContext) -> Optional[str]:
             logger.info(f"[STT] 语音识别结果: {ctx.raw_msg[:50]}")
 
             # 语音情绪识别（P1）：异步提取音频特征
-            from .stt import _extract_voice_url, _download_voice
+            from .stt import _download_voice
+            from .stt import _extract_voice_url
             voice_url = _extract_voice_url(ctx.event)
             if voice_url:
                 local_path = await _download_voice(voice_url)
@@ -373,13 +432,15 @@ async def _stage_phone(ctx: ChatContext) -> Optional[str]:
     if ctx.user_id != MY_QQ:
         return None
     try:
-        from .phone_adb import execute_adb_command, check_device
+        from .phone_adb import check_device
+        from .phone_adb import execute_adb_command
         if check_device():
             result = execute_adb_command(ctx.raw_msg)
             if result:
                 ctx.reply_text = result
                 return _SKIP
-        from .phone_control import execute_phone_command, is_phone_command
+        from .phone_control import execute_phone_command
+        from .phone_control import is_phone_command
         if is_phone_command(ctx.raw_msg):
             result = await execute_phone_command(ctx.raw_msg)
             if result:
@@ -395,17 +456,33 @@ async def _stage_group_filter(ctx: ChatContext) -> Optional[str]:
     if not ctx.is_group:
         return None
 
-    # 始终响应: @我
+    # 群聊热度状态机：每条消息都会更新热度
+    from .group_heat import heat_manager
     is_at_me = ctx.event.is_tome()
+    heat_state = await heat_manager.on_message(ctx.session_id, is_at_bot=is_at_me)
+
+    # 始终响应: @我
     if is_at_me:
         ctx.raw_msg = re.sub(r'\[CQ:at,qq=\d+\]', '', ctx.raw_msg).strip()
         if not ctx.raw_msg:
             ctx.raw_msg = "在吗"
+        # 将热度状态注入上下文，供 prompt 使用
+        ctx.group_heat_state = heat_state
+        ctx.group_heat_description = heat_manager.get_activity_description(ctx.session_id)
         return None
 
     # 昵称匹配
-    nicknames = ["猫娘", "kitty", "喵喵", "在吗", "bot", "机器人"]
+    nicknames = ["猫娘", "kitty", "喵喵", "bot", "机器人"]
     if any(nick in ctx.raw_msg for nick in nicknames):
+        ctx.group_heat_state = heat_state
+        ctx.group_heat_description = heat_manager.get_activity_description(ctx.session_id)
+        return None
+
+    # 热度活跃状态下，有一定概率主动插话
+    if heat_state == "active" and heat_manager.should_interject(ctx.session_id):
+        logger.info(f"[群聊] 热度活跃插话 (heat={heat_manager.get_heat(ctx.session_id):.2f})")
+        ctx.group_heat_state = heat_state
+        ctx.group_heat_description = heat_manager.get_activity_description(ctx.session_id)
         return None
 
     # 气氛感知（替代简单的随机回复）
@@ -418,9 +495,13 @@ async def _stage_group_filter(ctx: ChatContext) -> Optional[str]:
         # 根据置信度决定是否回复
         if random.random() < decision["confidence"] * 0.5:
             logger.info(f"[群聊] 参与对话: {decision['reason']}")
+            ctx.group_heat_state = heat_state
+            ctx.group_heat_description = heat_manager.get_activity_description(ctx.session_id)
             return None
     elif random.random() < RANDOM_REPLY_CHANCE:
         # 保留原有的小概率随机回复
+        ctx.group_heat_state = heat_state
+        ctx.group_heat_description = heat_manager.get_activity_description(ctx.session_id)
         return None
 
     return _SKIP
@@ -469,7 +550,8 @@ async def _stage_context(ctx: ChatContext) -> Optional[str]:
     # === 简单消息：跳过深度分析，直接用默认值 ===
     from .schedule import get_schedule_state
     if ctx.complexity == "simple":
-        from .context_analyzer import ContextAnalysis, EmotionState
+        from .context_analyzer import ContextAnalysis
+        from .context_analyzer import EmotionState
         ctx.analysis = AnalysisResult(context=ContextAnalysis(), emotion=EmotionState())
         ctx.search_result = None
         ctx.world_context = ""
@@ -533,7 +615,8 @@ async def _run_core_analysis(ctx: ChatContext, history_for_analysis: list):
     # 处理并行任务中的异常：失败的任务用默认值，不中断 pipeline
     if isinstance(analysis, Exception):
         logger.error(f"[分析] 情绪/上下文分析失败: {analysis}")
-        from .context_analyzer import ContextAnalysis, EmotionState
+        from .context_analyzer import ContextAnalysis
+        from .context_analyzer import EmotionState
         analysis = AnalysisResult(context=ContextAnalysis(), emotion=EmotionState())
     if isinstance(search_result, Exception):
         logger.warning(f"[搜索] 搜索失败: {search_result}")
@@ -557,9 +640,12 @@ async def _run_core_analysis(ctx: ChatContext, history_for_analysis: list):
 
 async def _run_batch1_queries(ctx: ChatContext):
     """第二批并行：无依赖的 DB/状态查询。"""
+    from .database import check_and_trigger_milestone
+    from .database import has_user_message_today
     from .emotion_deep import get_emotion_memory_hint
-    from .memory import get_shared_memory_hint, get_private_meme_hint, get_date_hint
-    from .database import has_user_message_today, check_and_trigger_milestone
+    from .memory import get_date_hint
+    from .memory import get_private_meme_hint
+    from .memory import get_shared_memory_hint
 
     async def _get_affection_decay():
         if ctx.affection and ctx.session_recovery:
@@ -629,7 +715,9 @@ def _run_sync_computations(ctx: ChatContext) -> str:
     bot_mood_dominant = ctx.bot_mood_result.get("dominant", "平静") if ctx.bot_mood_result else "平静"
 
     # 对话节奏：话题桥接/过渡
-    from .dialogue_rhythm import get_topic_bridge, get_topic_transition_hint, get_icebreaker_context
+    from .dialogue_rhythm import get_icebreaker_context
+    from .dialogue_rhythm import get_topic_bridge
+    from .dialogue_rhythm import get_topic_transition_hint
     prev_topic = ""
     if ctx.session_recovery:
         prev_topic = ctx.session_recovery.get("last_topic", "")
@@ -671,16 +759,16 @@ async def _run_batch2_queries(ctx: ChatContext, bot_mood_dominant: str):
     async def _get_group_social():
         if ctx.is_group:
             group_id = ctx.session_id.replace("group_", "")
-            from .group_atmosphere import get_group_social_context
             from .db_group import update_member_activity
+            from .group_atmosphere import get_group_social_context
             social_ctx = await get_group_social_context(group_id, ctx.raw_msg)
             safe_task(update_member_activity(group_id, ctx.user_id))
             return social_ctx
         return {}
 
     async def _get_personalization():
-        from .personalization import get_personalization_hints
         from .db_session import get_or_create_user_profile
+        from .personalization import get_personalization_hints
         profile = await get_or_create_user_profile(ctx.user_id)
         custom_nickname = profile.get("nickname", "") if profile else ""
         affection_score = ctx.affection.get("score", 0)
@@ -726,8 +814,9 @@ async def _run_fatigue_and_gap(ctx: ChatContext, bot_mood_dominant: str):
         logger.info(f"[疲劳感知] level={ctx.fatigue_level} score={fatigue_result['score']} signals={fatigue_result['signals']}")
 
     # 已读不回感知
-    from .db_memories import get_last_bot_reply_time
     import time as _time
+
+    from .db_memories import get_last_bot_reply_time
     last_bot_ts = await get_last_bot_reply_time(ctx.session_id)
     if last_bot_ts > 0:
         gap_seconds = _time.time() - last_bot_ts
@@ -839,6 +928,7 @@ async def _stage_llm(ctx: ChatContext) -> Optional[str]:
             reply_gap_hint=ctx.reply_gap_hint or None,
             bot_emotion_memory_hint=ctx.bot_emotion_memory_hint or None,
             fatigue_hint=ctx.fatigue_hint or None,
+            group_heat_desc=ctx.group_heat_description or None,
         )
         sys_prompt += "\n回复风格：专业分析+个性点评。分析部分结构化、有深度，点评部分保持你的猫娘语气。绝对禁止括号动作描写。"
         messages = [{"role": "system", "content": sys_prompt}]
@@ -893,6 +983,7 @@ async def _stage_llm(ctx: ChatContext) -> Optional[str]:
             reply_gap_hint=ctx.reply_gap_hint or None,
             bot_emotion_memory_hint=ctx.bot_emotion_memory_hint or None,
             fatigue_hint=ctx.fatigue_hint or None,
+            group_heat_desc=ctx.group_heat_description or None,
         )
 
         from .database import has_user_message_today
@@ -964,7 +1055,9 @@ async def _stage_llm(ctx: ChatContext) -> Optional[str]:
                 ))
 
         # 图片回复策略（P2）：基于人设的个性化图片回应（独立于上述条件）
-        from .image_reply import get_image_reply_prompt, should_analyze_in_detail, is_emotional_share
+        from .image_reply import get_image_reply_prompt
+        from .image_reply import is_emotional_share
+        from .image_reply import should_analyze_in_detail
         image_shares = [s for s in shares_now if s.get("type") == "图片" and s.get("vision_text")]
         if image_shares:
             latest_image = image_shares[-1]
@@ -990,7 +1083,8 @@ async def _stage_llm(ctx: ChatContext) -> Optional[str]:
         history_limit = REPLY_LENGTH_CONFIG["context_depth"] * CHAT_HISTORY_MULTIPLIER
 
         # 智能上下文选择（替代简单的保留最近N条）
-        from .context_optimizer import select_context_messages, fit_messages_to_budget
+        from .context_optimizer import fit_messages_to_budget
+        from .context_optimizer import select_context_messages
         selected_memories = select_context_messages(ctx.recent_memories, ctx.raw_msg, history_limit)
         for mem in selected_memories:
             messages.append({"role": mem["role"], "content": mem["content"]})
@@ -1002,7 +1096,16 @@ async def _stage_llm(ctx: ChatContext) -> Optional[str]:
         if not messages or messages[-1]["role"] != "user":
             messages.append({"role": "user", "content": user_msg_content})
 
-        # Token 预算管理：确保不超出上下文窗口
+        # Token 预算管理：先尝试语义压缩，再硬截断
+        from .context_compressor import compress_context
+        from .context_compressor import estimate_messages_tokens
+        est_tokens = estimate_messages_tokens(messages)
+        if est_tokens > 512:
+            messages, compressed = await compress_context(
+                ctx.session_id, messages, call_deepseek_api
+            )
+            if compressed:
+                logger.debug(f"[上下文] 语义压缩完成 session={ctx.session_id[:20]}...")
         messages = fit_messages_to_budget(messages, sys_prompt)
 
         # 上下文优化统计（调试用）
@@ -1203,7 +1306,8 @@ async def _stage_post(ctx: ChatContext) -> Optional[str]:
         logger.info(f"[图片] 发送: {os.path.basename(ctx.image_path)}")
 
     # 记录bot消息类型，用于追问系统
-    from .follow_up import classify_bot_message, record_bot_message
+    from .follow_up import classify_bot_message
+    from .follow_up import record_bot_message
     if ctx.reply_text and not ctx.is_group:
         msg_type = classify_bot_message(ctx.reply_text)
         record_bot_message(ctx.session_id, ctx.reply_text, msg_type)
@@ -1363,7 +1467,8 @@ async def _set_typing_status(bot: Bot, event: MessageEvent, typing: bool):
 
 async def handle_chat(bot: Bot, event: MessageEvent):
     """主入口：构建上下文并执行 Pipeline。"""
-    from .performance_monitor import StageTimer, track_response
+    from .performance_monitor import StageTimer
+    from .performance_monitor import track_response
     start_time = time.time()
 
     # === 立刻发"正在输入"状态（不等延迟）===

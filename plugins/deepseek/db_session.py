@@ -1,8 +1,12 @@
 """session_state + user_profiles 表操作 — 会话状态持久化与用户画像。"""
 from datetime import datetime
-from typing import Optional, Dict, Any, List
+from typing import Any
+from typing import Dict
+from typing import List
+from typing import Optional
 
 from nonebot import logger
+
 from .db_core import get_db
 
 

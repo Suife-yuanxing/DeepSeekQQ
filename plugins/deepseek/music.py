@@ -2,16 +2,20 @@
 
 Pipeline stage 入口: handle_music_stage()
 """
-import re
-import random
 import logging
-from typing import Optional, Tuple
+import random
+import re
+from typing import Optional
+from typing import Tuple
 
 from nonebot.adapters.onebot.v11 import Message
 
-from .music_api import search_song, get_lyrics, extract_lyrics_snippet, SongInfo
-from .music_card import send_music_card
 from .handler_helpers import make_reply
+from .music_api import SongInfo
+from .music_api import extract_lyrics_snippet
+from .music_api import get_lyrics
+from .music_api import search_song
+from .music_card import send_music_card
 
 logger = logging.getLogger("music")
 

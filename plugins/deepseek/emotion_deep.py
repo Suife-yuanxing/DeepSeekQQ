@@ -8,10 +8,12 @@
 """
 import random
 import time
-from typing import Dict, Any, Optional, List
+from typing import Any
+from typing import Dict
+from typing import List
+from typing import Optional
 
 from nonebot import logger
-
 
 # ============================================================
 # 情绪恢复随机分支 — 增加恢复路径的变化性

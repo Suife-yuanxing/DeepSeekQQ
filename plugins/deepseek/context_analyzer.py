@@ -11,16 +11,22 @@ import json
 import math
 import re
 import time
-from dataclasses import dataclass, field
-from typing import Optional, Dict, Any, List
+from dataclasses import dataclass
+from dataclasses import field
+from typing import Any
+from typing import Dict
+from typing import List
+from typing import Optional
 
 from nonebot import logger
 
 from . import api
-from .database import (
-    get_user_mood, update_user_mood, get_catgirl_mood,
-    decay_user_mood, get_bot_mood, update_bot_mood
-)
+from .database import decay_user_mood
+from .database import get_bot_mood
+from .database import get_catgirl_mood
+from .database import get_user_mood
+from .database import update_bot_mood
+from .database import update_user_mood
 
 # ============================================================
 # 数据结构

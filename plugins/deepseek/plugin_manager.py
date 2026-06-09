@@ -30,7 +30,12 @@ import importlib
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional, List, Dict, Any, Callable, Coroutine
+from typing import Any
+from typing import Callable
+from typing import Coroutine
+from typing import Dict
+from typing import List
+from typing import Optional
 
 from nonebot import logger
 

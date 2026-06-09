@@ -6,14 +6,17 @@
 - social_references: 用户提到的社交圈人物
 """
 import json
-import time
 import random
 import re
-from typing import Dict, Any, Optional, List
+import time
+from typing import Any
+from typing import Dict
+from typing import List
+from typing import Optional
 
 from nonebot import logger
-from .db_core import get_db
 
+from .db_core import get_db
 
 # ============================================================
 # 社交关系图 (group_social_graph)

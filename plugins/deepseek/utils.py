@@ -1,10 +1,14 @@
 """通用工具函数。"""
-import re
-import json
 import asyncio
+import json
 import random
+import re
 from collections import OrderedDict
-from typing import List, Dict, Any, Tuple, Optional
+from typing import Any
+from typing import Dict
+from typing import List
+from typing import Optional
+from typing import Tuple
 
 from nonebot import logger
 
@@ -67,15 +71,20 @@ class LRUDict(OrderedDict):
         super().__setitem__(key, value)
 
 
-def split_long_reply(text: str) -> List[str]:
-    """按语义分句拆分回复，每句独立为一条消息。
+def split_long_reply(text: str, max_chars: int = None) -> List[str]:
+    """按语义分句拆分回复，每段不超过 max_chars 字符。
 
     规则：
-    1. 按换行拆行，每行独立一条消息
+    1. 优先按换行拆行，每行独立一条消息
     2. 过短的行（< 5字）合并到上一条，避免碎片
-    3. 超长行（> 80字）按句号/问号/感叹号再拆
-    4. 清理尾部空格
+    3. 超长行按句号/问号/感叹号再拆
+    4. 硬限制每段不超过 max_chars（默认 900，QQ 消息限制）
+    5. 清理尾部空格
     """
+    if max_chars is None:
+        from .config import MAX_REPLY_CHARS
+        max_chars = MAX_REPLY_CHARS
+
     if not text or not text.strip():
         return [text.strip()]
 
@@ -116,7 +125,26 @@ def split_long_reply(text: str) -> List[str]:
             if temp and temp.strip():
                 result.append(temp.strip())
 
-    return result if result else [text.strip()]
+    # 第四步：硬限制每段不超过 max_chars（QQ 平台限制）
+    final = []
+    for segment in result:
+        if len(segment) <= max_chars:
+            final.append(segment)
+        else:
+            # 超长段按句子再次拆分
+            sub_parts = re.split(r'(?<=[。！？!?，,；;])', segment)
+            buf = ""
+            for part in sub_parts:
+                if len(buf) + len(part) > max_chars:
+                    if buf.strip():
+                        final.append(buf.strip())
+                    buf = part
+                else:
+                    buf += part
+            if buf.strip():
+                final.append(buf.strip())
+
+    return final if final else [text.strip()[:max_chars]]
 
 
 def calc_message_delay(text: str, context: dict = None) -> float:
@@ -215,7 +243,8 @@ def calc_message_delay(text: str, context: dict = None) -> float:
 
 
 def get_session_id(event) -> str:
-    from nonebot.adapters.onebot.v11 import GroupMessageEvent, PrivateMessageEvent
+    from nonebot.adapters.onebot.v11 import GroupMessageEvent
+    from nonebot.adapters.onebot.v11 import PrivateMessageEvent
     if isinstance(event, PrivateMessageEvent):
         return f"private_{event.user_id}"
     return f"group_{event.group_id}"
