@@ -77,6 +77,15 @@ class TopicTracker:
     def _get_session(self, session_id: str) -> Dict[str, Any]:
         """获取或创建会话状态。"""
         if session_id not in self._sessions:
+            # 容量保护：清理超过 2 小时未更新的旧会话
+            if len(self._sessions) >= 500:
+                now = time.time()
+                to_remove = [
+                    sid for sid, s in self._sessions.items()
+                    if (now - s["last_update"]) > 7200
+                ]
+                for sid in to_remove[:len(to_remove) // 2]:
+                    del self._sessions[sid]
             self._sessions[session_id] = {
                 "topics": [],
                 "message_count": 0,

@@ -13,6 +13,55 @@ from typing import Optional, Dict, Any, List
 from nonebot import logger
 
 
+def _analyze_pcm_sync(pcm_path: str, features: dict) -> dict:
+    """同步分析 PCM 文件（供 asyncio.to_thread 调用）。"""
+    with open(pcm_path, "rb") as f:
+        raw_data = f.read()
+
+    sample_count = len(raw_data) // 2
+    if sample_count == 0:
+        return features
+
+    samples = struct.unpack(f"<{sample_count}h", raw_data)
+
+    # RMS 音量（分帧计算）
+    frame_size = 1600  # 100ms @ 16kHz
+    rms_values = []
+    for i in range(0, sample_count - frame_size, frame_size):
+        frame = samples[i:i + frame_size]
+        rms = (sum(s ** 2 for s in frame) / frame_size) ** 0.5
+        rms_values.append(rms)
+
+    features["rms_volume"] = sum(rms_values) / len(rms_values) if rms_values else 0
+    features["rms_std"] = _std(rms_values) if len(rms_values) > 1 else 0
+
+    # 时长（16kHz 采样率）
+    features["duration_ms"] = sample_count / 16000 * 1000
+
+    # 静音比
+    silence_threshold = 500
+    silence_count = sum(1 for s in samples if abs(s) < silence_threshold)
+    features["silence_ratio"] = silence_count / sample_count
+
+    # 语速估算
+    onset_count = _detect_onsets(rms_values, threshold=1000)
+    duration_sec = features["duration_ms"] / 1000
+    features["speech_rate"] = onset_count / duration_sec if duration_sec > 0 else 0
+
+    # 音高变化
+    zero_crossings = _count_zero_crossings(samples)
+    features["pitch_std"] = zero_crossings / duration_sec if duration_sec > 0 else 0
+
+    # 频谱质心
+    features["spectral_centroid_mean"] = _estimate_spectral_centroid(samples, sample_count)
+
+    # 情绪推断
+    emotion, confidence = _estimate_emotion_enhanced(features)
+    features["estimated_emotion"] = emotion
+    features["confidence"] = confidence
+    return features
+
+
 async def extract_voice_features(audio_path: str) -> Optional[Dict[str, Any]]:
     """从音频文件提取特征。返回 None 表示提取失败。
 
@@ -48,53 +97,8 @@ async def extract_voice_features(audio_path: str) -> Optional[Dict[str, Any]]:
         if not os.path.exists(pcm_path) or os.path.getsize(pcm_path) < 100:
             return None
 
-        with open(pcm_path, "rb") as f:
-            raw_data = f.read()
-
-        # PCM 16-bit signed → 采样点列表
-        sample_count = len(raw_data) // 2
-        if sample_count == 0:
-            return None
-
-        samples = struct.unpack(f"<{sample_count}h", raw_data)
-
-        # === 基础特征 ===
-        # RMS 音量（分帧计算）
-        frame_size = 1600  # 100ms @ 16kHz
-        rms_values = []
-        for i in range(0, sample_count - frame_size, frame_size):
-            frame = samples[i:i + frame_size]
-            rms = (sum(s ** 2 for s in frame) / frame_size) ** 0.5
-            rms_values.append(rms)
-
-        features["rms_volume"] = sum(rms_values) / len(rms_values) if rms_values else 0
-        features["rms_std"] = _std(rms_values) if len(rms_values) > 1 else 0
-
-        # 时长（16kHz 采样率）
-        features["duration_ms"] = sample_count / 16000 * 1000
-
-        # 静音比（低于阈值的采样点占比）
-        silence_threshold = 500
-        silence_count = sum(1 for s in samples if abs(s) < silence_threshold)
-        features["silence_ratio"] = silence_count / sample_count
-
-        # === 增强特征 ===
-        # 语速估算（基于能量变化检测音节）
-        onset_count = _detect_onsets(rms_values, threshold=1000)
-        duration_sec = features["duration_ms"] / 1000
-        features["speech_rate"] = onset_count / duration_sec if duration_sec > 0 else 0
-
-        # 音高变化估算（基于过零率）
-        zero_crossings = _count_zero_crossings(samples)
-        features["pitch_std"] = zero_crossings / duration_sec if duration_sec > 0 else 0
-
-        # 频谱质心（简化版：基于高频能量占比）
-        features["spectral_centroid_mean"] = _estimate_spectral_centroid(samples, sample_count)
-
-        # 情绪推断（增强版）
-        emotion, confidence = _estimate_emotion_enhanced(features)
-        features["estimated_emotion"] = emotion
-        features["confidence"] = confidence
+        # CPU 密集型计算放到线程池，避免阻塞事件循环
+        features = await asyncio.to_thread(_analyze_pcm_sync, pcm_path, features)
 
     except Exception as e:
         logger.debug(f"[语音特征] 提取失败: {e}")
@@ -220,7 +224,3 @@ def _estimate_emotion_enhanced(features: dict) -> tuple:
     return "平静", 0.50
 
 
-def _estimate_emotion(features: dict) -> str:
-    """从音频特征推断情绪（兼容旧版）"""
-    emotion, _ = _estimate_emotion_enhanced(features)
-    return emotion

@@ -55,8 +55,16 @@ _TIME_PATTERNS = [
     (r"明天下午(\d{1,2})点(?:半)?", lambda m: _tomorrow_at(int(m.group(1)) + 12, 30 if "半" in m.group(0) else 0)),
     # "后天早上8点"
     (r"后天(?:早上?|上午)?(\d{1,2})点", lambda m: _day_after_tomorrow_at(int(m.group(1)), 0)),
-    # "晚上10点" / "10点"
-    (r"(?:晚上|今晚)?(\d{1,2})点(?:半)?", lambda m: _today_at(int(m.group(1)) + (12 if "晚" in m.group(0) or int(m.group(1)) < 6 else 0), 30 if "半" in m.group(0) else 0)),
+    # "凌晨3点"
+    (r"凌晨(\d{1,2})点(?:半)?", lambda m: _today_at(int(m.group(1)), 30 if "半" in m.group(0) else 0)),
+    # "早上8点" / "上午10点"
+    (r"(?:早上?|上午)(\d{1,2})点(?:半)?", lambda m: _today_at(int(m.group(1)), 30 if "半" in m.group(0) else 0)),
+    # "下午3点"
+    (r"下午(\d{1,2})点(?:半)?", lambda m: _today_at(int(m.group(1)) + 12, 30 if "半" in m.group(0) else 0)),
+    # "晚上10点" / "今晚10点"
+    (r"(?:晚上|今晚)(\d{1,2})点(?:半)?", lambda m: _today_at(int(m.group(1)) + 12, 30 if "半" in m.group(0) else 0)),
+    # 兜底："10点"（无修饰词时，1-5点视为下午，6-11点视为上午，12点不变）
+    (r"(\d{1,2})点(?:半)?", lambda m: _today_at(int(m.group(1)) + (12 if 1 <= int(m.group(1)) <= 5 else 0), 30 if "半" in m.group(0) else 0)),
 ]
 
 
@@ -131,7 +139,8 @@ async def parse_reminder(user_msg: str) -> ReminderParseResult:
             {"role": "user", "content": _PARSE_PROMPT.format(now=now_str, user_msg=user_msg)}
         ]
         raw = await api.call_deepseek_api(messages, temperature=0.1)
-        clean = re.sub(r"```json\s*|\s*```", "", raw).strip()
+        from .utils import clean_json_text
+        clean = clean_json_text(raw)
         match = re.search(r'\{[\s\S]*\}', clean)
         if match:
             data = json.loads(match.group())
@@ -305,12 +314,13 @@ async def check_and_fire_reminders(bot) -> None:
         except Exception as e:
             logger.error(f"[提醒] 发送失败: {e}")
 
-        # 处理重复提醒
+        # 处理重复提醒：使用原始设定时间计算下次触发，避免延迟漂移
         if repeat_type == "daily":
-            next_time = _tomorrow_at(dt.hour, dt.minute)
+            original_dt = datetime.fromtimestamp(reminder["trigger_time"], tz=TZ)
+            next_time = _tomorrow_at(original_dt.hour, original_dt.minute)
             await reschedule_reminder(rid, next_time)
         elif repeat_type == "weekly":
-            next_time = time.time() + 7 * 86400
+            next_time = reminder["trigger_time"] + 7 * 86400
             await reschedule_reminder(rid, next_time)
         else:
             await mark_reminder_done(rid)

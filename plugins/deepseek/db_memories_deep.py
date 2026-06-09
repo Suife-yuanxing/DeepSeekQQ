@@ -49,7 +49,7 @@ def calculate_topic_relevance(
 # 私人梗反馈循环 — 根据用户反应调整权重
 # ============================================================
 
-def update_meme_feedback(
+async def update_meme_feedback(
     meme_id: int,
     user_reaction: str  # 'positive', 'negative', 'neutral'
 ):
@@ -61,14 +61,14 @@ def update_meme_feedback(
     }
 
     try:
-        db = get_db()
-        db.execute("""
+        db = await get_db()
+        await db.execute("""
             UPDATE private_memes
             SET frequency = frequency * ?,
                 usage_count = usage_count + 1
             WHERE id = ?
         """, (weights.get(user_reaction, 1.0), meme_id))
-        db.commit()
+        await db.commit()
     except Exception as e:
         logger.debug(f"[私人梗反馈] 更新失败: {e}")
 
@@ -90,23 +90,23 @@ def detect_user_reaction(response_text: str) -> str:
     return 'neutral'
 
 
-def get_meme_to_use(
+async def get_meme_to_use(
     user_id: str,
     current_msg: str,
     context_keywords: List[str] = None
 ) -> Optional[Dict[str, Any]]:
     """获取适合使用的私人梗（考虑权重）"""
     try:
-        db = get_db()
+        db = await get_db()
         now = time.time()
 
         # 获取匹配的梗
-        cursor = db.execute("""
+        async with db.execute("""
             SELECT id, meme_type, content, trigger_keywords, frequency, usage_count, last_used
             FROM private_memes WHERE user_id = ?
             ORDER BY frequency DESC
-        """, (str(user_id),))
-        rows = cursor.fetchall()
+        """, (str(user_id),)) as cursor:
+            rows = await cursor.fetchall()
 
         if not rows:
             return None
@@ -150,12 +150,12 @@ def get_meme_to_use(
             cumulative += weight
             if r <= cumulative:
                 # 更新使用记录
-                db.execute("""
+                await db.execute("""
                     UPDATE private_memes
                     SET usage_count = usage_count + 1, last_used = ?
                     WHERE id = ?
                 """, (now, meme['id']))
-                db.commit()
+                await db.commit()
                 return meme
 
         return available[-1] if available else None

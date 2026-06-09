@@ -130,27 +130,37 @@ class MessageDebouncer:
         策略：
         - 取最后一条消息作为基础（保留最新的事件信息）
         - 将所有消息文本用换行连接
-        - 如果包含图片/表情等，保留第一条的非文本内容
+        - 保留第一条消息的非文本段（图片/表情/语音等）
         """
         if not messages:
             raise ValueError("无法合并空消息列表")
 
+        from nonebot.adapters.onebot.v11 import Message, MessageSegment
+
         # 取最后一条作为基础
         merged = messages[-1]
 
-        # 提取所有纯文本内容
+        # 分离文本和非文本段
         text_parts = []
-        for msg in messages:
-            # 提取文本段
-            text = str(msg.get_message()).strip()
-            if text:
-                text_parts.append(text)
+        non_text_segments = []
 
-        # 构建合并后的消息
+        for msg in messages:
+            for seg in msg.get_message():
+                if seg.type == "text":
+                    text = str(seg).strip()
+                    if text:
+                        text_parts.append(text)
+                elif not non_text_segments:
+                    # 只保留第一条消息的非文本内容（图片/表情/语音等）
+                    non_text_segments.append(seg)
+
+        # 构建合并后的消息：非文本段 + 合并文本
+        parts = non_text_segments[:]
         if text_parts:
-            from nonebot.adapters.onebot.v11 import Message
-            merged_text = "\n".join(text_parts)
-            merged._message = Message(merged_text)
+            parts.append(MessageSegment.text("\n".join(text_parts)))
+
+        if parts:
+            merged._message = Message(parts)
 
         # 记录合并信息（用于日志）
         merged._debounce_merged_count = len(messages)

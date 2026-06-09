@@ -1,8 +1,50 @@
 """通用工具函数。"""
 import re
+import json
+import asyncio
 import random
 from collections import OrderedDict
-from typing import List, Dict, Any, Tuple
+from typing import List, Dict, Any, Tuple, Optional
+
+from nonebot import logger
+
+# 后台任务引用集合，防止 GC 回收未完成的 task
+_background_tasks: set = set()
+
+
+def safe_task(coro) -> asyncio.Task:
+    """安全创建后台任务：保存引用 + 捕获异常。
+
+    替代 asyncio.create_task，避免：
+    1. task 被 GC 回收导致 "Task was destroyed but it is pending" 警告
+    2. task 内部异常被静默丢弃
+    """
+    task = asyncio.create_task(coro)
+    _background_tasks.add(task)
+    task.add_done_callback(_on_task_done)
+    return task
+
+
+def _on_task_done(task: asyncio.Task):
+    """task 完成回调：从引用集合移除 + 记录异常。"""
+    _background_tasks.discard(task)
+    if task.exception():
+        logger.warning(f"[后台任务] {task.get_name()} 失败: {task.exception()}")
+
+
+def clean_json_text(raw: str) -> str:
+    """清洗 LLM 返回的 JSON 文本，去除 markdown 代码块标记。"""
+    return re.sub(r"```json\s*|\s*```", "", raw).strip()
+
+
+def parse_json_response(raw: str) -> Optional[dict]:
+    """从 LLM 响应中解析 JSON 对象，失败返回 None。"""
+    clean = clean_json_text(raw)
+    try:
+        parsed = json.loads(clean)
+        return parsed if isinstance(parsed, dict) else None
+    except (json.JSONDecodeError, TypeError):
+        return None
 
 
 class LRUDict(OrderedDict):
@@ -168,53 +210,6 @@ def calc_message_delay(text: str, context: dict = None) -> float:
     # 边界：最少1.5秒（不可能比这更快），最多30秒
     return max(1.5, min(total, 30.0))
 
-
-def calc_burst_delays(parts: List[str], base_context: dict = None) -> List[float]:
-    """计算连发消息的延迟列表（带随机波动）。
-
-    真人连发消息的节奏：
-    - 第一条：正常延迟（阅读+思考+打字）
-    - 第二条：等 2~5 秒（打完一条想起来又补一条）
-    - 第三条：等 1~3 秒（越说越快，抢着说）
-
-    增强：引入随机波动，模拟真人打字速度不均匀
-    """
-    if not parts:
-        return []
-
-    delays = []
-    # 衰减系数范围（模拟真人打字节奏）
-    decay_ranges = [
-        (0.85, 1.15),   # 第一条：±15%波动
-        (0.65, 0.95),   # 第二条：减少5-35%
-        (0.50, 0.80),   # 第三条：减少20-50%
-    ]
-
-    for i, part in enumerate(parts):
-        if i == 0:
-            # 第一条：正常延迟
-            ctx = dict(base_context or {})
-            base_delay = calc_message_delay(part, ctx)
-            # 增加微小随机性
-            jitter = random.uniform(-0.1, 0.1)
-            delays.append(max(0.3, base_delay + jitter))
-        else:
-            # 追加消息：随机衰减
-            if i < len(decay_ranges):
-                low, high = decay_ranges[i]
-            else:
-                # 更多消息：继续衰减但有下限
-                low, high = 0.4, 0.6
-
-            # 随机选择衰减系数
-            decay = random.uniform(low, high)
-            base_delay = 3.5 * decay  # 基础延迟3.5秒
-
-            # 增加微小随机性（模拟打字速度不均匀）
-            jitter = random.uniform(-0.2, 0.2)
-            delays.append(max(1.5, base_delay + jitter))
-
-    return delays
 
 
 

@@ -57,7 +57,7 @@ async def _call_deepseek_raw(messages: List[Dict[str, str]], temperature: float 
         "model": MODEL,
         "messages": messages,
         "temperature": temperature,
-        "max_tokens": max_tokens or API_MAX_TOKENS,
+        "max_tokens": max_tokens if max_tokens is not None else API_MAX_TOKENS,
         "stream": False
     }
 

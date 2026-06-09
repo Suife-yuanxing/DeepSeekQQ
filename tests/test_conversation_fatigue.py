@@ -5,7 +5,6 @@ from unittest.mock import MagicMock
 from plugins.deepseek.conversation_fatigue import (
     analyze_conversation_fatigue,
     get_closing_message,
-    should_suppress_followup,
     _detect_closing_words,
     _detect_message_shortening,
     _build_fatigue_hint,
@@ -193,22 +192,6 @@ class TestClosingMessage:
         schedule.period = "active"
         msg = get_closing_message(3, schedule)
         assert msg is not None
-
-
-class TestShouldSuppressFollowup:
-    """追问抑制测试。"""
-
-    def test_level_0_no_suppress(self):
-        assert should_suppress_followup(0) is False
-
-    def test_level_1_no_suppress(self):
-        assert should_suppress_followup(1) is False
-
-    def test_level_2_suppress(self):
-        assert should_suppress_followup(2) is True
-
-    def test_level_3_suppress(self):
-        assert should_suppress_followup(3) is True
 
 
 class TestPromptInjection:

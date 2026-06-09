@@ -10,18 +10,19 @@ from .config import AFFECTION_LEVELS
 async def get_affection(user_id: str) -> Dict[str, Any]:
     db = await get_db()
     async with db.execute(
-        "SELECT score, level, title, total_chats, streak_days FROM affection WHERE user_id = ?",
+        "SELECT score, level, title, total_chats, streak_days, first_interaction FROM affection WHERE user_id = ?",
         (str(user_id),)
     ) as cursor:
         row = await cursor.fetchone()
         if not row:
-            return {"score": 0, "level": 1, "title": "陌生人", "total_chats": 0, "streak_days": 0}
+            return {"score": 0, "level": 1, "title": "陌生人", "total_chats": 0, "streak_days": 0, "first_interaction": 0}
         return {
             "score": row["score"],
             "level": row["level"],
             "title": row["title"],
             "total_chats": row["total_chats"],
             "streak_days": row["streak_days"],
+            "first_interaction": row["first_interaction"] or 0,
         }
 
 
@@ -72,17 +73,30 @@ async def decay_affection(inactive_days: int = 7, decay_points: float = -1.0):
     from datetime import datetime
     db = await get_db()
     threshold = datetime.now().timestamp() - inactive_days * 86400
-    cursor = await db.execute(
-        """UPDATE affection SET score = MAX(0, score + ?)
-           WHERE user_id NOT IN (
-               SELECT DISTINCT REPLACE(session_id, 'private_', '') FROM memories
-               WHERE session_id LIKE 'private_%' AND timestamp > ?
-           ) AND score > 0""",
-        (decay_points, threshold)
-    )
-    await db.commit()
-    affected = cursor.rowcount
+    # 先查出活跃用户集合，再更新非活跃用户（避免 NOT IN 全表扫描）
+    async with db.execute(
+        """SELECT DISTINCT REPLACE(session_id, 'private_', '') as uid FROM memories
+           WHERE session_id LIKE 'private_%' AND timestamp > ?""",
+        (threshold,)
+    ) as cursor:
+        active_rows = await cursor.fetchall()
+    active_ids = {r["uid"] for r in active_rows}
+
+    # 获取所有有好感度的用户
+    async with db.execute("SELECT user_id FROM affection WHERE score > 0") as cursor:
+        all_rows = await cursor.fetchall()
+
+    # 衰减非活跃用户
+    affected = 0
+    for row in all_rows:
+        if row["user_id"] not in active_ids:
+            await db.execute(
+                "UPDATE affection SET score = MAX(0, score + ?) WHERE user_id = ?",
+                (decay_points, row["user_id"])
+            )
+            affected += 1
     if affected > 0:
+        await db.commit()
         logger.info(f"[好感度] {affected} 个用户好感度自然衰减")
 
 

@@ -20,6 +20,7 @@ from .db_mood import (
     get_catgirl_mood, update_catgirl_mood,
     get_bot_mood, update_bot_mood,
     get_user_mood, update_user_mood, decay_user_mood,
+    save_mood_snapshot, get_last_mood_snapshot, get_mood_care_hint,
 )
 from .db_tags import (
     save_memory_tags, decay_memory_tags, prune_memory_tags,
@@ -51,11 +52,14 @@ from .db_memories_deep import (
     save_shared_memory, get_shared_memories, get_recall_candidates, boost_shared_memory,
     save_private_meme, get_private_memes, find_matching_meme,
     save_important_date, get_important_dates, get_today_dates, get_upcoming_dates,
+    decay_shared_memories,
 )
 from .db_social import (
     record_relationship, get_relationships, get_relationship,
     save_group_meme, get_group_memes, find_matching_group_meme,
     record_social_reference, get_social_references,
+    get_group_relationships_summary, get_group_meme_hint,
+    get_social_reference_hint, get_group_role_hint, decay_relationships,
 )
 
 from .config import AFFECTION_LEVELS
@@ -141,12 +145,25 @@ async def get_last_greeting_time(user_id: str, greeting_type: str) -> Optional[f
 async def record_farewell(user_id: str, session_id: str):
     """记录用户道别时间（用于晚安后调侃逻辑）。"""
     from .db_core import get_db
+    import json
     import time
     db = await get_db()
-    # 使用 session_state 表记录道别时间
+    # 读取现有 snapshot，合并 farewell_time 而非覆盖
+    async with db.execute(
+        "SELECT bot_mood_snapshot FROM session_state WHERE session_id = ?",
+        (session_id,)
+    ) as cursor:
+        row = await cursor.fetchone()
+    existing = {}
+    if row and row[0]:
+        try:
+            existing = json.loads(row[0])
+        except (json.JSONDecodeError, TypeError):
+            pass
+    existing["farewell_time"] = time.time()
     await db.execute(
         "UPDATE session_state SET bot_mood_snapshot = ? WHERE session_id = ?",
-        (f'{{"farewell_time": {time.time()}}}', session_id)
+        (json.dumps(existing, ensure_ascii=False), session_id)
     )
     await db.commit()
 
@@ -191,7 +208,8 @@ async def init_db():
             last_interaction REAL,
             total_chats INTEGER DEFAULT 0,
             streak_days INTEGER DEFAULT 0,
-            last_streak_date TEXT
+            last_streak_date TEXT,
+            first_interaction REAL
         )
     """)
     await db.execute("""
@@ -366,6 +384,145 @@ async def init_db():
             repeat_yearly BOOLEAN DEFAULT 1,
             created_at REAL,
             UNIQUE(user_id, date_type, date_value)
+        )
+    """)
+    # === 以下表由 migration 首次创建，此处为安全兜底 ===
+    await db.execute("""
+        CREATE TABLE IF NOT EXISTS session_state (
+            session_id TEXT PRIMARY KEY,
+            last_topic TEXT DEFAULT '',
+            last_emotion TEXT DEFAULT '',
+            last_interaction REAL DEFAULT 0,
+            context_summary TEXT DEFAULT '',
+            bot_mood_snapshot TEXT DEFAULT '{}'
+        )
+    """)
+    await db.execute("""
+        CREATE TABLE IF NOT EXISTS emotion_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id TEXT NOT NULL,
+            session_id TEXT NOT NULL,
+            emotion_label TEXT,
+            valence REAL,
+            arousal REAL,
+            trigger_text TEXT,
+            cause_chain TEXT,
+            timestamp REAL
+        )
+    """)
+    await db.execute("CREATE INDEX IF NOT EXISTS idx_emotion_log_ts ON emotion_log(timestamp)")
+    await db.execute("""
+        CREATE TABLE IF NOT EXISTS user_profiles (
+            user_id TEXT PRIMARY KEY,
+            relationship_style TEXT DEFAULT 'neutral',
+            nickname TEXT DEFAULT '',
+            first_interaction REAL,
+            total_messages INTEGER DEFAULT 0,
+            last_known_mood TEXT DEFAULT '',
+            known_interests TEXT DEFAULT '',
+            bot_self_summary TEXT DEFAULT ''
+        )
+    """)
+    await db.execute("""
+        CREATE TABLE IF NOT EXISTS relationship_milestones (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id TEXT NOT NULL,
+            milestone_type TEXT NOT NULL,
+            milestone_value INTEGER,
+            triggered_at REAL,
+            triggered BOOLEAN DEFAULT 0,
+            UNIQUE(user_id, milestone_type)
+        )
+    """)
+    await db.execute("""
+        CREATE TABLE IF NOT EXISTS bot_disclosures (
+            user_id TEXT NOT NULL,
+            disclosure_key TEXT NOT NULL,
+            revealed_at REAL,
+            reveal_count INTEGER DEFAULT 1,
+            UNIQUE(user_id, disclosure_key)
+        )
+    """)
+    await db.execute("""
+        CREATE TABLE IF NOT EXISTS mood_snapshots (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id TEXT NOT NULL,
+            session_id TEXT NOT NULL,
+            valence REAL,
+            arousal REAL,
+            dominant TEXT,
+            snapshot_time REAL
+        )
+    """)
+    await db.execute("CREATE INDEX IF NOT EXISTS idx_mood_snap_user ON mood_snapshots(user_id, snapshot_time)")
+    await db.execute("""
+        CREATE TABLE IF NOT EXISTS bot_personality (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            trait_type TEXT NOT NULL,
+            content TEXT NOT NULL,
+            frequency REAL DEFAULT 0.5,
+            context TEXT DEFAULT '',
+            created_at REAL,
+            usage_count INTEGER DEFAULT 0,
+            last_used REAL DEFAULT 0
+        )
+    """)
+    await db.execute("""
+        CREATE TABLE IF NOT EXISTS group_members (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            group_id TEXT NOT NULL,
+            member_id TEXT NOT NULL,
+            nickname TEXT DEFAULT '',
+            last_active REAL,
+            relationship TEXT DEFAULT 'stranger',
+            personality_tags TEXT DEFAULT '',
+            talk_frequency REAL DEFAULT 0,
+            UNIQUE(group_id, member_id)
+        )
+    """)
+    await db.execute("CREATE INDEX IF NOT EXISTS idx_group_members_group ON group_members(group_id, last_active)")
+    await db.execute("""
+        CREATE TABLE IF NOT EXISTS group_social_graph (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            group_id TEXT NOT NULL,
+            member_a TEXT NOT NULL,
+            member_b TEXT NOT NULL,
+            rel_type TEXT DEFAULT 'stranger',
+            strength REAL DEFAULT 0.1,
+            evidence TEXT DEFAULT '',
+            interaction_count INTEGER DEFAULT 1,
+            created_at REAL,
+            last_interaction REAL,
+            UNIQUE(group_id, member_a, member_b)
+        )
+    """)
+    await db.execute("CREATE INDEX IF NOT EXISTS idx_social_graph_group ON group_social_graph(group_id, strength DESC)")
+    await db.execute("""
+        CREATE TABLE IF NOT EXISTS group_memes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            group_id TEXT NOT NULL,
+            meme_type TEXT NOT NULL,
+            content TEXT NOT NULL,
+            trigger_keywords TEXT DEFAULT '',
+            creator_id TEXT DEFAULT '',
+            frequency REAL DEFAULT 0.3,
+            usage_count INTEGER DEFAULT 0,
+            created_at REAL,
+            last_used REAL DEFAULT 0,
+            UNIQUE(group_id, meme_type, content)
+        )
+    """)
+    await db.execute("""
+        CREATE TABLE IF NOT EXISTS social_references (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id TEXT NOT NULL,
+            person_name TEXT NOT NULL,
+            relationship TEXT DEFAULT '',
+            mentioned_count INTEGER DEFAULT 1,
+            context TEXT DEFAULT '',
+            created_at REAL,
+            last_mentioned REAL,
+            UNIQUE(user_id, person_name)
         )
     """)
     await db.commit()

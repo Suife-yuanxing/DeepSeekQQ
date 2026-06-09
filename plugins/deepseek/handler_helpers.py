@@ -145,16 +145,6 @@ def has_time_gap(recent_memories: list, threshold: int = 300) -> bool:
     return False
 
 
-def is_bot_at(event: MessageEvent, bot_id: str) -> bool:
-    """检查 bot 是否被 @ 了。"""
-    try:
-        for seg in event.message:
-            if seg.type == "at" and str(seg.data.get("qq", "")) == str(bot_id):
-                return True
-    except Exception:
-        pass
-    return False
-
 
 # ============================================================
 # 引用决策

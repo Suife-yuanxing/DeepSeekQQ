@@ -68,12 +68,14 @@ async def _delayed_cleanup_multi(paths: List[str], delay: int = 60):
 
 def schedule_cleanup(path: str, delay: int = 300):
     """调度一个延迟清理任务（fire-and-forget）。"""
-    asyncio.create_task(_delayed_cleanup(path, delay))
+    from .utils import safe_task
+    safe_task(_delayed_cleanup(path, delay))
 
 
 def schedule_cleanup_multi(paths: List[str], delay: int = 60):
     """调度多个文件的延迟清理任务（fire-and-forget）。"""
-    asyncio.create_task(_delayed_cleanup_multi(paths, delay))
+    from .utils import safe_task
+    safe_task(_delayed_cleanup_multi(paths, delay))
 
 
 # ============================================================

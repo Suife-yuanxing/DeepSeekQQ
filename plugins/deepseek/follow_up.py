@@ -86,11 +86,21 @@ class SessionFollowUpState:
 
 # 全局状态：session_id -> SessionFollowUpState
 _session_states: Dict[str, SessionFollowUpState] = {}
+_MAX_SESSION_STATES = 500
 
 
 def get_session_state(session_id: str) -> SessionFollowUpState:
     """获取或创建会话状态。"""
     if session_id not in _session_states:
+        # 容量保护：清理已回复且超过 1 小时的旧状态
+        if len(_session_states) >= _MAX_SESSION_STATES:
+            now = time.time()
+            to_remove = [
+                sid for sid, s in _session_states.items()
+                if s.user_replied and (now - s.last_bot_msg_time) > 3600
+            ]
+            for sid in to_remove[:len(to_remove) // 2]:
+                del _session_states[sid]
         _session_states[session_id] = SessionFollowUpState()
     return _session_states[session_id]
 

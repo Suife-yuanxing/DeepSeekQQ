@@ -10,8 +10,7 @@
 
 | 项目 | 值 |
 |------|-----|
-| 服务器 | lhins-n2eeuw4m (4C4G, 上海) |
-| 公网 IP | 127.211.7.67 |
+| 服务器 | 腾讯云轻量 (4C4G, 上海) |
 | QQ 账号 | 3033578949（喵喵） |
 | 主人 QQ | 2938897660 |
 | GitHub | https://github.com/Suife-yuanxing/DeepSeekQQ.git |

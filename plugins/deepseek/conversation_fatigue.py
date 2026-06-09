@@ -267,6 +267,3 @@ def get_closing_message(level: int, schedule=None) -> Optional[str]:
     ])
 
 
-def should_suppress_followup(level: int) -> bool:
-    """疲劳等级 >= 2 时应抑制追问。"""
-    return level >= 2

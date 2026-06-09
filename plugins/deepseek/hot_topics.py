@@ -275,6 +275,11 @@ async def generate_push_message(topic: HotTopic) -> str:
 # 图片下载（避免 NapCat TLS 证书验证失败）
 # ============================================================
 
+def _write_file_sync(path: str, data: bytes):
+    """同步写文件（供 asyncio.to_thread 调用）。"""
+    with open(path, "wb") as f:
+        f.write(data)
+
 _CACHE_DIR = os.path.join("data", "images", "hot_topics")
 os.makedirs(_CACHE_DIR, exist_ok=True)
 
@@ -309,8 +314,8 @@ async def _download_image(url: str) -> Optional[str]:
                 if resp.status == 200:
                     data = await resp.read()
                     if len(data) > 500:  # 过小的可能是错误页
-                        with open(local_path, "wb") as f:
-                            f.write(data)
+                        import asyncio as _aio
+                        await _aio.to_thread(_write_file_sync, local_path, data)
                         logger.debug(f"[热搜] 图片已缓存: {fname} ({len(data)}B)")
                         return local_path
         return None

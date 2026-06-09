@@ -18,8 +18,8 @@ from nonebot import logger
 
 from .config import REPLY_LENGTH_CONFIG, RANDOM_REPLY_CHANCE, ANALYSIS_HISTORY_LIMIT, CHAT_HISTORY_MULTIPLIER, PHONE_CONTROL_ENABLED, MY_QQ, STT_ENABLED
 from .prompt import _build_system_prompt, estimate_reply_length
-from .utils import split_long_reply, calc_message_delay, get_session_id, check_rate_limit, filter_novel_actions
-from .memory import save_and_get_context, save_reply, apply_affection_delta, save_and_get_context_with_history, get_user_pref_hints, recover_session_context
+from .utils import split_long_reply, calc_message_delay, get_session_id, check_rate_limit, filter_novel_actions, safe_task
+from .memory import save_reply, apply_affection_delta, save_and_get_context_with_history, get_user_pref_hints, recover_session_context
 from .share_parser import extract_and_cache_shares, get_recent_shares
 from .share_prompt import build_analysis_prompt
 from .api import call_deepseek_api
@@ -30,14 +30,14 @@ from .search import should_search, search, format_search_for_prompt, extract_sea
 from .reminder import is_reminder_request, create_reminder, list_reminders, cancel_reminder_by_id, get_pending_reminders_context, _generate_reminder_reply
 from .world_context import build_world_context_prompt, extract_city_from_message
 from .media import split_reply_and_links, extract_shareable_from_search, build_rich_message
-from .sticker import parse_sticker_tag, select_sticker, should_send_sticker_fallback, filter_sticker_tag, select_sticker_with_search
+from .sticker import parse_sticker_tag, should_send_sticker_fallback, filter_sticker_tag, select_sticker_with_search
 from .security import scan_input, get_blocked_reply
-from .plugin_manager import get_enabled_plugins, load_plugins_from_dir
+from .plugin_manager import get_enabled_plugins
 from .image_gen import should_generate_image, generate_image, _extract_draw_prompt
 
 # 拆分出的子模块
 from .handler_helpers import (
-    make_reply, make_quote_reply, is_bot_at, is_multi_topic,
+    make_reply, make_quote_reply, is_multi_topic,
     is_question, is_greeting, detect_greeting_type, get_morning_time_hint,
     get_night_affection_hint, has_time_gap, should_quote, parse_target_lines,
     is_night_farewell,
@@ -51,7 +51,7 @@ _quote_reply = make_quote_reply
 
 
 # ============================================================
-# 情绪驱动参数映射（功能⑤）
+# 情绪参数映射（温度/长度/表情包概率）
 # ============================================================
 
 def get_emotion_params(emotion) -> dict:
@@ -298,16 +298,6 @@ async def _stage_session_recovery(ctx: ChatContext) -> Optional[str]:
     ctx.session_recovery = await recover_session_context(ctx.session_id, ctx.user_id)
     if ctx.session_recovery and ctx.session_recovery.get("bot_emotion_memory_hint"):
         ctx.bot_emotion_memory_hint = ctx.session_recovery["bot_emotion_memory_hint"]
-
-    # 话题追踪：获取话题上下文，避免重复提问
-    from .topic_tracker import get_topic_context
-    topic_context = get_topic_context(ctx.session_id, ctx.recent_memories)
-    if topic_context:
-        if not ctx.session_recovery:
-            ctx.session_recovery = {}
-        ctx.session_recovery["topic_context"] = topic_context
-        logger.debug(f"[话题追踪] 注入话题上下文: {topic_context[:50]}...")
-
     return None
 
 
@@ -467,6 +457,15 @@ async def _stage_context(ctx: ChatContext) -> Optional[str]:
     ctx.recent_memories, ctx.relevant_tags, ctx.affection, ctx.mood, history_for_analysis = \
         await save_and_get_context_with_history(ctx.session_id, ctx.user_id, ctx.raw_msg)
 
+    # 话题追踪：在 memories 加载后注入话题上下文（避免 session_recovery 阶段 memories 为空）
+    from .topic_tracker import get_topic_context
+    topic_context = get_topic_context(ctx.session_id, ctx.recent_memories)
+    if topic_context:
+        if not ctx.session_recovery:
+            ctx.session_recovery = {}
+        ctx.session_recovery["topic_context"] = topic_context
+        logger.debug(f"[话题追踪] 注入话题上下文: {topic_context[:50]}...")
+
     # === 简单消息：跳过深度分析，直接用默认值 ===
     from .schedule import get_schedule_state
     if ctx.complexity == "simple":
@@ -525,9 +524,26 @@ async def _run_core_analysis(ctx: ChatContext, history_for_analysis: list):
     async def _do_reminders():
         return await get_pending_reminders_context(ctx.user_id)
 
-    analysis, search_result, world_ctx, reminder_ctx = await asyncio.gather(
-        _do_analysis(), _do_search(), _do_weather(), _do_reminders()
+    results = await asyncio.gather(
+        _do_analysis(), _do_search(), _do_weather(), _do_reminders(),
+        return_exceptions=True
     )
+    analysis, search_result, world_ctx, reminder_ctx = results
+
+    # 处理并行任务中的异常：失败的任务用默认值，不中断 pipeline
+    if isinstance(analysis, Exception):
+        logger.error(f"[分析] 情绪/上下文分析失败: {analysis}")
+        from .context_analyzer import ContextAnalysis, EmotionState
+        analysis = AnalysisResult(context=ContextAnalysis(), emotion=EmotionState())
+    if isinstance(search_result, Exception):
+        logger.warning(f"[搜索] 搜索失败: {search_result}")
+        search_result = None
+    if isinstance(world_ctx, Exception):
+        logger.warning(f"[天气] 天气查询失败: {world_ctx}")
+        world_ctx = ""
+    if isinstance(reminder_ctx, Exception):
+        logger.warning(f"[提醒] 提醒查询失败: {reminder_ctx}")
+        reminder_ctx = ""
 
     ctx.analysis = analysis
     ctx.search_result = search_result
@@ -568,22 +584,26 @@ async def _run_batch1_queries(ctx: ChatContext):
         check_and_trigger_milestone(ctx.user_id),                       # [7]
         _get_affection_decay(),                                         # [8]
         _get_undisclosed(),                                             # [9]
+        return_exceptions=True
     )
 
-    # 解包 batch1 结果
-    ctx.bot_mood_result = batch1_results[0]
-    ctx.emotion_memory_hint = batch1_results[1] or ""
-    ctx.user_prefs = batch1_results[2]
-    ctx.is_first_today = not batch1_results[3]
-    ctx.shared_memory_hint = batch1_results[4] or ""
-    ctx.private_meme_hint = batch1_results[5] or ""
-    ctx.date_hint = batch1_results[6] or ""
-    ctx.milestone_hint = batch1_results[7]
-    ctx.affection_decay_hint = batch1_results[8]
-    ctx.disclosure_hint = batch1_results[9]
+    # 解包 batch1 结果，异常项用默认值
+    def _safe(val, default=None):
+        return default if isinstance(val, Exception) else val
+
+    ctx.bot_mood_result = _safe(batch1_results[0], {"dominant": "平静", "reason": ""})
+    ctx.emotion_memory_hint = _safe(batch1_results[1], "") or ""
+    ctx.user_prefs = _safe(batch1_results[2], {})
+    ctx.is_first_today = not _safe(batch1_results[3], False)
+    ctx.shared_memory_hint = _safe(batch1_results[4], "") or ""
+    ctx.private_meme_hint = _safe(batch1_results[5], "") or ""
+    ctx.date_hint = _safe(batch1_results[6], "") or ""
+    ctx.milestone_hint = _safe(batch1_results[7])
+    ctx.affection_decay_hint = _safe(batch1_results[8])
+    ctx.disclosure_hint = _safe(batch1_results[9])
     if ctx.disclosure_hint:
         from .database import mark_disclosed
-        asyncio.create_task(mark_disclosed(ctx.user_id, ctx.disclosure_hint["key"]))
+        safe_task(mark_disclosed(ctx.user_id, ctx.disclosure_hint["key"]))
 
     # 情绪系统深化
     if ctx.bot_mood_result.get("recovery_stage"):
@@ -592,6 +612,12 @@ async def _run_batch1_queries(ctx: ChatContext):
         ctx.emotion_recovery_hint = ctx.bot_mood_result["swing_hint"]
     if ctx.bot_mood_result.get("contagion"):
         ctx.contagion_result = ctx.bot_mood_result["contagion"]
+
+    # 情绪因果链：最近情绪变化趋势
+    from .context_analyzer import get_emotion_cause_chain
+    cause_chain = await get_emotion_cause_chain(ctx.user_id)
+    if cause_chain:
+        ctx.emotion_memory_hint = (ctx.emotion_memory_hint or "") + f"\n情绪变化趋势：{cause_chain}"
         ctx.bot_mood_result["valence"] = ctx.bot_mood_result.get("valence", 0) + ctx.contagion_result.get("valence_delta", 0)
         ctx.bot_mood_result["arousal"] = ctx.bot_mood_result.get("arousal", 0.2) + ctx.contagion_result.get("arousal_delta", 0)
 
@@ -603,7 +629,7 @@ def _run_sync_computations(ctx: ChatContext) -> str:
     bot_mood_dominant = ctx.bot_mood_result.get("dominant", "平静") if ctx.bot_mood_result else "平静"
 
     # 对话节奏：话题桥接/过渡
-    from .dialogue_rhythm import get_topic_bridge, get_topic_transition_hint
+    from .dialogue_rhythm import get_topic_bridge, get_topic_transition_hint, get_icebreaker_context
     prev_topic = ""
     if ctx.session_recovery:
         prev_topic = ctx.session_recovery.get("last_topic", "")
@@ -648,7 +674,7 @@ async def _run_batch2_queries(ctx: ChatContext, bot_mood_dominant: str):
             from .group_atmosphere import get_group_social_context
             from .db_group import update_member_activity
             social_ctx = await get_group_social_context(group_id, ctx.raw_msg)
-            asyncio.create_task(update_member_activity(group_id, ctx.user_id))
+            safe_task(update_member_activity(group_id, ctx.user_id))
             return social_ctx
         return {}
 
@@ -671,15 +697,19 @@ async def _run_batch2_queries(ctx: ChatContext, bot_mood_dominant: str):
         _get_icebreaker(),       # [0]
         _get_group_social(),     # [1]
         _get_personalization(),  # [2]
+        return_exceptions=True
     )
 
-    ctx.icebreaker_hint = batch2_results[0]
-    social_ctx = batch2_results[1]
+    def _safe2(val, default=None):
+        return default if isinstance(val, Exception) else val
+
+    ctx.icebreaker_hint = _safe2(batch2_results[0], "")
+    social_ctx = _safe2(batch2_results[1], {})
     if social_ctx:
         ctx.group_social_hint = social_ctx.get("social_hint", "")
         ctx.group_meme_hint = social_ctx.get("meme_hint", "")
         ctx.group_role_hint = social_ctx.get("role_hint", "")
-    personal_hints = batch2_results[2]
+    personal_hints = _safe2(batch2_results[2], {})
     ctx.nickname_hint = personal_hints.get("nickname_hint", "")
     ctx.interest_hint = personal_hints.get("interest_hint", "")
     ctx.growth_hint = personal_hints.get("growth_hint", "")
@@ -730,6 +760,9 @@ async def _stage_schedule_interrupt(ctx: ChatContext) -> Optional[str]:
 
 @stage("reminder")
 async def _stage_reminder(ctx: ChatContext) -> Optional[str]:
+    from .config import REMINDER_ENABLED
+    if not REMINDER_ENABLED:
+        return None
     reminder_intent = is_reminder_request(ctx.raw_msg)
     if reminder_intent == "create":
         reply_text = await create_reminder(ctx.user_id, ctx.session_id, ctx.raw_msg)
@@ -815,6 +848,13 @@ async def _stage_llm(ctx: ChatContext) -> Optional[str]:
     else:
         length_info = estimate_reply_length(ctx.raw_msg, ctx.recent_memories, ctx.bot_mood_result)
         length_info["target_lines"] = parse_target_lines(ctx.emotion_params["target_lines"])
+
+        # 活跃度修正：根据情绪/作息动态调整回复长度
+        from .behavior_engine import get_verbosity_modifier
+        schedule_period = ctx.schedule.period if ctx.schedule else "active"
+        bot_mood_dom = ctx.bot_mood_result.get("dominant", "平静") if ctx.bot_mood_result else "平静"
+        verbosity = get_verbosity_modifier(schedule_period, bot_mood_dom)
+        length_info["target_lines"] = max(1, round(length_info["target_lines"] * verbosity))
         ep = ctx.emotion_params
         if ep["temperature"] >= 1.0:
             length_info["style"] = "活泼轻快"
@@ -858,7 +898,7 @@ async def _stage_llm(ctx: ChatContext) -> Optional[str]:
         from .database import has_user_message_today
         greeting_type = detect_greeting_type(ctx.raw_msg, ctx.recent_memories)
 
-        # 检查是否是晚安后又来聊天（5分钟内）
+        # 检查是否是道别后又来聊天（5分钟内）
         is_comeback_after_farewell = False
         if greeting_type is None:
             from .database import get_last_farewell_time
@@ -890,7 +930,7 @@ async def _stage_llm(ctx: ChatContext) -> Optional[str]:
                 )
                 # 记录道别时间
                 from .database import record_farewell
-                asyncio.create_task(record_farewell(ctx.user_id, ctx.session_id))
+                safe_task(record_farewell(ctx.user_id, ctx.session_id))
                 # 取消追问（修复：说了晚安后追问系统还在追问）
                 from .follow_up import suppress_followup
                 suppress_followup(ctx.session_id)
@@ -919,22 +959,31 @@ async def _stage_llm(ctx: ChatContext) -> Optional[str]:
                     "比如'你来啦~'、'今天这么早？'之类的自然过渡。"
                 )
                 from .database import log_proactive
-                asyncio.create_task(log_proactive(
+                safe_task(log_proactive(
                     ctx.user_id, "private", "[感知式早安]", scene="morning_triggered"
                 ))
 
         # 图片回复策略（P2）：基于人设的个性化图片回应（独立于上述条件）
-        from .image_reply import get_image_reply_prompt
+        from .image_reply import get_image_reply_prompt, should_analyze_in_detail, is_emotional_share
         image_shares = [s for s in shares_now if s.get("type") == "图片" and s.get("vision_text")]
         if image_shares:
             latest_image = image_shares[-1]
             image_type = latest_image.get("image_type", "unknown")
             vision_text = latest_image.get("vision_text", "")
             affection_score = ctx.affection.get("score", 0)
+
+            # 判断图片分析深度和回复策略
+            detailed = should_analyze_in_detail(ctx.raw_msg, len(image_shares))
+            emotional = is_emotional_share(ctx.raw_msg)
+
             image_prompt = get_image_reply_prompt(
                 image_type, vision_text, affection_score, ctx.raw_msg, ctx.bot_mood_result
             )
             if image_prompt:
+                if detailed:
+                    image_prompt += "\n用户希望你详细分析这张图片，多说一些。"
+                elif emotional:
+                    image_prompt += "\n用户在分享有趣/好看的内容，附和一下就好，不用分析。"
                 sys_prompt += f"\n{image_prompt}"
 
         messages = [{"role": "system", "content": sys_prompt}]
@@ -956,12 +1005,22 @@ async def _stage_llm(ctx: ChatContext) -> Optional[str]:
         # Token 预算管理：确保不超出上下文窗口
         messages = fit_messages_to_budget(messages, sys_prompt)
 
-    ctx.reply_text = await call_deepseek_api(
-        messages,
-        temperature=ctx.emotion_params["temperature"],
-        task_type="chat",
-        max_tokens=ctx.emotion_params["max_tokens"],
-    )
+        # 上下文优化统计（调试用）
+        from .context_optimizer import get_context_stats
+        ctx_stats = get_context_stats(ctx.recent_memories, selected_memories, sys_prompt)
+        if ctx_stats.get("token_saved", 0) > 0:
+            logger.debug(f"[上下文] 压缩率={ctx_stats['compression_ratio']:.1%} 节省={ctx_stats['token_saved']}tokens")
+
+    try:
+        ctx.reply_text = await call_deepseek_api(
+            messages,
+            temperature=ctx.emotion_params["temperature"],
+            task_type="chat",
+            max_tokens=ctx.emotion_params["max_tokens"],
+        )
+    except Exception as e:
+        logger.error(f"[LLM] API 调用失败: {e}")
+        ctx.reply_text = "抱歉，我现在脑子有点转不过来，稍后再聊好吗？"
     ctx.reply_text = filter_novel_actions(ctx.reply_text)
     return None
 
@@ -1172,11 +1231,11 @@ async def _stage_post(ctx: ChatContext) -> Optional[str]:
 
     # 随机行为（P2）：3% 概率突然分享点什么
     from .message_actions import maybe_share_something
-    asyncio.create_task(maybe_share_something(ctx.bot, ctx.event, share_chance=0.03))
+    safe_task(maybe_share_something(ctx.bot, ctx.event, share_chance=0.03))
 
     # 情绪快照保存（P1）：会话结束时保存用户情绪供下次关心
     from .db_mood import save_mood_snapshot
-    asyncio.create_task(save_mood_snapshot(ctx.user_id, ctx.session_id))
+    safe_task(save_mood_snapshot(ctx.user_id, ctx.session_id))
 
     return None
 
@@ -1225,7 +1284,7 @@ async def _handle_emoji_share(ctx: ChatContext, last_share: dict):
             await asyncio.sleep(random.uniform(1.0, 2.0))
             await ctx.bot.send(ctx.event, MessageSegment.image(file=Path(sticker_path)))
             logger.info(f"[表情包] 回应表情: {sticker_emotion} -> {os.path.basename(sticker_path)}")
-    await save_reply(ctx.session_id, ctx.user_id, f"[表情:{emoji_name}]", send_text)
+    await save_reply(ctx.session_id, ctx.user_id, f"[表情:{emoji_name}]", send_text, ctx.bot_mood_result)
 
 
 async def _handle_link_share(ctx: ChatContext):
@@ -1308,7 +1367,7 @@ async def handle_chat(bot: Bot, event: MessageEvent):
     start_time = time.time()
 
     # === 立刻发"正在输入"状态（不等延迟）===
-    asyncio.create_task(_set_typing_status(bot, event, True))
+    safe_task(_set_typing_status(bot, event, True))
 
     try:
         # 预检测消息中的图片和语音（用于消息分级）

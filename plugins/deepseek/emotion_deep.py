@@ -135,7 +135,6 @@ def get_emotion_expression(emotion: str, affection: float) -> str:
 
     if not variants:
         # 默认表达
-        from .handler_humanize import _EMOTION_EXPRESSION_MAP
         return _EMOTION_EXPRESSION_MAP.get(emotion, "正常语气")
 
     # 好感度影响：高好感度更直接，低好感度更含蓄

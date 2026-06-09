@@ -265,6 +265,11 @@ async def build_world_context_prompt(city: str = None) -> str:
     if weather.air_quality:
         lines.append(f"- 空气：{weather.air_quality}")
 
+    # 天气生活建议
+    suggestion = get_weather_suggestion(weather)
+    if suggestion:
+        lines.append(f"- 建议：{suggestion}")
+
     return "\n".join(lines)
 
 

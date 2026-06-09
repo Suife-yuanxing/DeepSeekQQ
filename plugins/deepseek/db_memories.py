@@ -101,13 +101,15 @@ async def get_last_bot_reply_time(session_id: str) -> float:
 
 async def has_user_message_today(session_id: str) -> bool:
     """检查该 session 今天是否有用户消息。"""
-    today = datetime.now().strftime("%Y-%m-%d")
+    now = datetime.now()
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
+    tomorrow_start = today_start + 86400
     db = await get_db()
     async with db.execute(
         """SELECT COUNT(*) as cnt FROM memories
            WHERE session_id = ? AND role = 'user'
-           AND datetime(timestamp, 'unixepoch', 'localtime') LIKE ?""",
-        (session_id, f"{today}%")
+           AND timestamp >= ? AND timestamp < ?""",
+        (session_id, today_start, tomorrow_start)
     ) as cursor:
         row = await cursor.fetchone()
         return (row["cnt"] if row else 0) > 0

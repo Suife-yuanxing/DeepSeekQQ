@@ -281,7 +281,7 @@ def should_send_sticker_fallback(reply_text: str, emotion_hint: str = None,
         return None
 
     # 动态 fallback 概率（功能⑤：情绪越积极越容易发表情包）
-    base_chance = fallback_chance if fallback_chance is not None else 0.15
+    base_chance = fallback_chance if fallback_chance is not None else 0.25
     if random.random() > base_chance:
         return None
 

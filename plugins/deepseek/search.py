@@ -180,13 +180,6 @@ async def search(query: str, max_results: int = None) -> Optional[SearchResult]:
             answer=answer,
         )
 
-        # 写入缓存
-        _search_cache[cache_key] = (search_result, time.time())
-        # 缓存上限
-        if len(_search_cache) > 100:
-            oldest_key = min(_search_cache, key=lambda k: _search_cache[k][1])
-            del _search_cache[oldest_key]
-
         # 质量检查：结果太少或太短时用同义词重试一次
         if len(results) < 2 or all(len(r.get("snippet", "")) < 30 for r in results):
             logger.info(f"[搜索] 结果质量低，尝试同义词重搜")
@@ -202,11 +195,8 @@ async def search(query: str, max_results: int = None) -> Optional[SearchResult]:
 
         search_result = SearchResult(query=query, results=results, answer=answer)
 
-        # 写入缓存（用内容哈希做 key，避免相同内容不同 URL 重复存储）
-        import hashlib
-        content_hash = hashlib.sha256(str(results).encode()).hexdigest()[:16]
+        # 写入缓存（统一上限 200）
         _search_cache[cache_key] = (search_result, time.time())
-        _search_cache[f"hash:{content_hash}"] = (search_result, time.time())
         # 缓存上限
         if len(_search_cache) > 200:
             oldest_key = min(_search_cache, key=lambda k: _search_cache[k][1])

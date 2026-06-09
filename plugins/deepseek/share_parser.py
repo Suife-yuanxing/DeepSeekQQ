@@ -1,9 +1,7 @@
 """分享内容抓取与缓存。
-- 修复 B 站正则 typo
-- 分享卡片去重
-- 内存缓存全局 TTL 清理（防泄漏）
-- 按平台解析 + 通用 fallback
-- 全局 URL 抓取冷却（防重复请求）+ 容量上限防泄漏
+
+支持平台：B站、小红书、抖音、通用链接
+功能：分享卡片去重、按平台解析、内存缓存 TTL 清理、全局 URL 抓取冷却
 """
 import re
 import json
@@ -536,6 +534,15 @@ async def global_cleanup_shares():
     for sid in list(_recent_shares.keys()):
         _cleanup_expired_shares(sid)
     freed_sessions = before - len(_recent_shares)
+
+    # 容量保护：session 数超过 500 时清理最旧的
+    if len(_recent_shares) > 500:
+        sorted_sessions = sorted(
+            _recent_shares.items(),
+            key=lambda x: max((s.get("timestamp", 0) for s in x[1]), default=0)
+        )
+        for sid, _ in sorted_sessions[:len(sorted_sessions) // 2]:
+            del _recent_shares[sid]
     # 清理全局 URL 冷却
     expired_urls = [u for u, t in list(_url_fetch_cooldown.items()) if now - t > URL_FETCH_COOLDOWN * 2]
     for u in expired_urls:

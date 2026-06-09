@@ -64,37 +64,6 @@ async def call_ollama_chat(
         return f"本地模型出错: {e}"
 
 
-async def call_ollama_generate(
-    prompt: str,
-    model: str = DEFAULT_MODEL,
-    host: str = OLLAMA_HOST,
-    timeout: int = 60,
-) -> str:
-    """调用本地 Ollama 生成文本（单轮）。"""
-    payload = {
-        "model": model,
-        "prompt": prompt,
-        "stream": False,
-    }
-    try:
-        from .api import get_http_session
-        session = await get_http_session()
-        async with session.post(
-            f"{host}/api/generate",
-                json=payload,
-                timeout=aiohttp.ClientTimeout(total=timeout),
-            ) as resp:
-                if resp.status != 200:
-                    return f"本地模型异常，状态码: {resp.status}"
-                data = await resp.json()
-                return data.get("response", "").strip() or "模型没有返回内容"
-    except asyncio.TimeoutError:
-        return "本地模型响应超时"
-    except aiohttp.ClientError as e:
-        return f"本地模型连接失败: {e}"
-    except Exception as e:
-        return f"本地模型出错: {e}"
-
 
 async def check_ollama_available(host: str = OLLAMA_HOST) -> bool:
     """检查 Ollama 服务是否可用。"""

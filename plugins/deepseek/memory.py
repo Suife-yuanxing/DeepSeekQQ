@@ -1,9 +1,8 @@
 """记忆系统：情感、心情、标签提取、对话压缩。
 
-ECC 风格改造：
-- 置信度评分：新标签 0.5，被引用时 +0.1，未引用时每日 -0.02
-- 自动清理：置信度 < 0.15 的标签自动删除
-- 缓存上限：防止内存泄漏
+置信度评分：新标签 0.5，被引用时 +0.1
+衰减策略：短期 -0.03/天（阈值 0.10），长期 -0.005/天（阈值 0.05）
+缓存上限：防止内存泄漏
 """
 import asyncio
 import re
@@ -115,13 +114,15 @@ async def save_reply(session_id: str, user_id: str, raw_msg: str, reply_text: st
     # 策略性压缩：基于消息数或估算 token 数触发
     msg_count = await count_memories(session_id)
     if msg_count >= COMPRESS_MESSAGE_THRESHOLD:
-        asyncio.create_task(_summarize_and_compress(session_id))
+        from .utils import safe_task
+        safe_task(_summarize_and_compress(session_id))
     elif msg_count >= 15:
         # 估算 token 数：粗略按字符数 / 1.5
         recent = await get_recent_memories(session_id, 15)
         est_tokens = sum(len(m["content"]) for m in recent) // 1.5
         if est_tokens > COMPRESS_TOKEN_THRESHOLD:
-            asyncio.create_task(_summarize_and_compress(session_id))
+            from .utils import safe_task
+            safe_task(_summarize_and_compress(session_id))
 
 
 def _is_memory_relevant(memory_content: str, user_msg: str) -> bool:
@@ -179,7 +180,8 @@ async def _get_relevant_memories(user_id: str, session_id: str, current_msg: str
             _recently_used_memories[user_id] = _recently_used_memories[user_id][-MEMORY_COOLDOWN_ROUNDS:]
 
             # 提升被引用标签的置信度
-            asyncio.create_task(boost_memory_tag(user_id, selected_content))
+            from .utils import safe_task
+            safe_task(boost_memory_tag(user_id, selected_content))
 
             return [f"[{selected_content}]"]
 
@@ -236,7 +238,8 @@ async def _summarize_and_compress(session_id: str):
     # 尝试解析结构化摘要，失败则用原文
     try:
         import json as _json
-        clean = re.sub(r"```json\s*|\s*```", "", summary).strip()
+        from .utils import clean_json_text
+        clean = clean_json_text(summary)
         parsed = _json.loads(clean)
         if isinstance(parsed, dict):
             structured = f"话题:{parsed.get('topic','')}; {parsed.get('summary','')}"
@@ -282,7 +285,8 @@ async def _extract_memory_tags(user_id: str, session_id: str, user_msg: str, rep
             {"role": "user", "content": prompt}
         ]
         raw = await api.call_deepseek_api(messages, temperature=0.3, task_type="extract")
-        clean = re.sub(r"```json\s*|\s*```", "", raw).strip()
+        from .utils import clean_json_text
+        clean = clean_json_text(raw)
         tags = json.loads(clean)
         if not isinstance(tags, list):
             return
@@ -745,7 +749,8 @@ event_type 可选值：
             {"role": "user", "content": prompt}
         ]
         raw = await api.call_deepseek_api(messages, temperature=0.3, task_type="extract")
-        clean = re.sub(r"```json\s*|\s*```", "", raw).strip()
+        from .utils import clean_json_text
+        clean = clean_json_text(raw)
         if clean.lower() in ("null", "none", ""):
             return
         import json as _json
@@ -806,7 +811,8 @@ meme_type: joke(笑话) / catchphrase(口头禅) / code_word(暗号)
             {"role": "user", "content": prompt}
         ]
         raw = await api.call_deepseek_api(messages, temperature=0.3, task_type="extract")
-        clean = re.sub(r"```json\s*|\s*```", "", raw).strip()
+        from .utils import clean_json_text
+        clean = clean_json_text(raw)
         if clean.lower() in ("null", "none", ""):
             return
         import json as _json
@@ -881,7 +887,8 @@ async def _extract_important_dates(user_id: str, user_msg: str):
                 {"role": "user", "content": prompt}
             ]
             raw = await api.call_deepseek_api(messages, temperature=0.3, task_type="extract")
-            clean = re.sub(r"```json\s*|\s*```", "", raw).strip()
+            from .utils import clean_json_text
+            clean = clean_json_text(raw)
             if clean.lower() not in ("null", "none", ""):
                 import json as _json
                 data = _json.loads(clean)
@@ -1020,7 +1027,8 @@ async def _extract_social_references(user_id: str, user_msg: str):
             {"role": "user", "content": prompt}
         ]
         raw = await api.call_deepseek_api(messages, temperature=0.3, task_type="extract")
-        clean = re.sub(r"```json\s*|\s*```", "", raw).strip()
+        from .utils import clean_json_text
+        clean = clean_json_text(raw)
         refs = json.loads(clean)
         if not isinstance(refs, list):
             return
@@ -1068,7 +1076,8 @@ meme_type: joke(笑话) / catchphrase(口头禅) / event_reference(事件引用)
             {"role": "user", "content": prompt}
         ]
         raw = await api.call_deepseek_api(messages, temperature=0.3, task_type="extract")
-        clean = re.sub(r"```json\s*|\s*```", "", raw).strip()
+        from .utils import clean_json_text
+        clean = clean_json_text(raw)
         if clean.lower() in ("null", "none", ""):
             return
         import json as _json

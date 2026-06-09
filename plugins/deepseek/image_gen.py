@@ -1,16 +1,16 @@
-"""图片生成功能（功能④）。
+"""图片生成功能。
 
-使用 SiliconFlow API 生成图片。
+使用 SiliconFlow/Agnes API 生成图片。
 用户提到特定场景时，概率性生成图片回复。
 
 触发条件：
 | 触发词           | 场景       | 概率 |
 |-----------------|-----------|------|
-| 自拍/照片/长什么样 | 猫娘自拍   | 15%  |
-| 吃饭/美食/饿了    | 猫娘吃饭   | 10%  |
 | 画/画一个/帮我画   | 主动绘画   | 80%  |
-| 睡觉/晚安/困了    | 猫娘睡觉   | 10%  |
-| 生日/蛋糕/庆祝    | 庆祝场景   | 20%  |
+| 自拍/照片/长什么样 | 猫娘自拍   | 30%  |
+| 吃饭/美食/饿了    | 猫娘吃饭   | 25%  |
+| 睡觉/晚安/困了    | 猫娘睡觉   | 25%  |
+| 生日/蛋糕/庆祝    | 庆祝场景   | 25%  |
 """
 import os
 import re
@@ -25,6 +25,13 @@ from datetime import datetime
 from nonebot import logger
 
 from .config import IMAGE_CACHE_DIR, IMAGE_GEN_API_KEY, IMAGE_GEN_MODEL, IMAGE_GEN_BASE_URL
+
+
+def _write_file_sync(path: str, data: bytes):
+    """同步写文件（供 asyncio.to_thread 调用）。"""
+    with open(path, "wb") as f:
+        f.write(data)
+
 
 # 图片缓存目录
 os.makedirs(IMAGE_CACHE_DIR, exist_ok=True)
@@ -155,8 +162,7 @@ async def generate_image(prompt: str) -> Optional[str]:
                         logger.warning(f"[图片] 下载数据太小: {len(img_data)} bytes")
                         return None
 
-                    with open(cache_path, "wb") as f:
-                        f.write(img_data)
+                    await asyncio.to_thread(_write_file_sync, cache_path, img_data)
                     logger.info(f"[图片] 生成成功: {filename} ({len(img_data)} bytes)")
                     return cache_path
 

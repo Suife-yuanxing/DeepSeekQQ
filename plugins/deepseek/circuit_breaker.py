@@ -9,9 +9,18 @@
     half_open → 成功 → closed
     half_open → 失败 → open (重置计时)
 """
+import asyncio
+import inspect
 import time
 from typing import Callable, Any, Optional
 from nonebot import logger
+
+
+async def _call_fallback(fallback: Callable) -> Any:
+    """统一处理 fallback 调用，支持同步和异步函数。"""
+    if inspect.iscoroutinefunction(fallback):
+        return await fallback()
+    return fallback()
 
 
 class CircuitBreaker:
@@ -27,6 +36,7 @@ class CircuitBreaker:
         if self.state == "open":
             if time.time() - self.last_fail_time > self.recovery_seconds:
                 self.state = "half_open"
+                self.fail_count = 0  # 半开状态重置失败计数
                 return False
             return True
         return False
@@ -44,7 +54,7 @@ class CircuitBreaker:
         if self._is_open():
             logger.debug(f"[熔断] {self.name} 熔断中，跳过调用")
             if fallback:
-                return fallback() if callable(fallback) else fallback
+                return await _call_fallback(fallback)
             return None
 
         try:
@@ -68,9 +78,9 @@ class CircuitBreaker:
                 logger.debug(f"[熔断] {self.name} 失败 {self.fail_count}/{self.fail_threshold}: {e}")
             if fallback:
                 try:
-                    return fallback() if callable(fallback) else fallback
-                except Exception:
-                    pass
+                    return await _call_fallback(fallback)
+                except Exception as fallback_err:
+                    logger.warning(f"[熔断] {self.name} fallback 也失败了: {fallback_err}")
             return None
 
     def reset(self):

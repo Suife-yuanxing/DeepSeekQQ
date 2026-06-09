@@ -136,7 +136,20 @@ async def get_or_create_user_profile(user_id: str) -> Dict[str, Any]:
     }
 
 
+_USER_PROFILE_COLUMNS = {
+    "relationship_style", "nickname", "first_interaction", "total_messages",
+    "known_interests", "bot_self_summary",
+}
+
+
 async def update_user_profile(user_id: str, **kwargs):
+    if not kwargs:
+        return
+    # 白名单校验列名，防止 SQL 注入
+    invalid = set(kwargs.keys()) - _USER_PROFILE_COLUMNS
+    if invalid:
+        logger.warning(f"[DB] update_user_profile: 未知列名 {invalid}，已忽略")
+        kwargs = {k: v for k, v in kwargs.items() if k in _USER_PROFILE_COLUMNS}
     if not kwargs:
         return
     db = await get_db()

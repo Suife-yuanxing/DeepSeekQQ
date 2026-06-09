@@ -1,4 +1,5 @@
 """数据库连接池管理。全局单连接复用，aiosqlite 线程安全。"""
+import asyncio
 import aiosqlite
 from typing import Optional
 from nonebot import logger
@@ -6,12 +7,27 @@ from nonebot import logger
 from .config import DB_PATH
 
 _db: Optional[aiosqlite.Connection] = None
+_db_lock = asyncio.Lock()
 
 
 async def get_db() -> aiosqlite.Connection:
-    """获取全局数据库连接（延迟初始化，自动复用）。"""
+    """获取全局数据库连接（延迟初始化，自动复用，锁保护，健康检查）。"""
     global _db
-    if _db is None:
+    if _db is not None:
+        # 健康检查：执行简单查询验证连接可用
+        try:
+            await _db.execute("SELECT 1")
+            return _db
+        except Exception:
+            logger.warning("[数据库] 连接已失效，重新创建")
+            try:
+                await _db.close()
+            except Exception:
+                pass
+            _db = None
+    async with _db_lock:
+        if _db is not None:
+            return _db
         _db = await aiosqlite.connect(DB_PATH)
         _db.row_factory = aiosqlite.Row
         await _db.execute("PRAGMA journal_mode=WAL")

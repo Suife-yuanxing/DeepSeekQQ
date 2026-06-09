@@ -82,12 +82,16 @@ async def on_start():
     async def _register_proactive():
         import nonebot
         await asyncio.sleep(15)
-        bots = nonebot.get_bots()
-        if bots:
-            bot = list(bots.values())[0]
-            await register_proactive_jobs(bot)
-        else:
-            logger.warning("[主动消息] Bot未连接，跳过")
+        # 重试机制：最多尝试 6 次，每次间隔 30 秒
+        for attempt in range(6):
+            bots = nonebot.get_bots()
+            if bots:
+                bot = list(bots.values())[0]
+                await register_proactive_jobs(bot)
+                return
+            logger.warning(f"[主动消息] Bot未连接，30秒后重试 ({attempt + 1}/6)")
+            await asyncio.sleep(30)
+        logger.error("[主动消息] Bot 连接超时，主动消息功能本次启动不可用")
 
     async def _share_cleanup():
         await asyncio.sleep(60)
@@ -112,7 +116,7 @@ async def on_start():
     async def _memory_maintenance():
         await asyncio.sleep(300)
         # 分层衰减：短期记忆衰减快，长期记忆衰减慢
-        await decay_memory_tags(decay_rate=0.03, tier="short_term")
+        await decay_memory_tags(decay_rate=0.015, tier="short_term")
         await decay_memory_tags(decay_rate=0.005, tier="long_term")
         # 分层清理
         pruned_short = await prune_memory_tags(min_confidence=0.10, tier="short_term")
@@ -138,6 +142,12 @@ async def on_start():
     loop_manager.register("记忆维护", _memory_maintenance, 86400)
     loop_manager.register("好感度衰减", _affection_decay, 86400)
     loop_manager.register("图片缓存清理", _image_cleanup, 3600)
+
+    # 性能报告：每小时输出一次
+    async def _perf_report():
+        from .performance_monitor import log_performance_summary
+        log_performance_summary()
+    loop_manager.register("性能报告", _perf_report, 3600)
 
     # 追问系统：每2分钟检查超时未回复的会话
     async def _follow_up_check():

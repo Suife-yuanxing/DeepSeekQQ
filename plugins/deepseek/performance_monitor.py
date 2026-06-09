@@ -44,10 +44,6 @@ class StageTimer:
         return False
 
 
-def track_stage(stage_name: str, duration_ms: float):
-    """手动记录阶段耗时。"""
-    _stage_timings[stage_name].append((time.time(), duration_ms))
-
 
 def track_response(duration_ms: float):
     """记录总响应时间。"""

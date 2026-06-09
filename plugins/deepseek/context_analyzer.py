@@ -172,7 +172,8 @@ def _build_analysis_prompt(user_msg: str, history: List[Dict[str, Any]]) -> str:
 def _parse_analysis_response(raw: str) -> Optional[dict]:
     """解析LLM返回的JSON"""
     # 去除 markdown 代码块
-    clean = re.sub(r"```json\s*|\s*```", "", raw).strip()
+    from .utils import clean_json_text
+    clean = clean_json_text(raw)
     # 尝试提取 JSON 对象
     match = re.search(r'\{[\s\S]*\}', clean)
     if not match:
@@ -274,7 +275,8 @@ async def analyze_context_and_emotion(
         await update_user_mood(user_id, final_valence, final_arousal, emo_type)
 
         # Phase 3：异步记录情绪日志
-        asyncio.create_task(_log_emotion(user_id, "private_" + user_id, emo_type, final_valence, final_arousal, user_msg))
+        from .utils import safe_task
+        safe_task(_log_emotion(user_id, "private_" + user_id, emo_type, final_valence, final_arousal, user_msg))
 
         logger.info(
             f"[分析] 用户={user_id[:6]} 意图={context.user_intent} "
@@ -306,8 +308,8 @@ async def _log_emotion(user_id: str, session_id: str, emotion_label: str,
             (user_id, session_id, emotion_label, valence, arousal, trigger_text[:100], time.time())
         )
         await db.commit()
-    except Exception:
-        pass  # 情绪日志失败不影响主流程
+    except Exception as e:
+        logger.debug(f"[情绪日志] 写入失败（不影响主流程）: {e}")
 
 
 async def get_emotion_cause_chain(user_id: str, lookback: int = 10) -> str:
@@ -556,7 +558,7 @@ async def update_bot_emotion(user_msg: str, user_emotion: EmotionState) -> Dict[
                 "recovery_label": recovery["stage_label"],
                 "recovery_progress": recovery["progress"],
             }
-            logger.info(f"[Bot情绪] 恢复中: {old_mood['dominant']} -> {recovery['label']} ({recovery['progress']:.0%})")
+            logger.info(f"[Bot情绪] 恢复中: {old_mood['dominant']} -> {recovery['stage_label']} ({recovery['progress']:.0%})")
             _try_apply_contagion(result, user_emotion, old_mood)
             return result
 
