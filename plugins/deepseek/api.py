@@ -91,6 +91,7 @@ async def _call_deepseek_raw(messages: List[Dict[str, str]], temperature: float 
                 return clean_api_response(content)
         except (asyncio.TimeoutError, aiohttp.ClientError) as e:
             last_exception = str(e)
+            global _http_session
             async with _session_lock:
                 if _http_session:
                     try:

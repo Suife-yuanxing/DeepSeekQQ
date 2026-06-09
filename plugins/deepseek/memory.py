@@ -168,12 +168,12 @@ async def _get_relevant_memories(user_id: str, session_id: str, current_msg: str
                 continue
             # 时间衰减：超过14天且置信度低的不使用
             days_ago = (now - row["last_used"]) / 86400
-            if days_ago > 14 and row.get("confidence", 0.5) < 0.3:
+            if days_ago > 14 and (row["confidence"] if row["confidence"] else 0.5) < 0.3:
                 continue
             # 相关性检查
             if not _is_memory_relevant(content, current_msg):
                 continue
-            candidates.append((content, row.get("confidence", 0.5)))
+            candidates.append((content, row["confidence"] if row["confidence"] else 0.5))
 
         # 关键词匹配不到时，尝试语义检索
         if not candidates:

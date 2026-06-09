@@ -95,7 +95,10 @@ def is_in_voice_mode(session_id: str) -> bool:
 
 async def _auto_exit(session_id: str):
     """超时自动退出语音模式。"""
-    await asyncio.sleep(TIMEOUT_SECONDS)
+    try:
+        await asyncio.sleep(TIMEOUT_SECONDS)
+    except asyncio.CancelledError:
+        return  # 任务被取消，静默退出
     state = _voice_states.get(session_id)
     if state and state.active:
         logger.info(f"[语音通话] 会话 {session_id[:20]} 超时退出")
