@@ -188,4 +188,4 @@ async def call_deepseek_api(messages: List[Dict[str, str]], temperature: float =
         return local_result
 
     # ===== 第3层：错误提示 =====
-    return "主人，我脑子暂时不好使了喵...远程和本地模型都连不上，请稍后再试~"
+    return "唔…我脑子暂时转不过来了，稍后再聊好吗？"

@@ -1363,7 +1363,7 @@ async def _stage_llm(ctx: ChatContext) -> Optional[str]:
         )
     except Exception as e:
         logger.error(f"[LLM] API 调用失败: {e}")
-        ctx.reply_text = "抱歉，我现在脑子有点转不过来，稍后再聊好吗？"
+        ctx.reply_text = "唔…我脑子转不过来了，等下再聊~"
     ctx.reply_text = filter_novel_actions(ctx.reply_text)
     return None
 
@@ -1644,11 +1644,10 @@ async def _handle_emoji_share(ctx: ChatContext, last_share: dict):
     emoji_name = emoji_match.group(1).strip() if emoji_match else "表情"
     safe_emoji = emoji_name.replace("{", "").replace("}", "").replace("system", "").replace("assistant", "").replace("user", "")[:20]
     emotion_prompt = f"用户给你发了一个QQ表情「{safe_emoji}」，没有说其他话。"
-    emoji_sys = (
-        "你是一只猫娘，正在QQ上和人聊天。用户只给你发了一个表情，没有文字。"
-        "根据表情的含义，用你的性格（猫系、会调侃、嘴硬、偶尔撒娇）回复1-2句。"
-        "口语化、短句、像发QQ消息。不要加括号动作。"
-        "如果适合发表情包，在末尾加 [sticker:情绪]（happy/angry/shy/sad/tsundere/cute/funny/love/speechless/excited）。大约20%概率加。绝对不要输出 [doge]、[微笑] 等QQ内置表情标签。"
+    from .prompt import get_minimal_persona
+    emoji_sys = get_minimal_persona(
+        "用户只给你发了一个表情，没有文字。根据表情的含义回复1-2句。"
+        "如果适合发表情包，在末尾加 [sticker:情绪]（英文情绪标签），大约20%概率加。"
     )
     messages = [
         {"role": "system", "content": emoji_sys},
@@ -1712,19 +1711,18 @@ async def _handle_link_share(ctx: ChatContext):
         and last_share.get("platform") in ("douyin", "bilibili")
     )
 
+    from .prompt import get_minimal_persona
     if is_video_share:
-        share_sys = (
-            "你是一只猫娘，正在QQ上和人聊天。用户给你发了一个视频分享，没有说其他话。"
-            "用你的性格（猫系、会调侃、嘴硬、偶尔撒娇、有点小好色）回复1-3句话，"
-            "主动评论/吐槽/讨论这个视频的内容（基于标题和描述）。"
+        share_sys = get_minimal_persona(
+            "用户给你发了一个视频分享，没有说其他话。"
+            "回复1-3句话，主动评论/吐槽/讨论这个视频的内容（基于标题和描述）。"
             "不要只说「看到了」「收到」「让我看看」这种废话，要说点有内容的。"
-            "口语化、短句、像发QQ消息。不要加括号动作。只输出回复内容。"
+            "只输出回复内容。"
         )
     else:
-        share_sys = (
-            "你是一只猫娘，正在QQ上和人聊天。用户给你发了一个链接/分享，没有说其他话。"
-            "用你的性格（猫系、会调侃、嘴硬、偶尔撒娇、有点小好色）回复1句话，表示你看到了。"
-            "口语化、短句、像发QQ消息。不要加括号动作。只输出回复内容。"
+        share_sys = get_minimal_persona(
+            "用户给你发了一个链接/分享，没有说其他话。"
+            "回复1句话表示你看到了。只输出回复内容。"
         )
 
     # 如果内容无法读取，添加反编造规则

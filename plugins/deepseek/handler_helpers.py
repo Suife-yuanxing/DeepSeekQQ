@@ -59,8 +59,15 @@ def detect_greeting_type(msg: str, recent_memories: list = None) -> Optional[str
     """
     from datetime import datetime
 
-    morning_kw = ["早安", "早", "早上好", "早呀", "早啊", "good morning", "起床"]
+    # 早安关键词：需要独立成词，避免 "不想起床" 被误判
+    morning_kw = ["早安", "早上好", "早呀", "早啊", "good morning"]
     if any(kw in msg for kw in morning_kw):
+        return "morning"
+    # "早" 单独出现作为早安（但排除 "早就不"、"早就"、"很早" 等）
+    if re.search(r'(?<![不就很])(?:^|[^\w])早(?:$|[^\w])', msg):
+        return "morning"
+    # "起床" 需要是正面语义（排除 "不想起床"、"起不来"、"起晚了"）
+    if "起床" in msg and not any(neg in msg for neg in ["不想起床", "起不来", "起晚了", "赖床", "没起"]):
         return "morning"
 
     # 高置信度晚安关键词
@@ -69,7 +76,9 @@ def detect_greeting_type(msg: str, recent_memories: list = None) -> Optional[str
         return "night"
 
     # 低置信度关键词：需要上下文或时间辅助判断
-    night_low = ["困了", "好困", "要睡了", "下了", "睡觉", "累了", "好累", "撑不住了"]
+    # 注意："累了"/"好累" 很容易是抱怨而非道别，移到更保守的判断逻辑
+    night_low = ["困了", "好困", "要睡了", "撑不住了"]
+    night_ambiguous = ["下了", "睡觉", "累了", "好累"]
     hour = datetime.now().hour
 
     if any(kw in msg for kw in night_low):
@@ -81,10 +90,16 @@ def detect_greeting_type(msg: str, recent_memories: list = None) -> Optional[str
         if recent_memories and len(recent_memories) >= 2:
             # 检查最近消息：如果用户刚发了很多消息，可能只是抱怨
             recent_user_msgs = [m for m in recent_memories[-6:] if m.get("role") == "user"]
-            # 如果最近5分钟内有3条以上用户消息，说明还在活跃聊天
             if len(recent_user_msgs) >= 3:
                 return "night_uncertain"
         return "night"
+
+    # 模糊关键词：只在深夜且上下文支持时判为晚安
+    if any(kw in msg for kw in night_ambiguous):
+        if hour >= 23 or hour < 3:
+            return "night"
+        # 非深夜：大概率是抱怨，降级为 uncertain
+        return "night_uncertain"
 
     # 深夜 + 短消息（可能只是敷衍）→ 低置信度晚安
     if (hour >= 23 or hour < 3) and len(msg.strip()) <= 3:

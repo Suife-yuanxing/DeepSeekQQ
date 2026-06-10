@@ -622,19 +622,25 @@ def parse_tool_call(reply_text: str) -> Optional[Dict[str, Any]]:
     """从 LLM 回复中解析工具调用。
 
     格式: [tool:工具名] {"参数": "值"} [/tool]
+    兼容: [tool:工具名] {{"参数": "值"}} [/tool] (LLM 偶尔输出双花括号)
 
     Returns:
         {"tool": "工具名", "args": {...}} 或 None
     """
     import re
+    # 兼容单花括号 { } 和双花括号 {{ }} 两种格式
     match = re.search(
-        r'\[tool:(\w+)\]\s*(\{.*?\})\s*\[/tool\]',
+        r'\[tool:(\w+)\]\s*(\{+.*?\}+)\s*\[/tool\]',
         reply_text, re.DOTALL
     )
     if match:
         tool_name = match.group(1)
+        json_str = match.group(2)
+        # 如果是双花括号 {{...}}，剥掉一层
+        if json_str.startswith("{{") and json_str.endswith("}}"):
+            json_str = json_str[1:-1]
         try:
-            args = json.loads(match.group(2))
+            args = json.loads(json_str)
             return {"tool": tool_name, "args": args}
         except json.JSONDecodeError:
             logger.warning(f"[MCP] 工具调用参数JSON解析失败: {match.group(2)[:100]}")
@@ -643,6 +649,6 @@ def parse_tool_call(reply_text: str) -> Optional[Dict[str, Any]]:
 
 
 def remove_tool_call(reply_text: str) -> str:
-    """从回复文本中移除工具调用标记。"""
+    """从回复文本中移除工具调用标记（兼容单/双花括号）。"""
     import re
-    return re.sub(r'\[tool:\w+\]\s*\{.*?\}\s*\[/tool\]', '', reply_text, flags=re.DOTALL).strip()
+    return re.sub(r'\[tool:\w+\]\s*\{+.*?\}+\s*\[/tool\]', '', reply_text, flags=re.DOTALL).strip()
