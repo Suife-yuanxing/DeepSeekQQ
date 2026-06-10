@@ -1,27 +1,26 @@
-"""手机桥接模块 — WebSocket 中继，让手机主动连出到服务器。
+"""手机桥接模块 — 适配 MobileRun Portal 协议。
 
 架构（云端友好）：
-  手机 ScreenMCP App ──(outbound WS)──→ ws://服务器公网IP:8765 (Relay)
-  Bot MCP 工具 ──(local WS)──────────→ ws://127.0.0.1:8765    (Relay)
+  手机 MobileRun Portal App ──(reverse WSS)──→ wss://服务器:8443 (nginx → Relay)
+  MCP 工具 ──(直接调用)─────────────────────→ relay.send_command()
 
-  手机不需要公网 IP，只需能上网即可。Relay 负责转发命令和响应。
+  手机不需要公网 IP，只需能上网即可。Relay 直接向手机发送 JSON-RPC 命令。
 
-协议：
-  手机端认证：{"type":"auth", "key":"pk_...", "role":"phone"}
-  控制端认证：{"type":"auth", "key":"pk_...", "role":"controller"}
-  命令：{"id":1, "cmd":"click", "params":{"x":100,"y":200}}
-  响应：{"id":1, "status":"ok", "result":{...}}
-  心跳：{"type":"ping"} → {"type":"pong"}
+协议 (MobileRun Portal JSON-RPC):
+  认证: URL query param ?token=xxx
+  请求: {"id": "uuid", "method": "tap", "params": {...}}
+  响应: {"id": "uuid", "status": "success", "result": {...}}
+  事件: {"method": "events/device", "params": {...}}
 """
 import asyncio
+import base64
 import json
 import logging
-import time
+import uuid
 from typing import Any
 from typing import Dict
 from typing import Optional
 
-import aiohttp
 from aiohttp import WSMsgType, web
 
 logger = logging.getLogger("deepseek.phone_bridge")
@@ -31,10 +30,13 @@ logger = logging.getLogger("deepseek.phone_bridge")
 # ============================================================
 
 CMD_TIMEOUT = 30
-MAX_COORD = 9999
 SCROLL_DISTANCE = 500
 HEARTBEAT_INTERVAL = 30
-HEARTBEAT_TIMEOUT = 60
+
+# Android KeyEvent 码
+KEYCODE_BACK = 4
+KEYCODE_HOME = 3
+KEYCODE_ENTER = 66
 
 APP_PACKAGES: Dict[str, str] = {
     "微信": "com.tencent.mm",
@@ -60,16 +62,16 @@ APP_PACKAGES: Dict[str, str] = {
 
 
 # ============================================================
-# PhoneRelay — WebSocket 中继服务器
+# PhoneRelay — MobileRun Portal 中继
 # ============================================================
 
 class PhoneRelay:
-    """WebSocket 中继：接受手机和控制端的连接，转发消息。
+    """接受手机 MobileRun Portal 的 reverse WebSocket 连接，转发 JSON-RPC 命令。
 
     使用：
         relay = PhoneRelay()
         await relay.start(port=8765, api_key="pk_xxx")
-        # 手机连接 ws://server:8765，控制端连接 ws://127.0.0.1:8765
+        # 手机连接 wss://<服务器IP>:8443/?token=pk_xxx
     """
 
     def __init__(self):
@@ -78,9 +80,7 @@ class PhoneRelay:
         self._app: Optional[web.Application] = None
         self._runner: Optional[web.AppRunner] = None
         self._phone_ws: Optional[web.WebSocketResponse] = None
-        self._controller_ws: Optional[web.WebSocketResponse] = None
-        self._pending: Dict[int, asyncio.Future] = {}
-        self._cmd_counter: int = 0
+        self._pending: Dict[str, asyncio.Future] = {}
         self._running: bool = False
         self._phone_online: bool = False
 
@@ -93,10 +93,6 @@ class PhoneRelay:
     @property
     def phone_online(self) -> bool:
         return self._phone_online and self._phone_ws is not None and not self._phone_ws.closed
-
-    @property
-    def controller_connected(self) -> bool:
-        return self._controller_ws is not None and not self._controller_ws.closed
 
     # ── 启动/停止 ──
 
@@ -111,7 +107,7 @@ class PhoneRelay:
         site = web.TCPSite(self._runner, "0.0.0.0", port)
         await site.start()
         self._running = True
-        logger.info(f"[PhoneRelay] 中继已启动: ws://0.0.0.0:{port}")
+        logger.info(f"[PhoneRelay] 中继已启动: ws://0.0.0.0:{port} (MobileRun Portal)")
 
     async def stop(self):
         """停止中继。"""
@@ -119,12 +115,10 @@ class PhoneRelay:
         self._phone_online = False
         for fut in self._pending.values():
             if not fut.done():
-                fut.set_result({"success": False, "error": "中继已关闭"})
+                fut.set_result({"status": "error", "error": "中继已关闭"})
         self._pending.clear()
         if self._phone_ws and not self._phone_ws.closed:
             await self._phone_ws.close()
-        if self._controller_ws and not self._controller_ws.closed:
-            await self._controller_ws.close()
         if self._runner:
             await self._runner.cleanup()
         logger.info("[PhoneRelay] 中继已停止")
@@ -136,102 +130,43 @@ class PhoneRelay:
         await ws.prepare(request)
 
         peer = request.remote
-        logger.info(f"[PhoneRelay] 新连接: {peer}")
 
-        role = None
+        # MobileRun Portal 认证：通过 URL query param ?token=xxx
+        token = request.query.get("token", "")
+        if token != self._api_key:
+            logger.warning(f"[PhoneRelay] 认证失败: {peer} token 不匹配")
+            await ws.send_json({"type": "auth_fail", "error": "token 错误"})
+            await ws.close()
+            return ws
+
+        # 踢掉旧的手机连接
+        if self._phone_ws and not self._phone_ws.closed:
+            await self._phone_ws.close()
+        self._phone_ws = ws
+        self._phone_online = True
+        logger.info(f"[PhoneRelay] 手机已连接 (MobileRun Portal): {peer}")
+
         try:
             async for msg in ws:
                 if msg.type == WSMsgType.TEXT:
                     try:
                         data = json.loads(msg.data)
                     except json.JSONDecodeError:
-                        await ws.send_json({"type": "error", "error": "无效 JSON"})
                         continue
 
-                    msg_type = data.get("type", "")
-
-                    # ── 认证 ──
-                    if msg_type == "auth":
-                        key = data.get("key", "")
-                        conn_role = data.get("role", "")
-
-                        if key != self._api_key:
-                            await ws.send_json({"type": "auth_fail", "error": "密钥错误"})
-                            logger.warning(f"[PhoneRelay] 认证失败: {peer} role={conn_role}")
-                            await ws.close()
-                            return ws
-
-                        if conn_role == "phone":
-                            # 踢掉旧的手机连接
-                            if self._phone_ws and not self._phone_ws.closed:
-                                await self._phone_ws.close()
-                            self._phone_ws = ws
-                            self._phone_online = True
-                            role = "phone"
-                            await ws.send_json({"type": "auth_ok", "phone_connected": True})
-                            logger.info(f"[PhoneRelay] 手机已认证: {peer}")
-
-                        elif conn_role == "controller":
-                            # 踢掉旧的控制端
-                            if self._controller_ws and not self._controller_ws.closed:
-                                await self._controller_ws.close()
-                            self._controller_ws = ws
-                            role = "controller"
-                            await ws.send_json({
-                                "type": "auth_ok",
-                                "phone_connected": self.phone_online,
-                            })
-                            logger.info(f"[PhoneRelay] 控制端已认证: {peer}")
-
-                        else:
-                            await ws.send_json({"type": "auth_fail", "error": f"未知角色: {conn_role}"})
-                            await ws.close()
-                            return ws
+                    # ── JSON-RPC 响应（手机 → 服务器）──
+                    cmd_id = data.get("id")
+                    if cmd_id is not None and cmd_id in self._pending:
+                        fut = self._pending.pop(cmd_id)
+                        if not fut.done():
+                            fut.set_result(data)
                         continue
 
-                    # ── 心跳 ──
-                    if msg_type == "ping":
-                        await ws.send_json({"type": "pong"})
-                        continue
-
-                    if msg_type == "pong":
-                        continue
-
-                    # ── 命令响应（手机 → 控制端）──
-                    if role == "phone" and "status" in data:
-                        cmd_id = data.get("id")
-                        if cmd_id is not None and cmd_id in self._pending:
-                            fut = self._pending.pop(cmd_id)
-                            if not fut.done():
-                                fut.set_result(data)
-                        continue
-
-                    # ── 手机状态通知 ──
-                    if role == "phone" and msg_type == "phone_status":
-                        self._phone_online = data.get("connected", False)
-                        continue
-
-                    # ── 命令（控制端 → 手机）──
-                    if role == "controller" and "cmd" in data:
-                        if not self.phone_online:
-                            await ws.send_json({
-                                "id": data.get("id", 0),
-                                "status": "error",
-                                "error": "手机不在线",
-                            })
-                            continue
-                        # 转发到手机
-                        try:
-                            if self._phone_ws and not self._phone_ws.closed:
-                                await self._phone_ws.send_json(data)
-                            else:
-                                await ws.send_json({
-                                    "id": data.get("id", 0),
-                                    "status": "error",
-                                    "error": "手机连接已断开",
-                                })
-                        except Exception as e:
-                            logger.error(f"[PhoneRelay] 转发命令失败: {e}")
+                    # ── 设备事件（MobileRun Portal 推送）──
+                    method = data.get("method", "")
+                    if method == "events/device":
+                        event_type = data.get("params", {}).get("type", "")
+                        logger.debug(f"[PhoneRelay] 设备事件: {event_type}")
                         continue
 
                 elif msg.type in (WSMsgType.ERROR, WSMsgType.CLOSE):
@@ -240,40 +175,34 @@ class PhoneRelay:
         except asyncio.CancelledError:
             pass
         except Exception as e:
-            logger.error(f"[PhoneRelay] 连接异常 ({role}): {e}")
+            logger.error(f"[PhoneRelay] 手机连接异常: {e}")
         finally:
-            if role == "phone":
-                self._phone_online = False
-                self._phone_ws = None
-                logger.info("[PhoneRelay] 手机已断开")
-            elif role == "controller":
-                self._controller_ws = None
-                logger.info("[PhoneRelay] 控制端已断开")
+            self._phone_online = False
+            self._phone_ws = None
+            logger.info("[PhoneRelay] 手机已断开")
 
         return ws
 
-    # ── 控制端 API（供 MCP 工具调用）──
+    # ── JSON-RPC 命令发送 ──
 
-    async def send_command(self, cmd: str, params: dict = None) -> dict:
-        """从控制端发送命令到手机，等待响应。"""
+    async def send_command(self, method: str, params: dict = None) -> dict:
+        """向手机发送 JSON-RPC 命令，等待响应。"""
         if not self.phone_online:
-            return {"success": False, "error": "手机不在线"}
+            return {"success": False, "error": "手机不在线，请确保 MobileRun Portal 已连接"}
 
-        if not self._controller_ws or self._controller_ws.closed:
-            return {"success": False, "error": "中继控制端未连接，请先调用 connect_controller()"}
-
-        self._cmd_counter += 1
-        cmd_id = self._cmd_counter
+        cmd_id = str(uuid.uuid4())[:8]
         loop = asyncio.get_running_loop()
         future = loop.create_future()
         self._pending[cmd_id] = future
 
         try:
-            await self._controller_ws.send_json({
-                "id": cmd_id, "cmd": cmd, "params": params or {},
+            await self._phone_ws.send_json({
+                "id": cmd_id,
+                "method": method,
+                "params": params or {},
             })
             resp = await asyncio.wait_for(future, timeout=CMD_TIMEOUT)
-            if resp.get("status") == "ok":
+            if resp.get("status") == "success":
                 return {"success": True, "data": resp.get("result", {})}
             return {"success": False, "error": resp.get("error", "未知错误")}
         except asyncio.TimeoutError:
@@ -283,93 +212,74 @@ class PhoneRelay:
             self._pending.pop(cmd_id, None)
             return {"success": False, "error": str(e)}
 
-    async def connect_controller(self, ws_url: str = "ws://127.0.0.1:8765") -> bool:
-        """Bot 内部以 WebSocket 客户端连接到自己的中继（以 controller 角色）。"""
-        if self.controller_connected:
-            return True
-
-        try:
-            session = aiohttp.ClientSession()
-            ws = await session.ws_connect(ws_url, timeout=10)
-
-            await ws.send_json({
-                "type": "auth",
-                "key": self._api_key,
-                "role": "controller",
-                "version": {"major": 1, "minor": 0, "component": "sdk-py"},
-            })
-
-            resp = await asyncio.wait_for(ws.receive_json(), timeout=10)
-            if resp.get("type") != "auth_ok":
-                logger.error(f"[PhoneRelay] 控制端认证失败: {resp}")
-                await ws.close()
-                await session.close()
-                return False
-
-            self._controller_ws = ws
-            # 将 session 挂到 ws 上防止被 GC
-            self._controller_ws._session = session
-            logger.info("[PhoneRelay] 控制端已连接到本地中继")
-            return True
-
-        except Exception as e:
-            logger.error(f"[PhoneRelay] 控制端连接失败: {e}")
-            return False
-
-    # ── 手机操作（封装 send_command）──
+    # ── 手机操作（封装 send_command，保持旧 API 兼容）──
 
     async def screenshot(self, quality: int = 80, max_width: int = 720) -> Optional[str]:
-        resp = await self.send_command("screenshot", {"quality": quality, "max_width": max_width})
+        """截图，返回 base64 PNG。MobileRun Portal 在 reverse 模式下返回 base64 JSON。"""
+        resp = await self.send_command("screenshot", {"hideOverlay": True})
         if resp.get("success"):
-            return resp.get("data", {}).get("image")
+            result = resp.get("data", {})
+            # MobileRun Portal 返回格式: {"image": "base64..."} 或 {"data": "base64..."}
+            img = result.get("image") or result.get("data") or ""
+            if img:
+                return img
         logger.warning(f"[PhoneRelay] 截图失败: {resp.get('error')}")
         return None
 
     async def tap(self, x: int, y: int) -> dict:
-        if not _valid_coord(x, y):
-            return {"success": False, "error": f"坐标越界 ({x},{y})"}
-        return await self.send_command("click", {"x": x, "y": y})
+        return await self.send_command("tap", {"x": x, "y": y})
 
-    async def swipe(self, x1: int, y1: int, x2: int, y2: int) -> dict:
-        if not _valid_coord(x1, y1) or not _valid_coord(x2, y2):
-            return {"success": False, "error": "坐标越界"}
-        return await self.send_command("scroll", {
-            "x": x1, "y": y1, "dx": x2 - x1, "dy": y2 - y1,
+    async def swipe(self, x1: int, y1: int, x2: int, y2: int, duration: int = 300) -> dict:
+        return await self.send_command("swipe", {
+            "startX": x1, "startY": y1,
+            "endX": x2, "endY": y2,
+            "duration": duration,
         })
 
     async def scroll_up(self) -> dict:
-        return await self.send_command("scroll", {
-            "x": 540, "y": 1200, "dx": 0, "dy": -SCROLL_DISTANCE,
+        return await self.send_command("swipe", {
+            "startX": 540, "startY": 1200,
+            "endX": 540, "endY": 1200 - SCROLL_DISTANCE,
+            "duration": 300,
         })
 
     async def scroll_down(self) -> dict:
-        return await self.send_command("scroll", {
-            "x": 540, "y": 800, "dx": 0, "dy": SCROLL_DISTANCE,
+        return await self.send_command("swipe", {
+            "startX": 540, "startY": 800,
+            "endX": 540, "endY": 800 + SCROLL_DISTANCE,
+            "duration": 300,
         })
 
     async def type_text(self, text: str) -> dict:
-        return await self.send_command("type", {"text": text})
+        b64 = base64.b64encode(text.encode("utf-8")).decode()
+        return await self.send_command("keyboard/input", {"base64_text": b64, "clear": False})
 
     async def back(self) -> dict:
-        return await self.send_command("back")
+        return await self.send_command("keyboard/key", {"key_code": KEYCODE_BACK})
 
     async def home(self) -> dict:
-        return await self.send_command("home")
+        return await self.send_command("keyboard/key", {"key_code": KEYCODE_HOME})
 
     async def open_app(self, app_name: str) -> dict:
         package = APP_PACKAGES.get(app_name)
         if not package:
             return {"success": False, "error": f"未知应用「{app_name}」"}
-        return await self.send_command("open_app", {"package": package})
+        return await self.send_command("app", {"package": package})
 
     async def ui_tree(self) -> Optional[list]:
-        resp = await self.send_command("ui_tree")
+        """获取 UI 元素树。"""
+        resp = await self.send_command("state")
         if resp.get("success"):
             data = resp.get("data", {})
-            return data if isinstance(data, list) else data.get("children", [])
+            # MobileRun Portal state 可能返回多种格式
+            if isinstance(data, list):
+                return data
+            if isinstance(data, dict):
+                return data.get("children") or data.get("nodes") or []
         return None
 
     async def tap_text(self, text: str) -> dict:
+        """查找包含指定文字的元素并点击。"""
         nodes = await self.ui_tree()
         if not nodes:
             return {"success": False, "error": "无法获取屏幕元素"}
@@ -379,9 +289,10 @@ class PhoneRelay:
         bounds = node.get("bounds", {})
         cx = (bounds.get("left", 0) + bounds.get("right", 0)) // 2
         cy = (bounds.get("top", 0) + bounds.get("bottom", 0)) // 2
-        return await self.send_command("click", {"x": cx, "y": cy})
+        return await self.send_command("tap", {"x": cx, "y": cy})
 
     async def get_screen_text(self) -> str:
+        """获取屏幕上所有可见文字。"""
         nodes = await self.ui_tree()
         if not nodes:
             return "无法获取屏幕信息"
@@ -405,11 +316,8 @@ def get_relay() -> PhoneRelay:
 # 辅助
 # ============================================================
 
-def _valid_coord(x: int, y: int) -> bool:
-    return 0 <= x <= MAX_COORD and 0 <= y <= MAX_COORD
-
-
 def _find_node(nodes: list, text: str, depth: int = 0) -> Optional[dict]:
+    """在 UI 树中递归查找包含指定文字的元素。"""
     if depth > 12:
         return None
     for node in nodes:
@@ -427,6 +335,7 @@ def _find_node(nodes: list, text: str, depth: int = 0) -> Optional[dict]:
 
 
 def _collect_text(nodes: list, max_items: int = 30) -> list:
+    """收集 UI 树中所有可见文字。"""
     result = []
     for node in nodes:
         if not isinstance(node, dict):

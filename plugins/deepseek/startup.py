@@ -183,7 +183,7 @@ async def on_start():
     # 启动所有任务
     await loop_manager.start_all()
 
-    # === 手机 MCP 中继 ===
+    # === 手机 MCP 中继 (MobileRun Portal) ===
     try:
         from .config import PHONE_RELAY_PORT, PHONE_WS_KEY, MY_QQ
         from .mcp_client import set_phone_user
@@ -192,13 +192,8 @@ async def on_start():
             from .phone_bridge import get_relay
             relay = get_relay()
             await relay.start(port=PHONE_RELAY_PORT, api_key=PHONE_WS_KEY)
-            # 启动后再连接控制端
-            ok = await relay.connect_controller()
-            if ok:
-                logger.info(f"[手机] 中继已启动 ws://0.0.0.0:{PHONE_RELAY_PORT}，控制端已连接")
-                logger.info(f"[手机] 手机端请连接 ws://<服务器公网IP>:{PHONE_RELAY_PORT}")
-            else:
-                logger.warning("[手机] 中继已启动但控制端连接失败")
+            logger.info(f"[手机] MobileRun Portal 中继已启动 ws://0.0.0.0:{PHONE_RELAY_PORT}")
+            logger.info(f"[手机] 手机端请用 MobileRun Portal 连接 wss://<服务器IP>:8443/?token=<PHONE_WS_KEY>")
         else:
             logger.info("[手机] 未配置 PHONE_WS_KEY，手机工具不可用")
     except Exception as e:

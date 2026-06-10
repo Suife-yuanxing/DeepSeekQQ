@@ -280,13 +280,11 @@ def _check_phone_permission(user_id: str) -> bool:
 
 
 async def _ensure_phone_bridge():
-    """确保 PhoneRelay 控制端已连接。"""
+    """检查手机是否在线（MobileRun Portal 直连模式，无需 controller）。"""
     from .phone_bridge import get_relay
     relay = get_relay()
-    if not relay.controller_connected:
-        ok = await relay.connect_controller()
-        if not ok:
-            return None
+    if not relay.phone_online:
+        return None
     return relay
 
 
@@ -295,7 +293,7 @@ async def _phone_screenshot_handler(user_id: str = "") -> Optional[str]:
         return None
     bridge = await _ensure_phone_bridge()
     if not bridge:
-        return "手机未连接，请检查手机 ScreenMCP 是否在线"
+        return "手机未连接，请检查 MobileRun Portal 是否在线"
     img_b64 = await bridge.screenshot()
     if img_b64:
         return f"[CQ:image,file=base64://{img_b64}]"
