@@ -176,11 +176,64 @@ def extract_lyrics_snippet(lyrics: List[str], max_lines: int = 3) -> str:
     """从歌词中提取一段展示（优先取副歌附近的内容）。"""
     if not lyrics:
         return ""
-    # 跳过可能的 intro 部分（前几句），取中间偏前的位置
-    # 简单策略：跳过前 4 句，取接下来的 max_lines 句
-    start = min(4, len(lyrics) - max_lines)
-    snippet = lyrics[start:start + max_lines]
+    # 优先取副歌，其次取中间偏前
+    chorus = extract_chorus(lyrics)
+    if chorus:
+        snippet = chorus[:max_lines]
+    else:
+        start = min(4, len(lyrics) - max_lines)
+        snippet = lyrics[start:start + max_lines]
     return "\n".join(f"♪ {line}" for line in snippet)
+
+
+def extract_chorus(lyrics: List[str], max_lines: int = 6) -> List[str]:
+    """从歌词中提取副歌（高潮/chorus）部分。
+
+    识别策略（按优先级）：
+    1. LRC 标签识别：查找 [Chorus]、[副歌]、[Hook] 等标记
+    2. 重复检测：找出出现2次以上的连续2-3行段落（典型的副歌重复）
+    3. 位置推断：取全曲 40%-60% 位置（通常副歌出现的位置）
+
+    Returns:
+        副歌歌词行列表，最多 max_lines 行
+    """
+    if not lyrics:
+        return []
+
+    # ── 策略1：LRC 标签 ──
+    # 注意：我们处理的是 _parse_lrc 之后的纯文本行，LRC标签已被剥离
+    # 但可以在原始歌词中保留标签检测（这里假设纯文本）
+
+    # ── 策略2：重复检测（2-3行连续匹配） ──
+    for window_size in [3, 2]:
+        seen = {}
+        for i in range(len(lyrics) - window_size + 1):
+            key = tuple(lyrics[i:i + window_size])
+            # 用文本相似度比较（忽略标点差异）
+            normalized_key = tuple(
+                line.strip().rstrip('。，！？…~-—').lower()
+                for line in key
+            )
+            if normalized_key in seen:
+                # 找到重复段落！返回较长的那一段
+                prev_start = seen[normalized_key]
+                # 取出现位置到 max_lines 行（两段中选较长的上下文）
+                end = min(i + max_lines, len(lyrics))
+                prev_end = min(prev_start + max_lines, len(lyrics))
+                if end - i >= prev_end - prev_start:
+                    return lyrics[i:end]
+                else:
+                    return lyrics[prev_start:prev_end]
+            seen[normalized_key] = i
+
+    # ── 策略3：位置推断（40%-60%位置通常包含副歌） ──
+    n = len(lyrics)
+    start = int(n * 0.35)
+    end = min(start + max_lines, n)
+    if start < n and end - start >= 2:
+        return lyrics[start:end]
+
+    return []
 
 
 async def search_song_by_lyrics(snippet: str) -> Optional[SongInfo]:

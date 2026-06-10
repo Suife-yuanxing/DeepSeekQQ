@@ -126,18 +126,27 @@ async def _convert_mp3_to_silk(mp3_path: str) -> Optional[str]:
     finally:
         safe_remove(pcm_path)
 
-async def _generate_baidu_voice(text: str) -> Optional[str]:
-    """百度 TTS 引擎。"""
+async def _generate_baidu_voice(text: str, is_singing: bool = False) -> Optional[str]:
+    """百度 TTS 引擎。
+
+    Args:
+        text: 要合成的文本
+        is_singing: 是否歌唱模式（更慢语速、更高音调）
+    """
     token = await _get_baidu_token()
     if not token:
         logger.warning("[语音] 百度 Token 获取失败")
         return None
 
+    # 歌唱模式：更慢(3)、稍高音调(6)；正常模式：使用配置值
+    spd = 3 if is_singing else BAIDU_TTS_SPD
+    pit = 6 if is_singing else BAIDU_TTS_PIT
+
     tex = urllib.parse.quote(text)
     tts_url = (
         f"https://tsn.baidu.com/text2audio?"
         f"tex={tex}&tok={token}&cuid=deepseek_bot&ctp=1&"
-        f"lan=zh&spd={BAIDU_TTS_SPD}&pit={BAIDU_TTS_PIT}&vol={BAIDU_TTS_VOL}&per={BAIDU_TTS_PER}&aue=3"
+        f"lan=zh&spd={spd}&pit={pit}&vol={BAIDU_TTS_VOL}&per={BAIDU_TTS_PER}&aue=3"
     )
     mp3_path = make_audio_path("deepseek_voice", VOICE_DIR, ".mp3")
 
@@ -152,7 +161,8 @@ async def _generate_baidu_voice(text: str) -> Optional[str]:
                 return None
 
         if validate_file(mp3_path, 1000):
-            logger.info(f"[语音] 百度TTS生成成功: {mp3_path} ({os.path.getsize(mp3_path)} bytes)")
+            mode = "歌唱" if is_singing else "正常"
+            logger.info(f"[语音] 百度TTS({mode})生成成功: {mp3_path} ({os.path.getsize(mp3_path)} bytes)")
             return mp3_path
         logger.warning("[语音] 文件过小或不存在")
         return None
@@ -170,13 +180,18 @@ async def generate_voice_file(text: str, emotion: Optional[str] = None, max_leng
 
     Args:
         text: 要合成的文本
-        emotion: 情绪标签
+        emotion: 情绪标签。特殊值 "singing" 触发歌唱模式（降低语速、调整音调）
         max_length: 文本最大长度限制（0 则使用全局 VOICE_MAX_LENGTH）
     """
     length_limit = max_length if max_length > 0 else VOICE_MAX_LENGTH
     if len(text) > length_limit:
         logger.warning(f"[语音] 文本过长({len(text)}字，限制{length_limit})，跳过语音")
         return None
+
+    # 歌唱模式：调整语速和音调
+    is_singing = (emotion == "singing")
+    singing_spd = 3  # 更慢，模拟歌唱
+    singing_pit = 6  # 稍高音调
 
     # 火山引擎 TTS（优先级最高）
     if TTS_ENGINE == "volcano" and VOLCANO_APP_ID and VOLCANO_ACCESS_TOKEN:
@@ -195,15 +210,15 @@ async def generate_voice_file(text: str, emotion: Optional[str] = None, max_leng
             return result
         if TTS_ENGINE == "mimo":
             logger.warning("[语音] MiMo TTS 失败，降级到百度 TTS")
-            return await _generate_baidu_voice(text)
+            return await _generate_baidu_voice(text, is_singing=is_singing)
 
     # 火山 → MiMo 都失败，降级百度
     if TTS_ENGINE == "volcano":
         logger.warning("[语音] 火山+MiMo 均失败，降级到百度 TTS")
-        return await _generate_baidu_voice(text)
+        return await _generate_baidu_voice(text, is_singing=is_singing)
 
     # 百度 TTS 引擎（默认）
-    return await _generate_baidu_voice(text)
+    return await _generate_baidu_voice(text, is_singing=is_singing)
 
 async def send_voice(bot: Bot, event: MessageEvent, text: str, emotion: str = None, max_length: int = 0):
     is_group = isinstance(event, GroupMessageEvent)

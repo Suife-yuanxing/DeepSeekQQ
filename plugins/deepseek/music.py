@@ -213,21 +213,47 @@ async def _send_lyrics_snippet(bot, event, song: SongInfo) -> None:
 
 
 async def _send_voice_sing(bot, event, lyrics: list, song: SongInfo) -> None:
-    """用 TTS 朗读歌词片段，模拟哼唱。"""
-    from .voice import send_voice
+    """用 TTS 歌唱歌词副歌部分，模拟哼唱高潮。
 
-    # 取 2-3 句歌词
-    start = min(4, len(lyrics) - 3)
-    lines = lyrics[start:start + 3]
+    优先提取副歌/高潮部分的歌词，使用歌唱模式TTS参数（更慢语速、更高音调）。
+    """
+    from .music_api import extract_chorus
+    from .voice import generate_voice_file
+    from .voice import _send_voice_file
+    from ._audio_utils import validate_file
+
+    # 提取副歌部分（最多4行）
+    chorus = extract_chorus(lyrics, max_lines=4)
+    if chorus:
+        lines = chorus
+        logger.info(f"[音乐] 提取副歌 {len(lines)} 行: {song.name}")
+    else:
+        # fallback: 取中间偏后部分
+        start = min(4, len(lyrics) - 3)
+        lines = lyrics[start:start + 3]
+        logger.info(f"[音乐] 无副歌标记，取中间段: {song.name}")
+
+    # 构建歌唱文本：行间加停顿（用逗号连接模拟歌唱节奏）
     text = "，".join(lines)
 
-    # 控制长度
-    if len(text) > 60:
-        text = text[:60]
+    # 控制长度（歌唱模式允许稍长）
+    if len(text) > 100:
+        text = text[:100]
 
     try:
-        await send_voice(bot, event, text, emotion="happy")
-        logger.info(f"[音乐] 语音歌唱发送: {song.name}")
+        # 发送提示文本
+        await bot.send(event, make_reply(event, Message(f"给你哼一段《{song.name}》的副歌~ 🎵")))
+
+        # 用歌唱模式生成语音
+        voice_path = await generate_voice_file(text, emotion="singing", max_length=200)
+        if voice_path and validate_file(voice_path, 100):
+            await _send_voice_file(bot, event, voice_path)
+            logger.info(f"[音乐] 语音歌唱发送成功: {song.name} ({len(text)}字)")
+        else:
+            # fallback 为文本
+            snippet = extract_lyrics_snippet(lyrics, max_lines=3)
+            if snippet:
+                await bot.send(event, make_reply(event, Message(snippet)))
     except Exception as e:
         logger.warning(f"[音乐] 语音歌唱失败: {e}")
         # fallback 为文本
@@ -250,7 +276,7 @@ async def _handle_recommend(bot, event) -> Optional[str]:
     results = await search_song(query, limit=10)
 
     if not results:
-        await bot.send(event, make_reply(event, Message("诶...暂时想不到推荐什么，你有什么想听的吗？")))
+        await bot.send(event, make_reply(event, Message("诶...暂时想不到推荐什么呢，你有想听的吗？")))
         return "SKIP"
 
     song = random.choice(results[:5])

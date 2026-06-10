@@ -3,6 +3,9 @@
 使用 SiliconFlow/Agnes API 生成图片。
 用户提到特定场景时，概率性生成图片回复。
 
+角色一致性：所有生成图片使用统一的角色描述，确保外观一致。
+风格约束：写实风格（photorealistic），禁止动漫/二次元。
+
 触发条件：
 | 触发词           | 场景       | 概率 |
 |-----------------|-----------|------|
@@ -41,6 +44,29 @@ def _write_file_sync(path: str, data: bytes):
 # 图片缓存目录
 os.makedirs(IMAGE_CACHE_DIR, exist_ok=True)
 
+# ============================================================
+# 角色一致性定义（所有图片生成的统一角色描述）
+# ============================================================
+
+CHARACTER_DESC = (
+    "a young woman with long pink hair, cat ears on top of her head, "
+    "amber colored eyes, fair skin, wearing a pink hoodie, petite build, "
+    "cute and natural appearance"
+)
+
+# 写实风格后缀（追加到每个 prompt 末尾）
+REALISTIC_SUFFIX = (
+    "photorealistic, realistic photo, 4k, highly detailed, "
+    "natural lighting, shot on camera, consistent character, same person"
+)
+
+# 负面 prompt（排除动漫风格）
+NEGATIVE_PROMPT = (
+    "anime, cartoon, illustration, drawing, 2d, manga, "
+    "multiple people, different hair color, different face, "
+    "deformed, bad anatomy, blurry, low quality"
+)
+
 # 触发词配置（三类场景）
 _IMAGE_TRIGGERS = {
     # 直接请求：用户明确要求生成图片（80%）
@@ -54,26 +80,42 @@ _IMAGE_TRIGGERS = {
     "selfie": {
         "keywords": ["自拍", "照片", "看看你", "你的样子", "长什么样", "发一张", "来一张"],
         "prob": 0.30,
-        "prompt": "anime catgirl taking a selfie with phone, cute expression, cat ears, pink hair, QQ chat style",
+        "prompt": (
+            f"photorealistic selfie of {CHARACTER_DESC}, "
+            "holding a phone taking a mirror selfie, cute natural smile, "
+            "indoor bedroom setting, soft natural light, {REALISTIC_SUFFIX}"
+        ),
         "scene": "selfie",
     },
     # 生活场景：用户描述场景，bot 配图（25%）
     "eating": {
         "keywords": ["吃饭", "美食", "饿了", "吃东西", "干饭", "午饭", "晚饭", "早饭", "做饭", "好吃的"],
         "prob": 0.25,
-        "prompt": "anime catgirl eating delicious food happily, cat ears, cute table setting, warm lighting",
+        "prompt": (
+            f"photorealistic photo of {CHARACTER_DESC}, "
+            "eating delicious food happily at a table, cute expression, "
+            "warm indoor lighting, cozy restaurant or home setting, {REALISTIC_SUFFIX}"
+        ),
         "scene": "eating",
     },
     "sleep": {
         "keywords": ["睡觉", "晚安", "困了", "要睡了", "睡了", "好困"],
         "prob": 0.25,
-        "prompt": "anime catgirl sleeping peacefully in bed, cat ears, soft blanket, moonlight, cozy bedroom",
+        "prompt": (
+            f"photorealistic photo of {CHARACTER_DESC}, "
+            "sleeping peacefully in bed, soft blanket, moonlight through window, "
+            "cozy bedroom at night, peaceful expression, {REALISTIC_SUFFIX}"
+        ),
         "scene": "sleep",
     },
     "celebrate": {
         "keywords": ["生日", "蛋糕", "庆祝", "节日", "快乐", "纪念"],
         "prob": 0.25,
-        "prompt": "anime catgirl celebrating with cake and confetti, happy expression, cat ears, party decorations",
+        "prompt": (
+            f"photorealistic photo of {CHARACTER_DESC}, "
+            "celebrating with cake and confetti, happy excited expression, "
+            "party decorations in background, warm festive lighting, {REALISTIC_SUFFIX}"
+        ),
         "scene": "celebrate",
     },
 }
@@ -95,15 +137,21 @@ def should_generate_image(user_msg: str) -> Optional[Dict[str, Any]]:
 
 
 def _extract_draw_prompt(user_msg: str) -> str:
-    """从用户消息中提取绘画描述。"""
+    """从用户消息中提取绘画描述，统一追加写实风格和角色一致性。"""
     cleaned = user_msg
-    for kw in ["帮我画", "画一个", "画个", "画张", "画"]:
+    for kw in ["帮我画", "画一个", "画个", "画张", "画", "生成图片", "生成一张"]:
         cleaned = cleaned.replace(kw, "").strip()
     cleaned = re.sub(r'^[，。！？,\s]+|[，。！？,\s]+$', '', cleaned)
 
     if len(cleaned) < 2:
-        return "anime catgirl in a cute pose, cat ears, kawaii style"
-    return f"{cleaned}, anime style, high quality, detailed, cute"
+        return (
+            f"photorealistic portrait of {CHARACTER_DESC}, "
+            f"cute natural pose, looking at camera, {REALISTIC_SUFFIX}"
+        )
+    return (
+        f"photorealistic photo of {CHARACTER_DESC}, "
+        f"{cleaned}, {REALISTIC_SUFFIX}"
+    )
 
 
 async def generate_image(prompt: str) -> Optional[str]:
@@ -133,10 +181,11 @@ async def generate_image(prompt: str) -> Optional[str]:
         "model": IMAGE_GEN_MODEL,
         "prompt": prompt,
         "size": "1024x768",
+        "negative_prompt": NEGATIVE_PROMPT,
     }
 
     try:
-        logger.info(f"[图片] 正在生成: {prompt[:50]}...")
+        logger.info(f"[图片] 正在生成: {prompt[:80]}...")
         timeout = aiohttp.ClientTimeout(total=60)
         async with aiohttp.ClientSession(timeout=timeout) as session:
             async with session.post(url, json=payload, headers=headers) as resp:

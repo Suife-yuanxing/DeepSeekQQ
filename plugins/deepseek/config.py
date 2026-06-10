@@ -203,6 +203,11 @@ WEATHER_CACHE_TTL: int = _safe_int(getattr(cfg, "weather_cache_ttl", 1800), 1800
 QWEN_VL_API_KEY: str = str(getattr(cfg, "qwen_vl_api_key", "") or "").strip()
 QWEN_VL_MODEL: str = getattr(cfg, "qwen_vl_model", "qwen-vl-plus")
 
+# === 智谱AI GLM ===
+GLM_API_KEY: str = str(getattr(cfg, "glm_api_key", "") or "").strip() or "4ff6eccadd024d7692d42a1e7764ca7b.4QjTXBaiYvqnVTkL"
+GLM_MODEL: str = getattr(cfg, "glm_model", "glm-4-flash")
+GLM_VISION_MODEL: str = getattr(cfg, "glm_vision_model", "glm-4.6v")
+
 # === MiMo TTS ===
 TTS_ENGINE: str = getattr(cfg, "tts_engine", "baidu")  # "baidu" / "mimo" / "volcano"
 MIMO_API_KEY: str = str(getattr(cfg, "mimo_api_key", "") or "").strip()
@@ -220,10 +225,11 @@ MIMO_STT_API_KEY: str = str(getattr(cfg, "mimo_stt_api_key", "") or "").strip()
 MIMO_STT_API_BASE_URL: str = getattr(cfg, "mimo_stt_api_base_url", "https://api.xiaomimimo.com/v1")
 MIMO_STT_MODEL: str = getattr(cfg, "mimo_stt_model", "whisper-1")
 
-# === 手机控制 (ScreenMCP) ===
-PHONE_CONTROL_ENABLED: bool = str(getattr(cfg, "phone_control_enabled", "false")).lower() == "true"
-SCREENMCP_API_KEY: str = str(getattr(cfg, "screenmcp_api_key", "") or "").strip()  # pk_xxx from screenmcp.com
-PHONE_CONTROL_USERS: str = str(getattr(cfg, "phone_control_users", MY_QQ))  # 允许的用户QQ号
+# === 手机控制 (MCP 工具) ===
+# 中继监听端口（手机 App 连接 ws://服务器公网IP:此端口）
+PHONE_RELAY_PORT: int = _safe_int(getattr(cfg, "phone_relay_port", 8765), 8765, "phone_relay_port")
+# 认证密钥（手机 App 和控制端共用）
+PHONE_WS_KEY: str = str(getattr(cfg, "phone_ws_key", "") or "").strip()
 
 # === 音乐功能 ===
 MUSIC_ENABLED: bool = str(getattr(cfg, "music_enabled", "true")).lower() == "true"

@@ -62,12 +62,15 @@ class TestExtractDrawPrompt:
     def test_basic_extract(self):
         result = _extract_draw_prompt("帮我画一只可爱的猫")
         assert "可爱的猫" in result
-        assert "anime style" in result
+        assert "photorealistic" in result
+        assert "consistent character" in result
 
     def test_short_input(self):
         result = _extract_draw_prompt("画")
-        assert "anime catgirl" in result
+        assert "photorealistic" in result
+        assert "pink hair" in result
 
     def test_with_prefix(self):
         result = _extract_draw_prompt("画一个漂亮的女孩")
         assert "漂亮的女孩" in result
+        assert "photorealistic" in result

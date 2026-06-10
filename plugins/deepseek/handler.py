@@ -29,7 +29,6 @@ from .api import call_deepseek_api
 from .config import ANALYSIS_HISTORY_LIMIT
 from .config import CHAT_HISTORY_MULTIPLIER
 from .config import MY_QQ
-from .config import PHONE_CONTROL_ENABLED
 from .config import RANDOM_REPLY_CHANCE
 from .config import REPLY_LENGTH_CONFIG
 from .config import STT_ENABLED
@@ -108,6 +107,10 @@ from .voice_call import is_in_voice_mode
 from .voice_call import touch_activity
 from .world_context import build_world_context_prompt
 from .world_context import extract_city_from_message
+from .mcp_client import build_tools_prompt
+from .mcp_client import call_tool as mcp_call_tool
+from .mcp_client import parse_tool_call
+from .mcp_client import remove_tool_call
 
 # 向后兼容：现有测试引用的内部函数名
 _parse_target_lines = parse_target_lines
@@ -488,32 +491,6 @@ async def _stage_share_only(ctx: ChatContext) -> Optional[str]:
             else:
                 await _handle_link_share(ctx)
         return _SKIP
-    return None
-
-
-@stage("phone_control")
-async def _stage_phone(ctx: ChatContext) -> Optional[str]:
-    if not PHONE_CONTROL_ENABLED:
-        return None
-    if ctx.user_id != MY_QQ:
-        return None
-    try:
-        from .phone_adb import check_device
-        from .phone_adb import execute_adb_command
-        if check_device():
-            result = execute_adb_command(ctx.raw_msg)
-            if result:
-                ctx.reply_text = result
-                return _SKIP
-        from .phone_control import execute_phone_command
-        from .phone_control import is_phone_command
-        if is_phone_command(ctx.raw_msg):
-            result = await execute_phone_command(ctx.raw_msg)
-            if result:
-                ctx.reply_text = result
-                return _SKIP
-    except Exception as e:
-        logger.warning(f"[手机] 控制模块异常: {e}")
     return None
 
 
@@ -1108,6 +1085,11 @@ async def _stage_llm(ctx: ChatContext) -> Optional[str]:
                 "控制在2-3句话以内，像正常人打电话一样的节奏。"
             )
 
+        # MCP 工具注入：让 LLM 知道可以调用哪些工具
+        tools_prompt = build_tools_prompt()
+        if tools_prompt:
+            sys_prompt += tools_prompt
+
         from .database import has_user_message_today
         greeting_type = detect_greeting_type(ctx.raw_msg, ctx.recent_memories)
 
@@ -1247,6 +1229,41 @@ async def _stage_llm(ctx: ChatContext) -> Optional[str]:
         logger.error(f"[LLM] API 调用失败: {e}")
         ctx.reply_text = "抱歉，我现在脑子有点转不过来，稍后再聊好吗？"
     ctx.reply_text = filter_novel_actions(ctx.reply_text)
+    return None
+
+
+@stage("mcp_execute")
+async def _stage_mcp_execute(ctx: ChatContext) -> Optional[str]:
+    """检测 LLM 回复中的 MCP 工具调用并执行。"""
+    if not ctx.reply_text:
+        return None
+
+    tool_call = parse_tool_call(ctx.reply_text)
+    if not tool_call:
+        return None
+
+    tool_name = tool_call["tool"]
+    tool_args = tool_call.get("args", {})
+    logger.info(f"[MCP] LLM 请求调用工具: {tool_name} args={tool_args}")
+
+    try:
+        result = await mcp_call_tool(tool_name, tool_args, user_id=ctx.user_id)
+        if result:
+            # 将工具结果注入到回复中（替换工具调用标记）
+            ctx.reply_text = remove_tool_call(ctx.reply_text)
+            if ctx.reply_text.strip():
+                ctx.reply_text += f"\n\n🔍 查询结果：\n{result[:800]}"
+            else:
+                ctx.reply_text = f"🔍 查询结果：\n{result[:800]}"
+            logger.info(f"[MCP] 工具 '{tool_name}' 执行成功 ({len(result)}字)")
+        else:
+            # 工具调用失败，移除标记但不添加错误信息
+            ctx.reply_text = remove_tool_call(ctx.reply_text)
+            logger.warning(f"[MCP] 工具 '{tool_name}' 执行失败或无结果")
+    except Exception as e:
+        logger.error(f"[MCP] 工具执行异常: {e}")
+        ctx.reply_text = remove_tool_call(ctx.reply_text)
+
     return None
 
 

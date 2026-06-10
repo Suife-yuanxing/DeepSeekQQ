@@ -35,8 +35,8 @@ python -m pytest tests/ -v    # 55 个测试，应全部通过
 
 ## 已知问题
 
-- **和风天气 API**: 返回 403 Invalid Host，需去 dev.qweather.com/console 解除服务器 IP 白名单限制
-- 代码用 `devapi.qweather.com`（免费版 endpoint）
+- **天气 API**: 已从和风天气切换到 Open-Meteo（免费无需 Key），2026-06-09 部署
+- **重启循环 (已修复)**: 2026-06-09 修复 3 个 crash bug（_http_session UnboundLocalError / sqlite3.Row.get / CancelledError）+ systemd RestartSec 10→60s + StartLimitBurst=5
 
 ## 部署路径
 

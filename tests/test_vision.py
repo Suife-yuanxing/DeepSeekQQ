@@ -30,7 +30,7 @@ class TestExtractVisionText:
 
     def test_placeholder(self):
         from plugins.deepseek.vision import extract_vision_text
-        assert extract_vision_text("[图片内容暂无法识别]") == ""
+        assert extract_vision_text("[图片内容: 一张图片，具体内容未能识别]") == ""
 
     def test_file_missing(self):
         from plugins.deepseek.vision import extract_vision_text
@@ -78,7 +78,7 @@ class TestRecognizeSticker:
     async def test_placeholder_returns_none(self):
         from plugins.deepseek.vision import recognize_sticker
         with patch("plugins.deepseek.vision.analyze_image",
-                   AsyncMock(return_value="[图片内容暂无法识别]")):
+                   AsyncMock(return_value="[图片内容: 一张图片，具体内容未能识别]")):
             result = await recognize_sticker("http://example.com/s.jpg")
             assert result is None
 

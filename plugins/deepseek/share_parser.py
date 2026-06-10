@@ -829,7 +829,7 @@ async def _handle_sticker_segment(seg) -> Dict[str, Any]:
 
 
 async def _handle_photo_segment(seg, user_text: str) -> Dict[str, Any]:
-    """处理普通图片段（含三层降级识别 + 重试机制）。"""
+    """处理普通图片段（含五层降级识别 + 自适应重试机制）。"""
     img_url = seg.data.get("url") or seg.data.get("file", "未知图片")
 
     # 动态选择识别提示词
@@ -847,13 +847,17 @@ async def _handle_photo_segment(seg, user_text: str) -> Dict[str, Any]:
                     vision_success = True
                     break
                 elif retry < 2:
-                    logger.info(f"[图片识别] 重试 {retry + 1}/2: {img_url[:50]}")
-                    await asyncio.sleep(1)
+                    # 自适应延迟：第1次重试等1s，第2次等2s
+                    delay = 1.0 * (retry + 1)
+                    logger.info(f"[图片识别] 重试 {retry + 1}/2 (延迟{delay}s): {img_url[:60]}")
+                    await asyncio.sleep(delay)
     except Exception as e:
-        logger.warning(f"[图片识别] 异常: {e}")
+        logger.warning(f"[图片识别] 异常: {type(e).__name__}: {e}")
 
     if not vision_success:
-        logger.warning(f"[图片识别] 最终失败: {img_url[:50]}")
+        logger.warning(f"[图片识别] 最终失败（五层全未命中）: {img_url[:60]}")
+        # 使用新的占位描述（告知LLM有一张图片），让bot仍然可以自然回应
+        img_desc = "[图片内容: 一张图片，具体内容未能识别]"
 
     # 图片分类（使用安全的 extract_vision_text）
     vision_text = extract_vision_text(img_desc)

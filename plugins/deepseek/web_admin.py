@@ -33,7 +33,6 @@ from .config import MAX_MEMORY
 from .config import MAX_REPLY_CHARS
 from .config import MODEL
 from .config import MUSIC_ENABLED
-from .config import PHONE_CONTROL_ENABLED
 from .config import REMINDER_ENABLED
 from .config import SEARCH_ENABLED
 from .config import STICKER_ENABLED
@@ -185,7 +184,6 @@ async def api_config(request: Request) -> Response:
             "music": MUSIC_ENABLED,
             "voice_private": VOICE_ENABLED_PRIVATE,
             "voice_group": VOICE_ENABLED_GROUP,
-            "phone_control": PHONE_CONTROL_ENABLED,
             "image_gen": bool(IMAGE_GEN_API_KEY),
             "tavily_search": bool(TAVILY_API_KEY),
         }

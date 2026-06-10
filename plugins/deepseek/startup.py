@@ -183,18 +183,26 @@ async def on_start():
     # 启动所有任务
     await loop_manager.start_all()
 
-    # === 启动 ScreenMCP Worker (手机控制) ===
+    # === 手机 MCP 中继 ===
     try:
-        from .config import PHONE_CONTROL_ENABLED
-        from .config import SCREENMCP_API_KEY
-        if PHONE_CONTROL_ENABLED and SCREENMCP_API_KEY:
-            from .screenmcp_worker import start_worker
-            await start_worker(SCREENMCP_API_KEY, 8765)
-            logger.info("[手机] ScreenMCP Worker 已启动，端口 8765")
+        from .config import PHONE_RELAY_PORT, PHONE_WS_KEY, MY_QQ
+        from .mcp_client import set_phone_user
+        set_phone_user(MY_QQ)  # 仅主人可用手机工具
+        if PHONE_WS_KEY:
+            from .phone_bridge import get_relay
+            relay = get_relay()
+            await relay.start(port=PHONE_RELAY_PORT, api_key=PHONE_WS_KEY)
+            # 启动后再连接控制端
+            ok = await relay.connect_controller()
+            if ok:
+                logger.info(f"[手机] 中继已启动 ws://0.0.0.0:{PHONE_RELAY_PORT}，控制端已连接")
+                logger.info(f"[手机] 手机端请连接 ws://<服务器公网IP>:{PHONE_RELAY_PORT}")
+            else:
+                logger.warning("[手机] 中继已启动但控制端连接失败")
         else:
-            logger.info("[手机] 手机控制未启用或未配置 API Key")
+            logger.info("[手机] 未配置 PHONE_WS_KEY，手机工具不可用")
     except Exception as e:
-        logger.error(f"[手机] ScreenMCP Worker 启动失败: {e}")
+        logger.error(f"[手机] MCP 中继启动异常: {e}")
 
     # 注册状态端点
     try:

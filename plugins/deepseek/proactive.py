@@ -345,6 +345,9 @@ async def _get_weather_alert_for_user(user_id: str) -> Optional[str]:
         return None
 
 
+# 连续跳过追踪：{uid: consecutive_skip_count}
+_consecutive_morning_skips: dict = {}
+
 async def _should_send_morning(uid: str) -> dict:
     """判断是否应该发送早安。
 
@@ -352,6 +355,7 @@ async def _should_send_morning(uid: str) -> dict:
     1. 检查昨晚聊天结束时间 → 动态调整
     2. 加入"忘记概率" → 真人不会天天发
     3. 检查上次早安间隔 → 避免过于频繁
+    4. 连续跳过保护 → 连续2天跳过则第3天强制发送
 
     Returns:
         {"should_send": bool, "reason": str, "context": str}
@@ -410,17 +414,30 @@ async def _should_send_morning(uid: str) -> dict:
         elif mood == "positive":
             context = "昨晚聊得开心，早安可以延续好心情"
 
-    # 忘记概率：工作日30%，周末50%
+    # 连续跳过保护：已连续跳过2天 → 第3天强制发送
+    skip_count = _consecutive_morning_skips.get(uid, 0)
+    if skip_count >= 2:
+        _consecutive_morning_skips[uid] = 0  # 重置计数器
+        logger.info(f"[早安] 连续跳过{skip_count}天，今日强制发送 uid={uid[:6]}")
+        return {"should_send": True, "reason": "连续跳过保护（强制发送）", "context": context}
+
+    # 忘记概率：工作日30%，周末50%（连续跳过保护会覆盖此逻辑）
     is_weekend = now.weekday() >= 5
     forget_chance = 0.5 if is_weekend else 0.3
     if random.random() < forget_chance:
-        return {"should_send": False, "reason": "随机跳过（模拟忘记）", "context": ""}
+        _consecutive_morning_skips[uid] = skip_count + 1
+        return {"should_send": False, "reason": f"随机跳过（连续跳过{skip_count + 1}天）", "context": ""}
 
+    # 成功发送，重置计数器
+    _consecutive_morning_skips[uid] = 0
     return {"should_send": True, "reason": "条件满足", "context": context}
 
 
 async def _morning_greeting(bot):
-    """智能早安：根据昨晚聊天时间动态调整，加入随机性。"""
+    """智能早安：根据昨晚聊天时间动态调整，加入随机性。
+
+    多用户支持：从最近活跃会话中自动发现目标用户，而非仅硬编码 MY_QQ。
+    """
     cfg = PROACTIVE_CONFIG["morning_greeting"]
     if not cfg["enabled"]:
         return
@@ -430,7 +447,12 @@ async def _morning_greeting(bot):
     if not (8 <= now.hour < 12):
         return
 
-    target_users = cfg["target_users"]() if callable(cfg["target_users"]) else cfg["target_users"]
+    # 多用户：从活跃会话自动发现目标
+    target_users = await _get_proactive_targets()
+    # 确保主人始终在列表中
+    if MY_QQ and str(MY_QQ) not in target_users:
+        target_users.insert(0, str(MY_QQ))
+
     for uid in target_users:
         decision = await _should_send_morning(str(uid))
         if not decision["should_send"]:
@@ -461,20 +483,39 @@ async def _morning_greeting(bot):
 
 
 async def _night_greeting(bot):
-    """00:00 催睡：检查用户最近30分钟有消息才发。"""
+    """智能晚安：多时段检查 + 道别去重。
+
+    仅对最近30分钟有消息的用户发送，避免对已沉默用户发晚安。
+    增加道别去重：如果用户已通过感知式道别说晚安，不再重复发送。
+    """
     cfg = PROACTIVE_CONFIG["night_greeting"]
     if not cfg["enabled"]:
         return
-    target_users = cfg["target_users"]() if callable(cfg["target_users"]) else cfg["target_users"]
+
+    # 多用户：从活跃会话自动发现目标
+    target_users = await _get_proactive_targets()
+    if MY_QQ and str(MY_QQ) not in target_users:
+        target_users.insert(0, str(MY_QQ))
+
     for uid in target_users:
         session_id = f"private_{uid}"
         if not await has_recent_message(session_id, minutes=30):
             continue
+
+        # 道别去重：今天已发过晚安或已感知式道别 → 跳过
+        if await has_proactive_today(str(uid), "night") or \
+           await has_proactive_today(str(uid), "farewell"):
+            logger.debug(f"[晚安] 跳过 {str(uid)[:6]}: 今日已道别")
+            continue
+
         msg = await _generate_proactive_message("night", str(uid))
         await _send_proactive_message(bot, "private", str(uid), msg, scene="night")
+
     for gid in cfg["target_groups"]:
         session_id = f"group_{gid}"
         if not await has_recent_message(session_id, minutes=30):
+            continue
+        if await has_proactive_today(str(gid), "night"):
             continue
         msg = await _generate_proactive_message("night")
         await _send_proactive_message(bot, "group", str(gid), msg, scene="night")
@@ -653,7 +694,10 @@ async def _check_silence_and_notify(bot):
 
 
 async def _sleep_nag(bot):
-    """凌晨催睡：00:00-02:00 每 30 分钟检查，用户还在聊天就催。"""
+    """凌晨催睡：00:00-02:00 每 30 分钟检查，用户还在聊天就催。
+
+    多用户支持：自动发现活跃会话中的目标用户。
+    """
     hour = datetime.now().hour
     if not (0 <= hour < 2):
         return
@@ -662,8 +706,12 @@ async def _sleep_nag(bot):
         return
     max_nags = cfg.get("max_nags_per_night", 2)
     today = datetime.now().strftime("%Y-%m-%d")
-    target_users_raw = cfg.get("target_users", [])
-    target_users = target_users_raw() if callable(target_users_raw) else target_users_raw
+
+    # 多用户：从活跃会话自动发现目标
+    target_users = await _get_proactive_targets()
+    if MY_QQ and str(MY_QQ) not in target_users:
+        target_users.insert(0, str(MY_QQ))
+
     for uid in target_users:
         nag_count = await get_today_proactive_count_by_scene(str(uid), "sleep_nag", today)
         if nag_count >= max_nags:
@@ -724,7 +772,10 @@ async def register_proactive_jobs(bot):
 
     ng = PROACTIVE_CONFIG["night_greeting"]
     if ng["enabled"]:
-        _scheduler.add_job(_night_greeting, 'cron', hour=ng["hour"], minute=ng["minute"], args=[bot], id="night", replace_existing=True, jitter=300)
+        # 多时段晚安：00:00 / 00:30 / 01:00 各检查一次
+        _scheduler.add_job(_night_greeting, 'cron', hour=0, minute=0, args=[bot], id="night_0", replace_existing=True, jitter=300)
+        _scheduler.add_job(_night_greeting, 'cron', hour=0, minute=30, args=[bot], id="night_30", replace_existing=True, jitter=300)
+        _scheduler.add_job(_night_greeting, 'cron', hour=1, minute=0, args=[bot], id="night_60", replace_existing=True, jitter=300)
 
     sc = PROACTIVE_CONFIG["silence_check"]
     if sc["enabled"]:
@@ -743,7 +794,7 @@ async def register_proactive_jobs(bot):
         _scheduler.add_job(_sleep_nag, 'cron', hour='0-1', minute='*/30', args=[bot], id="sleep_nag", replace_existing=True, jitter=120)
 
     _scheduler.start()
-    logger.info(f"✅ 主动消息已启动 | 早安:{mg['hour']}:{mg['minute']:02d}(±5min) | 晚安:{ng['hour']}:{ng['minute']:02d}(±5min) | 沉默检查:每{sc['check_interval_hours']}h | 凌晨催睡:00:00-02:00/30min | 节日:每天0:01 | 随机问候:每2h")
+    logger.info(f"✅ 主动消息已启动 | 早安:8:30/9:30/10:30(±5min) | 晚安:00:00/00:30/01:00(±5min) | 沉默检查:每{sc['check_interval_hours']}h | 凌晨催睡:00:00-02:00/30min | 节日:每天0:01 | 随机问候:每2h")
 
 
 # ---------- Phase 7：主动消息增强 ----------

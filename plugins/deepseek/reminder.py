@@ -260,7 +260,7 @@ async def _generate_reminder_reply(scene: str, **kwargs) -> str:
         "cancel_success": f"好哒，提醒 #{kwargs.get('rid', '')} 已经取消了~",
         "cancel_fail": "嗯？找不到这个提醒呢，是不是ID不对？",
         "no_reminder": "告诉我你要取消的提醒ID嘛~",
-        "fire": f"提醒你：「{kwargs.get('content', '')}」",
+        "fire": f"呐呐~ 到时间了哦！提醒你：「{kwargs.get('content', '')}」",
     }
     return fallbacks.get(scene, "")
 

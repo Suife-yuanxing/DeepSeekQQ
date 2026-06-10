@@ -6,6 +6,14 @@
       "env": {
         "OLLAMA_HOST": "http://localhost:11434"
       }
+    },
+    "glm-mcp": {
+      "command": "uvx",
+      "args": ["glm-mcp"],
+      "env": {
+        "GLM_API_KEY": "4ff6eccadd024d7692d42a1e7764ca7b.4QjTXBaiYvqnVTkL",
+        "GLM_MODEL": "glm-4-flash"
+      }
     }
   }
 }
