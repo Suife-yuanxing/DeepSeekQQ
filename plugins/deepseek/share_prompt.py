@@ -41,6 +41,8 @@ def format_shares_for_prompt(shares: List[Dict[str, Any]], user_msg: str = "") -
     has_image = any(s.get("type") == "图片" for s in target)
     if has_image:
         lines.append(
+            "【重要】你已经通过视觉模型看到了这张图片的详细内容（见上方摘要）。"
+            "绝对不要说「我看不到图片」「我不支持查看图片」「我没有这个功能」——你已经看到了！\n"
             "图片回复要求：不要说「我看到了一张图片」这种空话。"
             "要对图片内容做出具体反应——如果有趣就调侃，如果好看就夸，"
             "如果有文字就评论文字内容，像朋友发图给你看一样自然回复。"
