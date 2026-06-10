@@ -328,6 +328,8 @@ class ChatContext:
     scenes: list = field(default_factory=list)
     # 语音通话模式
     voice_mode: bool = False
+    # 手机命令直接处理标记（跳过 LLM 调用）
+    skip_llm: bool = False
 
 
 # ============================================================
@@ -948,8 +950,118 @@ async def _stage_music(ctx: ChatContext) -> Optional[str]:
     return _SKIP if result == "SKIP" else None
 
 
+@stage("phone_direct")
+async def _stage_phone_direct(ctx: ChatContext) -> Optional[str]:
+    """手机命令直接处理：在 LLM 之前拦截明确的手机操作指令。
+
+    避免 LLM 编造屏幕内容（幻觉），直接调用 MobileRun Portal 工具。
+    复杂指令（如"看看微信谁给我发了消息"）仍走 LLM + 工具调用。
+    """
+    from .mcp_client import _check_phone_permission, _ensure_phone_bridge
+
+    # 权限和在线检查
+    if not _check_phone_permission(ctx.user_id):
+        return None
+    bridge = await _ensure_phone_bridge()
+    if not bridge:
+        logger.debug("[phone_direct] 手机不在线，跳过")
+        return None
+
+    try:
+        import re
+        msg = ctx.raw_msg.strip()
+
+        # ── 截图 / 截屏 ──
+        if re.search(r'^(截[图屏]|截个图|截一下|屏幕截图|看看.?屏幕|截张图|帮我.*截)', msg):
+            logger.info(f"[phone_direct] 截图命令: {msg}")
+            img_b64 = await bridge.screenshot()
+            if img_b64:
+                ctx.reply_text = f"[CQ:image,file=base64://{img_b64}]\n喏，这是当前手机屏幕~"
+            else:
+                ctx.reply_text = "截图失败了，检查一下手机连接？"
+            ctx.skip_llm = True
+            return None
+
+        # ── 打开应用 ──
+        m = re.search(r'(?:打开|启动|进入)(\S{1,6}(?:微信|QQ|抖音|快手|淘宝|京东|B站|小红书|美团|支付宝|微博|知乎|拼多多|钉钉|飞书|设置|相机))', msg)
+        if m:
+            app = m.group(1)
+            logger.info(f"[phone_direct] 打开应用: {app}")
+            resp = await bridge.open_app(app)
+            if resp.get("success"):
+                ctx.reply_text = f"✅ 已打开{app}~"
+            else:
+                ctx.reply_text = f"打开{app}失败: {resp.get('error', '未知错误')}"
+            ctx.skip_llm = True
+            return None
+
+        # ── 返回键 ──
+        if re.search(r'^(返回|后退|back|退出|退回去)$', msg, re.IGNORECASE):
+            logger.info(f"[phone_direct] 返回: {msg}")
+            resp = await bridge.back()
+            ctx.reply_text = "✅ 已返回" if resp.get("success") else "返回失败"
+            ctx.skip_llm = True
+            return None
+
+        # ── 回到桌面 ──
+        if re.search(r'^(回?桌面|主屏幕|主页|home)$', msg, re.IGNORECASE):
+            logger.info(f"[phone_direct] 回桌面: {msg}")
+            resp = await bridge.home()
+            ctx.reply_text = "✅ 已回到桌面" if resp.get("success") else "返回桌面失败"
+            ctx.skip_llm = True
+            return None
+
+        # ── 滑动操作 ──
+        if re.search(r'^(往上滑|上滑|往上翻|向上滑|向上滚动)', msg):
+            logger.info(f"[phone_direct] 上滑: {msg}")
+            resp = await bridge.scroll_up()
+            ctx.reply_text = "✅ 已上滑" if resp.get("success") else "滑动失败"
+            ctx.skip_llm = True
+            return None
+        if re.search(r'^(往下滑|下滑|往下翻|向下滑|向下滚动)', msg):
+            logger.info(f"[phone_direct] 下滑: {msg}")
+            resp = await bridge.scroll_down()
+            ctx.reply_text = "✅ 已下滑" if resp.get("success") else "滑动失败"
+            ctx.skip_llm = True
+            return None
+
+        # ── 输入文字 ──
+        m = re.search(r'(?:输入|打字|键入|帮我打|帮我写)\s*[：:]*\s*(.{1,200})', msg)
+        if m:
+            text = m.group(1).strip()
+            logger.info(f"[phone_direct] 输入: {text[:30]}")
+            resp = await bridge.type_text(text)
+            if resp.get("success"):
+                ctx.reply_text = f"✅ 已输入「{text[:30]}」"
+            else:
+                ctx.reply_text = f"输入失败: {resp.get('error', '未知错误')}"
+            ctx.skip_llm = True
+            return None
+
+        # ── 屏幕文字识别 ──
+        if re.search(r'^(屏幕.*有什么|屏幕.*显示|识别屏幕|屏幕.*字|看看.*屏幕|屏幕.*内容)', msg):
+            logger.info(f"[phone_direct] 屏幕文字: {msg}")
+            text = await bridge.get_screen_text()
+            if text:
+                ctx.reply_text = f"📱 屏幕上的文字：\n{text}"
+            else:
+                ctx.reply_text = "读取屏幕失败"
+            ctx.skip_llm = True
+            return None
+
+    except Exception as e:
+        logger.error(f"[phone_direct] 手机操作异常，回退到 LLM 处理: {e}")
+        return None
+
+    return None
+
+
 @stage("llm_call")
 async def _stage_llm(ctx: ChatContext) -> Optional[str]:
+    # 手机命令已直接处理，跳过 LLM 避免编造回复
+    if ctx.skip_llm:
+        return None
+
     shares_now = get_recent_shares(ctx.session_id)
 
     # 场景路由 — 构建场景提示（prompt_templates 集成）
@@ -1089,6 +1201,26 @@ async def _stage_llm(ctx: ChatContext) -> Optional[str]:
         tools_prompt = build_tools_prompt()
         if tools_prompt:
             sys_prompt += tools_prompt
+
+        # 手机操作强化提示：检测到手机相关请求时，强调必须使用工具
+        import re as _re
+        _phone_kw = ['截图', '截屏', '屏幕', '打开', '点击', '滑动', '输入', '手机', '桌面', '返回', '微信', '抖音']
+        if any(kw in ctx.raw_msg for kw in _phone_kw):
+            from .mcp_client import _check_phone_permission, _ensure_phone_bridge as _ensure_bridge
+            if _check_phone_permission(ctx.user_id):
+                _bridge = await _ensure_bridge()
+                if _bridge:
+                    sys_prompt += (
+                        "\n\n⚠️ 【手机控制可用】手机已在线！你可以直接操控用户的手机屏幕。\n"
+                        "对于任何涉及手机屏幕的操作（截图、打开应用、点击、滑动、输入文字、查看屏幕内容），"
+                        "你必须在回复中使用 [tool:工具名] 格式来调用工具，而不是凭空想象屏幕内容。\n"
+                        "例如：用户说「帮我截图微信」，你应该回复：\n"
+                        "[tool:phone_open_app] {\"app_name\": \"微信\"} [/tool]\n"
+                        "[tool:phone_screenshot] {} [/tool]\n"
+                        "用户说「屏幕上有啥」，你应该回复：\n"
+                        "[tool:phone_screenshot] {} [/tool]\n"
+                        "绝对不要假装看到了屏幕！没有调用工具你就真的看不到。"
+                    )
 
         from .database import has_user_message_today
         greeting_type = detect_greeting_type(ctx.raw_msg, ctx.recent_memories)

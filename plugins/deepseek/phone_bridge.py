@@ -219,10 +219,15 @@ class PhoneRelay:
         resp = await self.send_command("screenshot", {"hideOverlay": True})
         if resp.get("success"):
             result = resp.get("data", {})
-            # MobileRun Portal 返回格式: {"image": "base64..."} 或 {"data": "base64..."}
-            img = result.get("image") or result.get("data") or ""
-            if img:
-                return img
+            # MobileRun Portal 返回格式多样:
+            #   1. 纯字符串: "iVBORw0KGgo..." (base64 png)
+            #   2. dict: {"image": "base64..."} 或 {"data": "base64..."}
+            if isinstance(result, str) and result:
+                return result
+            if isinstance(result, dict):
+                img = result.get("image") or result.get("data") or ""
+                if img:
+                    return img
         logger.warning(f"[PhoneRelay] 截图失败: {resp.get('error')}")
         return None
 
@@ -276,6 +281,15 @@ class PhoneRelay:
                 return data
             if isinstance(data, dict):
                 return data.get("children") or data.get("nodes") or []
+            if isinstance(data, str):
+                try:
+                    parsed = json.loads(data)
+                    if isinstance(parsed, list):
+                        return parsed
+                    if isinstance(parsed, dict):
+                        return parsed.get("children") or parsed.get("nodes") or []
+                except (json.JSONDecodeError, TypeError):
+                    pass
         return None
 
     async def tap_text(self, text: str) -> dict:
