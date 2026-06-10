@@ -15,15 +15,13 @@
 import asyncio
 import base64
 import json
-import logging
 import uuid
 from typing import Any
 from typing import Dict
 from typing import Optional
 
 from aiohttp import WSMsgType, web
-
-logger = logging.getLogger("deepseek.phone_bridge")
+from nonebot import logger
 
 # ============================================================
 # 常量
@@ -222,8 +220,8 @@ class PhoneRelay:
             # MobileRun Portal 返回格式多样:
             #   1. 纯字符串: "iVBORw0KGgo..." (base64 png)
             #   2. dict: {"image": "base64..."} 或 {"data": "base64..."}
-            if isinstance(result, str) and result:
-                return result
+            if isinstance(result, str):
+                return result if result else None
             if isinstance(result, dict):
                 img = result.get("image") or result.get("data") or ""
                 if img:

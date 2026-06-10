@@ -74,8 +74,8 @@ def build_tools_prompt() -> str:
         if params_desc:
             lines.append(f"  参数: {params_desc}")
     lines.append(
-        "使用格式：在回复中需要调用工具时，用 [tool:工具名] {{\"参数\": \"值\"}} [/tool] 包裹。\n"
-        "例如：[tool:search] {{\"query\": \"今天天气\"}} [/tool]"
+        "使用格式：在回复中需要调用工具时，用 [tool:工具名] {\"参数\": \"值\"} [/tool] 包裹。\n"
+        "例如：[tool:search] {\"query\": \"今天天气\"} [/tool]"
     )
     return "\n".join(lines)
 
@@ -472,7 +472,6 @@ def _register_default_tools():
         parameters={
             "type": "object",
             "properties": {
-                "user_id": {"type": "string", "description": "用户QQ号（自动填充）"},
             },
             "required": [],
         },
@@ -485,7 +484,6 @@ def _register_default_tools():
         parameters={
             "type": "object",
             "properties": {
-                "user_id": {"type": "string", "description": "用户QQ号（自动填充）"},
             },
             "required": [],
         },
@@ -500,7 +498,6 @@ def _register_default_tools():
             "properties": {
                 "x": {"type": "integer", "description": "X坐标（横向位置）"},
                 "y": {"type": "integer", "description": "Y坐标（纵向位置）"},
-                "user_id": {"type": "string", "description": "用户QQ号（自动填充）"},
             },
             "required": ["x", "y"],
         },
@@ -514,7 +511,6 @@ def _register_default_tools():
             "type": "object",
             "properties": {
                 "text": {"type": "string", "description": "要点击的文字/按钮名称"},
-                "user_id": {"type": "string", "description": "用户QQ号（自动填充）"},
             },
             "required": ["text"],
         },
@@ -531,7 +527,6 @@ def _register_default_tools():
                 "y1": {"type": "integer", "description": "起始Y坐标"},
                 "x2": {"type": "integer", "description": "终点X坐标"},
                 "y2": {"type": "integer", "description": "终点Y坐标"},
-                "user_id": {"type": "string", "description": "用户QQ号（自动填充）"},
             },
             "required": ["x1", "y1", "x2", "y2"],
         },
@@ -544,7 +539,6 @@ def _register_default_tools():
         parameters={
             "type": "object",
             "properties": {
-                "user_id": {"type": "string", "description": "用户QQ号（自动填充）"},
             },
             "required": [],
         },
@@ -557,7 +551,6 @@ def _register_default_tools():
         parameters={
             "type": "object",
             "properties": {
-                "user_id": {"type": "string", "description": "用户QQ号（自动填充）"},
             },
             "required": [],
         },
@@ -571,7 +564,6 @@ def _register_default_tools():
             "type": "object",
             "properties": {
                 "text": {"type": "string", "description": "要输入的文字内容"},
-                "user_id": {"type": "string", "description": "用户QQ号（自动填充）"},
             },
             "required": ["text"],
         },
@@ -585,7 +577,6 @@ def _register_default_tools():
             "type": "object",
             "properties": {
                 "app_name": {"type": "string", "description": "应用名称，如: 微信, QQ, 抖音, 淘宝, B站, 小红书, 支付宝, 设置"},
-                "user_id": {"type": "string", "description": "用户QQ号（自动填充）"},
             },
             "required": ["app_name"],
         },
@@ -598,7 +589,6 @@ def _register_default_tools():
         parameters={
             "type": "object",
             "properties": {
-                "user_id": {"type": "string", "description": "用户QQ号（自动填充）"},
             },
             "required": [],
         },
@@ -611,7 +601,6 @@ def _register_default_tools():
         parameters={
             "type": "object",
             "properties": {
-                "user_id": {"type": "string", "description": "用户QQ号（自动填充）"},
             },
             "required": [],
         },

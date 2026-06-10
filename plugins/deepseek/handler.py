@@ -961,10 +961,11 @@ async def _stage_phone_direct(ctx: ChatContext) -> Optional[str]:
 
     # 权限和在线检查
     if not _check_phone_permission(ctx.user_id):
+        logger.info(f"[phone_direct] 权限不足 user={ctx.user_id}")
         return None
     bridge = await _ensure_phone_bridge()
     if not bridge:
-        logger.debug("[phone_direct] 手机不在线，跳过")
+        logger.info("[phone_direct] 手机不在线，跳过")
         return None
 
     try:
@@ -983,7 +984,7 @@ async def _stage_phone_direct(ctx: ChatContext) -> Optional[str]:
             return None
 
         # ── 打开应用 ──
-        m = re.search(r'(?:打开|启动|进入)(\S{1,6}(?:微信|QQ|抖音|快手|淘宝|京东|B站|小红书|美团|支付宝|微博|知乎|拼多多|钉钉|飞书|设置|相机))', msg)
+        m = re.search(r'(?:打开|启动|进入)(?:\S{0,6})(微信|QQ|抖音|快手|淘宝|京东|B站|小红书|美团|支付宝|微博|知乎|拼多多|钉钉|飞书|设置|相机)', msg)
         if m:
             app = m.group(1)
             logger.info(f"[phone_direct] 打开应用: {app}")
@@ -996,7 +997,7 @@ async def _stage_phone_direct(ctx: ChatContext) -> Optional[str]:
             return None
 
         # ── 返回键 ──
-        if re.search(r'^(返回|后退|back|退出|退回去)$', msg, re.IGNORECASE):
+        if re.search(r'^(返回|后退|back|退回去|退出(微信|QQ|抖音|快手|淘宝|京东|B站|小红书|美团|支付宝|微博|知乎|拼多多|钉钉|飞书|设置|相机)?|关闭(微信|QQ|抖音|快手|淘宝|京东|B站|小红书|美团|支付宝|微博|知乎|拼多多|钉钉|飞书|设置|相机)?)$', msg, re.IGNORECASE):
             logger.info(f"[phone_direct] 返回: {msg}")
             resp = await bridge.back()
             ctx.reply_text = "✅ 已返回" if resp.get("success") else "返回失败"
