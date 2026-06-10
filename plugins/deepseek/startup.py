@@ -170,6 +170,21 @@ async def on_start():
             pass
     loop_manager.register("Token统计持久化", _token_persist, 1800)
 
+    # 热搜推送：每2小时检查一次（内部有4h冷却+每日3条限制）
+    async def _hot_topic_push():
+        import nonebot
+        try:
+            bots = nonebot.get_bots()
+            if bots:
+                bot = list(bots.values())[0]
+                from .hot_topics import check_and_push_topics
+                await check_and_push_topics(bot)
+        except ValueError:
+            pass  # bot 尚未连接
+        except Exception as e:
+            logger.debug(f"[热搜] 推送检查异常: {e}")
+    loop_manager.register("热搜推送", _hot_topic_push, 7200)
+
     # 追问系统：每2分钟检查超时未回复的会话
     async def _follow_up_check():
         try:

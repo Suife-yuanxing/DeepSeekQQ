@@ -815,17 +815,17 @@ async def _handle_sticker_segment(seg) -> Dict[str, Any]:
     if emoji_desc:
         return {"type": "表情", "source": f"用户发了表情[{emoji_desc}]",
                 "summary": f"[用户发送了QQ表情：{emoji_desc}]", "image_url": img_url,
-                "time": datetime.now().timestamp()}
+                "sticker_emotion": "", "time": datetime.now().timestamp()}
 
     # 尝试视觉识别表情情绪
     emotion = await recognize_sticker(img_url) if img_url else None
     if emotion:
         return {"type": "表情", "source": f"用户发了一个表情[{emotion}]",
                 "summary": f"[用户发送了QQ表情：{emotion}]", "image_url": img_url,
-                "time": datetime.now().timestamp()}
+                "sticker_emotion": emotion, "time": datetime.now().timestamp()}
     return {"type": "表情", "source": "用户发了一个表情",
             "summary": "[用户发送了一个QQ表情图片，无法确定具体内容]", "image_url": img_url,
-            "time": datetime.now().timestamp()}
+            "sticker_emotion": "", "time": datetime.now().timestamp()}
 
 
 async def _handle_photo_segment(seg, user_text: str) -> Dict[str, Any]:

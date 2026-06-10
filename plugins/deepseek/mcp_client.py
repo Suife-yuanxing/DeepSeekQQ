@@ -607,6 +607,55 @@ def _register_default_tools():
         handler=_phone_home_handler,
     )
 
+    # ==================== 时钟控制 ====================
+
+    async def _phone_set_alarm_handler(hour: int, minute: int, label: str = "", user_id: str = "") -> Optional[str]:
+        if not _check_phone_permission(user_id):
+            return None
+        bridge = await _ensure_phone_bridge()
+        if not bridge:
+            return "手机未连接"
+        resp = await bridge.set_alarm(hour, minute, label)
+        return resp.get("message", "闹钟设置请求已发送") if resp.get("success") else f"设置失败: {resp.get('error', '')}"
+
+    async def _phone_set_timer_handler(minutes: int, label: str = "", user_id: str = "") -> Optional[str]:
+        if not _check_phone_permission(user_id):
+            return None
+        bridge = await _ensure_phone_bridge()
+        if not bridge:
+            return "手机未连接"
+        resp = await bridge.set_timer(minutes, label)
+        return resp.get("message", "计时器设置请求已发送") if resp.get("success") else f"设置失败: {resp.get('error', '')}"
+
+    register_tool(
+        name="phone_set_alarm",
+        description="在手机上设置闹钟（时、分、标签）",
+        parameters={
+            "type": "object",
+            "properties": {
+                "hour": {"type": "integer", "description": "小时（0-23）"},
+                "minute": {"type": "integer", "description": "分钟（0-59）"},
+                "label": {"type": "string", "description": "闹钟标签（可选）"},
+            },
+            "required": ["hour", "minute"],
+        },
+        handler=_phone_set_alarm_handler,
+    )
+
+    register_tool(
+        name="phone_set_timer",
+        description="在手机上设置倒计时（分钟数）",
+        parameters={
+            "type": "object",
+            "properties": {
+                "minutes": {"type": "integer", "description": "倒计时分钟数"},
+                "label": {"type": "string", "description": "计时器标签（可选）"},
+            },
+            "required": ["minutes"],
+        },
+        handler=_phone_set_timer_handler,
+    )
+
     logger.info(f"[MCP] 已注册 {len(_registered_tools)} 个工具")
 
 

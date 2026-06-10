@@ -266,6 +266,7 @@ class ChatContext:
     user_id: str = ""
     is_group: bool = False
     has_share: bool = False
+    share_cutoff: float = 0.0  # 时间戳，用于过滤当前消息的分享（防止旧图片内容泄漏）
     analysis: Optional[Any] = None
     bot_mood_result: Optional[dict] = None
     recent_memories: list = field(default_factory=list)
@@ -467,6 +468,7 @@ async def _stage_rate_limit(ctx: ChatContext) -> Optional[str]:
 
 @stage("share_extract")
 async def _stage_share(ctx: ChatContext) -> Optional[str]:
+    ctx.share_cutoff = time.time()  # 记录提取前时间戳，防止旧图片内容泄漏
     ctx.has_share = await extract_and_cache_shares(ctx.event, ctx.session_id)
     if not ctx.raw_msg and not ctx.has_share:
         return _SKIP
@@ -1296,7 +1298,10 @@ async def _stage_llm(ctx: ChatContext) -> Optional[str]:
         from .image_reply import get_image_reply_prompt
         from .image_reply import is_emotional_share
         from .image_reply import should_analyze_in_detail
-        image_shares = [s for s in shares_now if s.get("type") == "图片" and s.get("vision_text")]
+        # 仅使用当前消息的图片分享（按时间戳过滤，防止旧图片内容泄漏）
+        cutoff = getattr(ctx, 'share_cutoff', 0)
+        current_shares = [s for s in shares_now if s.get("time", 0) >= cutoff]
+        image_shares = [s for s in current_shares if s.get("type") == "图片" and s.get("vision_text")]
         if image_shares:
             latest_image = image_shares[-1]
             image_type = latest_image.get("image_type", "unknown")
@@ -1642,11 +1647,27 @@ async def _handle_emoji_share(ctx: ChatContext, last_share: dict):
     emoji_text = last_share.get("summary", "")
     emoji_match = re.search(r'用户发送了(?:QQ表情|QQ商城表情|QQ内置表情|表情)[：:]?\s*(.+?)]', emoji_text)
     emoji_name = emoji_match.group(1).strip() if emoji_match else "表情"
+    sticker_emotion = last_share.get("sticker_emotion", "")
+    # P1: 上下文感知 — 判断表情在对话语境中是否合适
+    context_hint = ""
+    recent_msgs = getattr(ctx, 'recent_memories', []) or []
+    if recent_msgs:
+        user_msgs = [m["content"] for m in recent_msgs[-6:] if m.get("role") == "user"][-3:]
+        if user_msgs:
+            context_hint = f"\n你们最近的聊天上下文：{' | '.join(user_msgs)}"
+            context_hint += "\n请根据上下文判断这个表情在当前话题下是否合适。"
+            context_hint += "\n如果表情和话题冲突（比如刚才在说严肃/难过的事，现在发了个开心表情），"
+            context_hint += "可以调侃一句'你这表情发得真是时候...'之类的话，而不是忽略之前的语境。"
+    emotion_match_hint = ""
+    if sticker_emotion:
+        emotion_match_hint = f"\n这个表情的情绪是「{sticker_emotion}」。你可以用类似的情绪回应。"
+
     safe_emoji = emoji_name.replace("{", "").replace("}", "").replace("system", "").replace("assistant", "").replace("user", "")[:20]
-    emotion_prompt = f"用户给你发了一个QQ表情「{safe_emoji}」，没有说其他话。"
+
+    emotion_prompt = f"用户给你发了一个QQ表情「{safe_emoji}」，没有说其他话。{context_hint}{emotion_match_hint}"
     from .prompt import get_minimal_persona
     emoji_sys = get_minimal_persona(
-        "用户只给你发了一个表情，没有文字。根据表情的含义回复1-2句。"
+        "用户只给你发了一个表情，没有文字。根据表情的含义和聊天上下文回复1-2句。"
         "如果适合发表情包，在末尾加 [sticker:情绪]（英文情绪标签），大约20%概率加。"
     )
     messages = [

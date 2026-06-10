@@ -311,6 +311,58 @@ class PhoneRelay:
         texts = _collect_text(nodes, max_items=30)
         return "\n".join(texts) if texts else "屏幕无文字"
 
+    # ==================== 时钟控制 ====================
+
+    async def set_alarm(self, hour: int, minute: int, label: str = "") -> dict:
+        """设置闹钟（打开时钟 App，通过 UI 操作设置）。
+
+        注：完整自动化需 MobileRun Portal 支持 shell/adb intent。
+        当前策略：打开时钟 → 通过 UI 导航到闹钟页 → 设置时间。
+        """
+        # 先打开时钟 App
+        clock_pkg = APP_PACKAGES.get("时钟") or "com.android.deskclock"
+        result = await self.send_command("app", {"package": clock_pkg})
+        if not result.get("success", False):
+            return {"success": False, "error": f"无法打开时钟: {result}"}
+
+        # 尝试通过 UI 设置（点击 "+" 添加闹钟，然后输入时间）
+        import asyncio
+        await asyncio.sleep(1.0)  # 等待 App 加载
+
+        # 点击"闹钟"标签（通常在底部导航）
+        await self.tap_text("闹钟")
+        await asyncio.sleep(0.5)
+
+        # 点击添加按钮
+        add_result = await self.tap_text("添加") or await self.tap_text("+")
+
+        time_str = f"{hour:02d}:{minute:02d}"
+        return {
+            "success": True,
+            "message": f"已打开时钟App，正在设置 {time_str} 闹钟" + (f"「{label}」" if label else ""),
+            "hour": hour, "minute": minute, "label": label
+        }
+
+    async def set_timer(self, minutes: int, label: str = "") -> dict:
+        """设置倒计时（打开时钟 App 的计时器页）。"""
+        clock_pkg = APP_PACKAGES.get("时钟") or "com.android.deskclock"
+        result = await self.send_command("app", {"package": clock_pkg})
+        if not result.get("success", False):
+            return {"success": False, "error": f"无法打开时钟: {result}"}
+
+        import asyncio
+        await asyncio.sleep(1.0)
+
+        # 点击"计时器"标签
+        await self.tap_text("计时器")
+        await asyncio.sleep(0.5)
+
+        return {
+            "success": True,
+            "message": f"已打开时钟App计时器，请设置 {minutes} 分钟倒计时" + (f"「{label}」" if label else ""),
+            "minutes": minutes, "label": label
+        }
+
 
 # ============================================================
 # 全局实例

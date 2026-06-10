@@ -403,6 +403,18 @@ async def check_and_push_topics(bot) -> None:
     if not topics:
         return
 
+    # 注入热搜标题到行为引擎的微事件池（bot 闲聊时会自然提及）
+    try:
+        from .behavior_engine import register_micro_events
+        event_snippets = [
+            f"刚看到热搜「{t.title[:20]}」，有点意思"
+            for t in topics[:5] if t.title
+        ]
+        if event_snippets:
+            register_micro_events(event_snippets)
+    except Exception:
+        pass
+
     # 随机选一个
     topic = random.choice(topics[:10])
 

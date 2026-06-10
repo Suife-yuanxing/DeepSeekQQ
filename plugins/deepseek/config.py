@@ -233,7 +233,7 @@ PHONE_WS_KEY: str = str(getattr(cfg, "phone_ws_key", "") or "").strip()
 
 # === 音乐功能 ===
 MUSIC_ENABLED: bool = str(getattr(cfg, "music_enabled", "true")).lower() == "true"
-MUSIC_VOICE_CHANCE: float = _safe_float(getattr(cfg, "music_voice_chance", 0.3), 0.3, "music_voice_chance")
+MUSIC_VOICE_CHANCE: float = _safe_float(getattr(cfg, "music_voice_chance", 0.5), 0.5, "music_voice_chance")
 
 # === 消息分段 ===
 # QQ / OneBot 单条消息上限约 900 字符，超过自动分段

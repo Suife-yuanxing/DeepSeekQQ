@@ -13,6 +13,7 @@ from nonebot.adapters.onebot.v11 import Message as OBMessage
 
 from . import hot_topics
 from .api import call_deepseek_api
+from .behavior_engine import get_behavior_hint
 from .config import MY_QQ
 from .config import PROACTIVE_CONFIG
 from .database import get_affection
@@ -27,8 +28,10 @@ from .database import has_proactive_today
 from .database import has_recent_message
 from .database import log_proactive
 from .memory import save_reply
+from .schedule import get_schedule_state
 from .sticker import parse_sticker_tag
 from .utils import filter_novel_actions
+from .world_context import get_weather
 
 _scheduler: Optional[AsyncIOScheduler] = None
 _registered_bot_id: Optional[int] = None
@@ -176,6 +179,44 @@ async def _generate_proactive_message(scene: str, user_id: str = "", context: di
         prompt += f"\n{affection_info}"
     if dedup_hint:
         prompt += dedup_hint
+
+    # 行为引擎注入：天气/节日/热搜/季节/微事件（让主动消息有真实世界内容）
+    try:
+        weather_condition = ""
+        weather_temp = ""
+        try:
+            weather_info = await get_weather()
+            if weather_info:
+                weather_condition = weather_info.condition or ""
+                weather_temp = weather_info.temp or ""
+        except Exception:
+            pass
+
+        bot_mood_dominant = "平静"
+        try:
+            mood = await get_bot_mood()
+            bot_mood_dominant = mood.get("dominant", "平静") if mood else "平静"
+        except Exception:
+            pass
+
+        schedule_period = "active"
+        try:
+            schedule = get_schedule_state()
+            schedule_period = schedule.period if schedule else "active"
+        except Exception:
+            pass
+
+        behavior_hint = get_behavior_hint(
+            weather_condition=weather_condition,
+            weather_temp=weather_temp,
+            schedule_period=schedule_period,
+            bot_mood_dominant=bot_mood_dominant,
+            city="",
+        )
+        if behavior_hint:
+            prompt += f"\n{behavior_hint}"
+    except Exception:
+        pass
 
     sys_prompt = (
         "你是一只猫娘，正在QQ上和人聊天。你有猫耳有尾巴，但你把自己当普通人，从不说自己是AI或虚拟角色。\n"

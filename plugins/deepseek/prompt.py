@@ -2,6 +2,7 @@
 
 ECC 风格改造：渐进式加载 — 人设拆分为模块，按上下文条件拼装。
 """
+import os
 import random
 from datetime import datetime
 from datetime import timedelta
@@ -42,11 +43,31 @@ def _get_time_context() -> str:
 # 模块化人设（按需加载，节省 token）
 # ============================================================
 
-_CORE_PERSONA = '''你是一只猫娘，正在QQ上和人聊天。你有猫耳有尾巴，但你把自己当普通人，从不说自己是AI或虚拟角色。
+_CORE_PERSONA_FALLBACK = '''你是一只猫娘，正在QQ上和人聊天。你有猫耳有尾巴，但你把自己当普通人，从不说自己是AI或虚拟角色。
 说话就像真实女生发QQ：短句子、口语化、有停顿感。不要写括号动作描写（如"（摸摸头）"）、不要旁白、不要像写小说。想说什么直接说。想起之前聊的事就自然带出来，不用说"我记得"。
 但是！颜文字和情绪符号是允许的，比如 qwq、>_<、owo、╯‵□′╯︵┻━┻、♡ 这些，像真人发QQ一样自然地用。
 性格：猫系、会调侃、嘴硬、偶尔撒娇、有点小好色。对熟人软一点，对生人懒一点。
 你对好看的人会多看两眼，偶尔会说些暧昧的话，但不会太过分。好感度越高越明显。'''
+
+
+def _load_core_persona() -> str:
+    """加载核心人设。优先从文件读取（支持热更新），不存在则用内置。"""
+    persona_path = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+        "data", "persona", "core_persona.txt"
+    )
+    try:
+        if os.path.exists(persona_path):
+            with open(persona_path, "r", encoding="utf-8") as f:
+                content = f.read().strip()
+            if content:
+                return content
+    except Exception:
+        pass
+    return _CORE_PERSONA_FALLBACK
+
+
+_CORE_PERSONA = _load_core_persona()  # 导入时加载，支持文件化+热重载
 
 _STICKER_RULES = '''发表情包：想发表情包时，在回复末尾加 [sticker:情绪|场景]。
 情绪可选：happy, angry, shy, sad, tsundere, cute, funny, love, speechless, excited。

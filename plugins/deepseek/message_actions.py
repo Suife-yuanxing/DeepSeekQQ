@@ -12,53 +12,6 @@ from nonebot.adapters.onebot.v11 import Message
 from nonebot.adapters.onebot.v11 import MessageEvent
 from nonebot.adapters.onebot.v11 import MessageSegment
 
-
-async def send_and_maybe_recall(
-    bot: Bot, event: MessageEvent, text: str, recall_chance: float = 0.02
-) -> bool:
-    """发送消息，有小概率撤回。
-
-    流程: 发送消息 → 等待 2-5 秒 → 撤回 → 补发更正
-
-    Returns:
-        True 如果触发了撤回，False 否则
-    """
-    try:
-        sent_msg = await bot.send(event, Message(text))
-        msg_id = sent_msg.get("message_id") if isinstance(sent_msg, dict) else None
-
-        if not msg_id or random.random() >= recall_chance:
-            return False
-
-        # 延迟 2-5 秒后撤回
-        delay = random.uniform(2.0, 5.0)
-        await asyncio.sleep(delay)
-
-        try:
-            await bot.delete_msg(message_id=msg_id)
-            logger.info(f"[拟人] 手滑撤回: {text[:20]}...")
-        except Exception as e:
-            logger.debug(f"[拟人] 撤回失败（可能不支持）: {e}")
-            return False
-
-        # 撤回后补发更正消息
-        await asyncio.sleep(random.uniform(0.5, 1.5))
-        corrections = [
-            "啊发错了",
-            "当我没说",
-            "这条忽略",
-            "手滑了...",
-            "撤回！看不见看不见",
-            "oops 发错窗口了",
-        ]
-        await bot.send(event, Message(random.choice(corrections)))
-        return True
-
-    except Exception as e:
-        logger.debug(f"[拟人] send_and_maybe_recall 失败: {e}")
-        return False
-
-
 async def maybe_share_something(bot: Bot, event: MessageEvent, share_chance: float = 0.03):
     """小概率随机分享：歌曲、想法、图片。
 

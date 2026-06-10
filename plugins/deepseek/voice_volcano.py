@@ -56,6 +56,7 @@ EMOTION_VOICE_MAP = {
     "撒娇": "zh_female_jiaochuannv_uranus_bigtts",
     "爱": "zh_female_jiaochuannv_uranus_bigtts",
     "温柔": "zh_female_jiaochuannv_uranus_bigtts",
+    "singing": "zh_female_jiaochuannv_uranus_bigtts",  # 唱歌模式（TTS 念歌词 + voice.py 降速升调）
 }
 DEFAULT_VOICE = "zh_female_jiaochuannv_uranus_bigtts"  # 娇喘女声-大模型
 

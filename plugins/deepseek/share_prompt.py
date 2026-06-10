@@ -47,6 +47,16 @@ def format_shares_for_prompt(shares: List[Dict[str, Any]], user_msg: str = "") -
             "要对图片内容做出具体反应——如果有趣就调侃，如果好看就夸，"
             "如果有文字就评论文字内容，像朋友发图给你看一样自然回复。"
         )
+    # 表情/贴纸行为指引
+    has_sticker = any(s.get("type") == "表情" for s in target)
+    if has_sticker:
+        lines.append(
+            "【表情回复指引】用户刚刚发了一个表情/贴纸。请注意：\n"
+            "1. 根据聊天上下文判断这个表情是否合适——如果刚才在聊严肃话题，用户突然发搞笑表情，你可以调侃这一点\n"
+            "2. 不要干巴巴地描述表情内容（比如「你发了一个笑脸」），要对表情做出反应\n"
+            "3. 如果表情的情绪和当前话题相符，可以顺着话题继续聊\n"
+            "4. 如果适合，你也可以用 [sticker:情绪] 回一个表情"
+        )
     return "\n".join(lines)
 
 
