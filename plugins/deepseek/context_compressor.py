@@ -28,12 +28,24 @@ COMPRESS_RATIO = 0.2
 CIRCUIT_BREAKER_MAX_FAILURES = 3
 
 
-# 简单的中文 token 估算（约 1.5 字符 = 1 token）
+# 改进的中文 token 估算（B21: 覆盖广义 CJK，汉字 ~0.7 字/token）
 def estimate_tokens(text: str) -> int:
-    """粗略估算文本的 token 数。中文约 1.5 字符/token，英文约 4 字符/token。"""
-    chinese_chars = len(re.findall(r'[一-鿿㐀-䶿]', text))
-    other_chars = len(text) - chinese_chars
-    return int(chinese_chars / 1.5 + other_chars / 4)
+    """估算文本的 token 数。CJK 约 0.7 字符/token，英文约 4 字符/token。"""
+    cjk = 0
+    latin = 0
+    other = 0
+    for ch in text:
+        cp = ord(ch)
+        if (0x4E00 <= cp <= 0x9FFF or 0x3400 <= cp <= 0x4DBF or
+            0x20000 <= cp <= 0x2A6DF or 0xF900 <= cp <= 0xFAFF or
+            0x3040 <= cp <= 0x30FF or 0xAC00 <= cp <= 0xD7AF or
+            0x3100 <= cp <= 0x312F or 0x31A0 <= cp <= 0x31BF):
+            cjk += 1
+        elif ch.isascii() and (ch.isalpha() or ch.isdigit()):
+            latin += 1
+        else:
+            other += 1
+    return max(1, int(cjk / 0.7 + latin / 4 + other / 6))
 
 
 def estimate_messages_tokens(messages: List[Dict[str, str]]) -> int:
@@ -93,9 +105,44 @@ class ContextCompressor:
             )
 
     def cache_summary(self, session_id: str, summary: str, msg_count: int):
-        """缓存压缩摘要。"""
+        """缓存压缩摘要（内存 + DB 持久化，B10+B22）。"""
         self._last_summaries[session_id] = summary
         self._last_message_counts[session_id] = msg_count
+        # B10+B22: 异步持久化到 memory_summaries 表
+        try:
+            import asyncio
+            asyncio.ensure_future(self._persist_summary(session_id, summary))
+        except Exception as e:
+            logger.warning(f"[压缩] 摘要持久化调度失败: {e}")
+
+    async def _persist_summary(self, session_id: str, summary: str):
+        """B10+B22: 将压缩摘要持久化到 DB，跨重启存活。"""
+        try:
+            from .db_session import append_memory_summary
+            await append_memory_summary(session_id, summary)
+        except Exception as e:
+            logger.warning(f"[压缩] 摘要持久化写入失败: {e}")
+
+    async def get_cached_summary_async(self, session_id: str, msg_count: int) -> Optional[str]:
+        """获取缓存的摘要（内存优先，DB 兜底，B10+B22）。"""
+        # 1. 先查内存缓存
+        cached_count = self._last_message_counts.get(session_id, 0)
+        if msg_count == cached_count:
+            mem_result = self._last_summaries.get(session_id)
+            if mem_result:
+                return mem_result
+        # 2. B10+B22: 内存未命中时查 DB（跨重启恢复）
+        try:
+            from .db_session import get_memory_summary
+            db_summary = await get_memory_summary(session_id)
+            if db_summary:
+                # 同步到内存缓存
+                self._last_summaries[session_id] = db_summary
+                self._last_message_counts[session_id] = msg_count
+                return db_summary
+        except Exception:
+            pass
+        return None
 
     def get_cached_summary(self, session_id: str, msg_count: int) -> Optional[str]:
         """获取缓存的摘要（仅当消息数未增长时有效）。"""
@@ -133,7 +180,10 @@ async def compress_context(
         return messages[split:], False
 
     msg_count = len(messages)
+    # B10+B22: 内存缓存优先，未命中时查 DB
     cached = compressor.get_cached_summary(session_id, msg_count)
+    if not cached:
+        cached = await compressor.get_cached_summary_async(session_id, msg_count)
     if cached:
         # 使用缓存摘要
         split = compressor.get_split_point(messages)

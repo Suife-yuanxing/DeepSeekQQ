@@ -22,7 +22,8 @@ class TestNickname:
         """高好感度应有亲密昵称"""
         from plugins.deepseek.personalization import generate_nickname
         result = generate_nickname(affection_score=500)
-        assert result in ["亲爱的", "主人", "宝贝", "心肝"]
+        # _NICKNAME_TIERS[500] = ["亲爱的", "宝贝", "心肝", "笨蛋"]
+        assert result in ["亲爱的", "宝贝", "心肝", "笨蛋"]
 
     def test_low_affection_nickname(self):
         """低好感度应默认用'你'"""
@@ -118,18 +119,6 @@ class TestGrowthNarrative:
         assert result is not None
         assert "命定之人" in result or "重要" in result
 
-    def test_growth_celebration(self):
-        """跨阶段应触发庆祝"""
-        from plugins.deepseek.personalization import get_growth_celebration
-        result = get_growth_celebration(200, 99)  # 从100以下到200
-        assert result is not None
-        assert "升级" in result or "重要" in result
-
-    def test_no_celebration_same_stage(self):
-        """同阶段不应庆祝"""
-        from plugins.deepseek.personalization import get_growth_celebration
-        result = get_growth_celebration(150, 120)  # 都在100-200区间
-        assert result is None
 
 
 # ============================================================

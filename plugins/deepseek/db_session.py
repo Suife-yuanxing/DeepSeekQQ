@@ -1,4 +1,5 @@
 """session_state + user_profiles 表操作 — 会话状态持久化与用户画像。"""
+import asyncio
 from datetime import datetime
 from typing import Any
 from typing import Dict
@@ -9,6 +10,9 @@ from nonebot import logger
 
 from .db_core import get_db
 
+# B3: 全局 scratchpad 读写锁，防止快速连续消息时的竞态条件
+scratchpad_lock = asyncio.Lock()
+
 
 # ---------- session_state ----------
 async def save_session_state(session_id: str, topic: str = "", emotion: str = "",
@@ -16,25 +20,27 @@ async def save_session_state(session_id: str, topic: str = "", emotion: str = ""
                              scratchpad: str = None):
     db = await get_db()
     now = datetime.now().timestamp()
-    if scratchpad is not None:
-        await db.execute(
-            """INSERT INTO session_state (session_id, last_topic, last_emotion, last_interaction, context_summary, bot_mood_snapshot, scratchpad)
-               VALUES (?, ?, ?, ?, ?, ?, ?)
-               ON CONFLICT(session_id) DO UPDATE SET
-               last_topic = ?, last_emotion = ?, last_interaction = ?, context_summary = ?, bot_mood_snapshot = ?, scratchpad = ?""",
-            (session_id, topic, emotion, now, context_summary, bot_mood, scratchpad,
-             topic, emotion, now, context_summary, bot_mood, scratchpad)
-        )
-    else:
-        await db.execute(
-            """INSERT INTO session_state (session_id, last_topic, last_emotion, last_interaction, context_summary, bot_mood_snapshot)
-               VALUES (?, ?, ?, ?, ?, ?)
-               ON CONFLICT(session_id) DO UPDATE SET
-               last_topic = ?, last_emotion = ?, last_interaction = ?, context_summary = ?, bot_mood_snapshot = ?""",
-            (session_id, topic, emotion, now, context_summary, bot_mood,
-             topic, emotion, now, context_summary, bot_mood)
-        )
-    await db.commit()
+    # BUGFIX: 两条路径均加锁，防止 scratchpad 和非 scratchpad 写入竞态
+    async with scratchpad_lock:
+        if scratchpad is not None:
+            await db.execute(
+                """INSERT INTO session_state (session_id, last_topic, last_emotion, last_interaction, context_summary, bot_mood_snapshot, scratchpad)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(session_id) DO UPDATE SET
+                   last_topic = ?, last_emotion = ?, last_interaction = ?, context_summary = ?, bot_mood_snapshot = ?, scratchpad = ?""",
+                (session_id, topic, emotion, now, context_summary, bot_mood, scratchpad,
+                 topic, emotion, now, context_summary, bot_mood, scratchpad)
+            )
+        else:
+            await db.execute(
+                """INSERT INTO session_state (session_id, last_topic, last_emotion, last_interaction, context_summary, bot_mood_snapshot)
+                   VALUES (?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(session_id) DO UPDATE SET
+                   last_topic = ?, last_emotion = ?, last_interaction = ?, context_summary = ?, bot_mood_snapshot = ?""",
+                (session_id, topic, emotion, now, context_summary, bot_mood,
+                 topic, emotion, now, context_summary, bot_mood)
+            )
+        await db.commit()
 
 
 async def get_session_state(session_id: str) -> Optional[Dict[str, Any]]:

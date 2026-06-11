@@ -26,7 +26,6 @@ from .context_analyzer import AnalysisResult
 from .database import append_memory_summary
 from .database import boost_memory_tag
 from .database import count_memories
-from .database import delete_memories_except
 from .database import get_affection
 from .database import get_catgirl_mood
 from .database import get_keep_ids
@@ -51,19 +50,38 @@ from .topic_tracker import update_topic_tracker
 from .utils import safe_task
 
 # ---------- 记忆冷却控制 ----------
-_recently_used_memories: Dict[str, List[str]] = {}  # user_id -> [最近用过的记忆内容]
+_recently_used_memories: Dict[str, tuple] = {}  # user_id -> (tags_list, last_access_timestamp)
+_recently_used_memories_lock = asyncio.Lock()  # 防止并发读写竞态
 MEMORY_COOLDOWN_ROUNDS = 3   # 同一记忆至少间隔3轮才再次使用
 
 
-MAX_MEMORY_PER_REPLY = 1     # 每次回复最多插入1条记忆
-_MEMORY_CACHE_MAX_USERS = 200  # 最大缓存用户数，超过时清理最旧的
+MAX_MEMORY_PER_REPLY = 3     # 每次回复最多插入3条记忆（B6: 1→3 提升记忆利用率）
+_MEMORY_CACHE_MAX_USERS = 100  # B16: 最大缓存用户数，200→100
+_MEMORY_CACHE_TTL_SECONDS = 72 * 3600  # B16: 72小时未活跃自动清理
+
+# B15: 限制并行 LLM 提取调用数，防止 API 限流
+_extraction_semaphore = asyncio.Semaphore(2)
 
 
 def _cleanup_memory_cache():
-    """清理不活跃用户的记忆冷却缓存，防止内存泄漏。"""
+    """B16: 清理不活跃用户的记忆冷却缓存，防止内存泄漏。
+
+    清理条件：
+    1. 用户数超过 _MEMORY_CACHE_MAX_USERS（LRU淘汰）
+    2. 超过 _MEMORY_CACHE_TTL_SECONDS 未访问（TTL淘汰）
+    """
+    now = time.time()
+    # TTL 淘汰：清理超时未访问的条目
+    expired = [k for k, v in _recently_used_memories.items()
+               if now - v[1] > _MEMORY_CACHE_TTL_SECONDS]
+    for k in expired:
+        del _recently_used_memories[k]
+    if expired:
+        logger.debug(f"[记忆缓存] TTL淘汰 {len(expired)} 个过期条目")
+
+    # LRU 淘汰：超出容量限制
     if len(_recently_used_memories) <= _MEMORY_CACHE_MAX_USERS:
         return
-    # 只清理超出部分的最旧条目，避免删除一半缓存
     excess = len(_recently_used_memories) - _MEMORY_CACHE_MAX_USERS
     keys = list(_recently_used_memories.keys())
     for k in keys[:excess]:
@@ -108,37 +126,44 @@ async def save_reply(session_id: str, user_id: str, raw_msg: str, reply_text: st
     """保存助手回复，并异步提取记忆标签。"""
     await save_message(session_id, "assistant", reply_text)
     await trim_memories(session_id, MAX_MEMORY)
-    safe_task(_extract_memory_tags(user_id, session_id, raw_msg, reply_text))
-    # 功能③：异步学习用户偏好
-    safe_task(_learn_preferences(user_id, raw_msg, reply_text, session_id))
+
+    # B15: LLM 提取任务受信号量限制（最多2个并行），防止 API 限流
+    async def _guarded(coro):
+        """信号量保护：确保并行 LLM 调用不超过2个。"""
+        async with _extraction_semaphore:
+            await coro
+
+    safe_task(_guarded(_extract_memory_tags(user_id, session_id, raw_msg, reply_text)))
+    # 功能③：异步学习用户偏好（调用 LLM，需要信号量保护）
+    safe_task(_guarded(_learn_preferences(user_id, raw_msg, reply_text, session_id)))
     # 用户画像：5%概率同步兴趣+生成概要（build_user_profile_summary 自带跳过逻辑）
     if random.random() < 0.05:
-        safe_task(_sync_profile_summary(user_id))
-    # 功能⑦：异步评估回复质量
-    safe_task(_evaluate_reply_quality(user_id, session_id, raw_msg, reply_text))
+        safe_task(_guarded(_sync_profile_summary(user_id)))
+    # 功能⑦：异步评估回复质量（调用 LLM，需要信号量保护）
+    safe_task(_guarded(_evaluate_reply_quality(user_id, session_id, raw_msg, reply_text)))
     # 跨会话状态更新（含 bot 情绪快照）
     safe_task(_update_session_state(session_id, raw_msg, reply_text, bot_mood))
     # P0-3: 工作记忆更新
-    safe_task(_update_scratchpad_task(session_id, user_id, raw_msg, reply_text, bot_mood))
+    safe_task(_guarded(_update_scratchpad_task(session_id, user_id, raw_msg, reply_text, bot_mood)))
     # 记忆系统深化：提取共同回忆和私人梗
-    safe_task(_extract_shared_memories(user_id, raw_msg, reply_text))
-    safe_task(_extract_private_memes(user_id, raw_msg, reply_text))
+    safe_task(_guarded(_extract_shared_memories(user_id, raw_msg, reply_text)))
+    safe_task(_guarded(_extract_private_memes(user_id, raw_msg, reply_text)))
     safe_task(_extract_important_dates(user_id, raw_msg))
     # 社交能力增强：提取社交关系和群聊梗
-    safe_task(_extract_social_references(user_id, raw_msg))
-    safe_task(_extract_group_memes(session_id, user_id, raw_msg, reply_text))
+    safe_task(_guarded(_extract_social_references(user_id, raw_msg)))
+    safe_task(_guarded(_extract_group_memes(session_id, user_id, raw_msg, reply_text)))
     # 话题追踪：维护对话话题链，避免重复提问
     safe_task(update_topic_tracker(session_id, raw_msg, reply_text))
     # 策略性压缩：基于消息数或估算 token 数触发
     msg_count = await count_memories(session_id)
     if msg_count >= COMPRESS_MESSAGE_THRESHOLD:
-        safe_task(_summarize_and_compress(session_id))
+        safe_task(_guarded(_summarize_and_compress(session_id)))
     elif msg_count >= 15:
         # 估算 token 数：粗略按字符数 / 1.5
         recent = await get_recent_memories(session_id, 15)
         est_tokens = sum(len(m["content"]) for m in recent) // 1.5
         if est_tokens > COMPRESS_TOKEN_THRESHOLD:
-            safe_task(_summarize_and_compress(session_id))
+            safe_task(_guarded(_summarize_and_compress(session_id)))
 
 
 def _is_memory_relevant(memory_content: str, user_msg: str) -> bool:
@@ -174,7 +199,7 @@ async def _get_relevant_memories(user_id: str, session_id: str, current_msg: str
         now = datetime.now().timestamp()
         rows = await get_relevant_memory_tags(user_id, limit * 3)
 
-        cooldown_list = _recently_used_memories.get(user_id, [])
+        cooldown_list = _recently_used_memories.get(user_id, ([], 0))[0]
 
         # ===== 第1路: 关键词检索 =====
         kw_candidates = []
@@ -212,13 +237,13 @@ async def _get_relevant_memories(user_id: str, session_id: str, current_msg: str
         except Exception as e:
             logger.debug(f"[记忆] 语义检索跳过: {e}")
 
-        # ===== RRF 融合 =====
+        # ===== RRF 融合 (3C: 自适应权重) =====
         if sem_candidates and kw_candidates:
             try:
-                from .memory_embed import rrf_merge
+                from .memory_embed import adaptive_rrf_merge
                 kw_ranked = [(cid, conf) for cid, _, conf in kw_candidates[:10]]
                 sem_ranked = [(cid, sim) for cid, _, sim in sem_candidates[:10]]
-                merged = rrf_merge(kw_ranked, sem_ranked, top_k=limit + 2)
+                merged = adaptive_rrf_merge(kw_ranked, sem_ranked, query_text=current_msg, top_k=limit + 2)
 
                 # 构建融合后的 candidates 列表
                 all_by_id = {}
@@ -231,29 +256,59 @@ async def _get_relevant_memories(user_id: str, session_id: str, current_msg: str
                 candidates = [(all_by_id[cid][0], all_by_id[cid][1])
                               for cid, _ in merged if cid in all_by_id]
             except ImportError:
-                candidates = [(c, conf) for _, c, conf in kw_candidates]
+                # B7 fix: 当 RRF 不可用时，合并两路结果（去重后按分数排序）
+                # 而非像之前那样丢弃语义检索结果只保留关键词结果
+                all_by_id = {}
+                for cid, content, conf in kw_candidates:
+                    all_by_id[cid] = (content, conf)
+                for cid, content, sim in sem_candidates:
+                    if cid not in all_by_id:
+                        all_by_id[cid] = (content, sim)
+                    else:
+                        # 已存在：取较高分
+                        existing_content, existing_score = all_by_id[cid]
+                        if sim > existing_score:
+                            all_by_id[cid] = (existing_content, sim)
+                candidates = list(all_by_id.values())
         else:
             # 只有一路有结果时直接使用
             candidates = [(c, conf) for _, c, conf in kw_candidates]
             if not candidates:
                 candidates = [(c, sim) for _, c, sim in sem_candidates]
 
-        # ===== 加权随机选择 =====
+        # ===== 加权随机选择 (B6: 支持多条记忆) =====
         if candidates:
-            weights = [max(0.1, c) for _, c in candidates]
+            # 去重：避免返回内容相同的记忆
+            seen = set()
+            unique_candidates = []
+            for content, conf in candidates:
+                if content not in seen:
+                    seen.add(content)
+                    unique_candidates.append((content, conf))
+
+            weights = [max(0.1, c) for _, c in unique_candidates]
             total = sum(weights)
             probs = [w / total for w in weights]
-            idx = random.choices(range(len(candidates)), weights=probs, k=1)[0]
-            selected_content = candidates[idx][0]
+            k = min(MAX_MEMORY_PER_REPLY, len(unique_candidates))
+            selected_indices = random.choices(range(len(unique_candidates)), weights=probs, k=k)
 
-            if user_id not in _recently_used_memories:
-                _recently_used_memories[user_id] = []
-            _recently_used_memories[user_id].append(selected_content)
-            _recently_used_memories[user_id] = _recently_used_memories[user_id][-MEMORY_COOLDOWN_ROUNDS:]
+            results = []
+            async with _recently_used_memories_lock:
+                for idx in selected_indices:
+                    selected_content = unique_candidates[idx][0]
 
-            safe_task(boost_memory_tag(user_id, selected_content))
+                    if user_id not in _recently_used_memories:
+                        _recently_used_memories[user_id] = ([], time.time())
+                    tags_list, _ = _recently_used_memories[user_id]
+                    tags_list.append(selected_content)
+                    _recently_used_memories[user_id] = (tags_list[-MEMORY_COOLDOWN_ROUNDS:], time.time())
 
-            return [f"[{selected_content}]"]
+                safe_task(boost_memory_tag(user_id, selected_content))
+                results.append(selected_content)
+
+            # 去重返回（choices 可能有重复）
+            unique_results = list(dict.fromkeys(results))
+            return [f"[{c}]" for c in unique_results]
 
         # ===== 摘要记忆 fallback =====
         summary = await get_memory_summary(session_id)
@@ -271,7 +326,7 @@ async def _get_relevant_memories(user_id: str, session_id: str, current_msg: str
 
 
 async def _summarize_and_compress(session_id: str):
-    """对话压缩：将旧消息摘要后存入 summary 表，并删除旧记录。"""
+    """对话压缩：将旧消息摘要后存入 summary 表，并将旧消息标记为 archived=1（B9: 保留历史不删除）。"""
     cnt = await count_memories(session_id)
     if cnt < 25:
         return
@@ -283,7 +338,8 @@ async def _summarize_and_compress(session_id: str):
     if cached:
         logger.debug(f"[记忆] 使用缓存摘要: {session_id[:20]}...")
         keep_ids = await get_keep_ids(session_id, 20)
-        await delete_memories_except(session_id, keep_ids)
+        from .db_memories import archive_memories_except
+        await archive_memories_except(session_id, keep_ids)
         return
 
     old_rows = await get_oldest_memories(session_id, 15)
@@ -326,8 +382,9 @@ async def _summarize_and_compress(session_id: str):
     set_cached_summary(session_id, summary, cnt)
 
     keep_ids = await get_keep_ids(session_id, 20)
-    await delete_memories_except(session_id, keep_ids)
-    logger.info(f"[记忆] 会话 {session_id} 已压缩，摘要：{summary[:60]}...")
+    from .db_memories import archive_memories_except
+    await archive_memories_except(session_id, keep_ids)
+    logger.info(f"[记忆] 会话 {session_id} 已压缩（归档旧消息），摘要：{summary[:60]}...")
 
 
 async def _update_scratchpad_task(session_id: str, user_id: str, raw_msg: str, reply_text: str, bot_mood: dict = None):
@@ -498,7 +555,7 @@ async def _learn_preferences(user_id: str, raw_msg: str, reply_text: str, sessio
             for topic, keywords in topic_keywords.items():
                 if any(kw in raw_msg for kw in keywords):
                     await record_topic_emotion(user_id, topic, emotion_label)
-                    break
+                    # B26: 不再 break，让一条消息可以匹配多个话题
 
         # 6. 昵称学习：用户自定义称呼
         nickname_patterns = [

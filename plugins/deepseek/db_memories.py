@@ -21,7 +21,7 @@ async def save_message(session_id: str, role: str, content: str):
 async def get_recent_memories(session_id: str, limit: int = 30) -> List[Dict[str, Any]]:
     db = await get_db()
     async with db.execute(
-        "SELECT role, content, timestamp FROM memories WHERE session_id = ? ORDER BY timestamp DESC LIMIT ?",
+        "SELECT role, content, timestamp FROM memories WHERE session_id = ? AND archived = 0 ORDER BY timestamp DESC LIMIT ?",
         (session_id, limit)
     ) as cursor:
         rows = await cursor.fetchall()
@@ -29,11 +29,12 @@ async def get_recent_memories(session_id: str, limit: int = 30) -> List[Dict[str
 
 
 async def trim_memories(session_id: str, keep: int = 30):
+    """裁剪旧消息：仅作用于非归档行，避免删除 B9 已归档的历史。"""
     db = await get_db()
     await db.execute(
-        """DELETE FROM memories WHERE session_id = ?
+        """DELETE FROM memories WHERE session_id = ? AND archived = 0
            AND id NOT IN (
-               SELECT id FROM memories WHERE session_id = ? ORDER BY timestamp DESC LIMIT ?
+               SELECT id FROM memories WHERE session_id = ? AND archived = 0 ORDER BY timestamp DESC LIMIT ?
            )""",
         (session_id, session_id, keep)
     )
@@ -42,7 +43,7 @@ async def trim_memories(session_id: str, keep: int = 30):
 
 async def count_memories(session_id: str) -> int:
     db = await get_db()
-    async with db.execute("SELECT COUNT(*) as cnt FROM memories WHERE session_id = ?", (session_id,)) as cursor:
+    async with db.execute("SELECT COUNT(*) as cnt FROM memories WHERE session_id = ? AND archived = 0", (session_id,)) as cursor:
         row = await cursor.fetchone()
         return row["cnt"] if row else 0
 
@@ -50,7 +51,7 @@ async def count_memories(session_id: str) -> int:
 async def get_oldest_memories(session_id: str, limit: int = 15) -> List[aiosqlite.Row]:
     db = await get_db()
     async with db.execute(
-        "SELECT role, content FROM memories WHERE session_id = ? ORDER BY timestamp ASC LIMIT ?",
+        "SELECT role, content FROM memories WHERE session_id = ? AND archived = 0 ORDER BY timestamp ASC LIMIT ?",
         (session_id, limit)
     ) as cursor:
         return await cursor.fetchall()
@@ -59,20 +60,21 @@ async def get_oldest_memories(session_id: str, limit: int = 15) -> List[aiosqlit
 async def get_keep_ids(session_id: str, keep: int = 20) -> List[int]:
     db = await get_db()
     async with db.execute(
-        "SELECT id FROM memories WHERE session_id = ? ORDER BY timestamp DESC LIMIT ?",
+        "SELECT id FROM memories WHERE session_id = ? AND archived = 0 ORDER BY timestamp DESC LIMIT ?",
         (session_id, keep)
     ) as cursor:
         rows = await cursor.fetchall()
         return [r["id"] for r in rows]
 
 
-async def delete_memories_except(session_id: str, keep_ids: List[int]):
+async def archive_memories_except(session_id: str, keep_ids: List[int]):
+    """B9: 将旧消息标记为 archived=1 而非删除，保留历史以备未来检索。"""
     if not keep_ids:
         return
     db = await get_db()
     placeholders = ",".join(["?"] * len(keep_ids))
     await db.execute(
-        f"DELETE FROM memories WHERE session_id = ? AND id NOT IN ({placeholders})",
+        f"UPDATE memories SET archived = 1 WHERE session_id = ? AND id NOT IN ({placeholders}) AND archived = 0",
         (session_id, *keep_ids)
     )
     await db.commit()
@@ -84,7 +86,7 @@ async def has_recent_message(session_id: str, minutes: int = 30) -> bool:
     db = await get_db()
     async with db.execute(
         """SELECT COUNT(*) as cnt FROM memories
-           WHERE session_id = ? AND role = 'user' AND timestamp > ?""",
+           WHERE session_id = ? AND role = 'user' AND timestamp > ? AND archived = 0""",
         (session_id, cutoff)
     ) as cursor:
         row = await cursor.fetchone()
@@ -95,7 +97,7 @@ async def get_last_bot_reply_time(session_id: str) -> float:
     """获取该 session 最近一条 bot 回复的时间戳。无记录返回 0。"""
     db = await get_db()
     async with db.execute(
-        "SELECT MAX(timestamp) as ts FROM memories WHERE session_id = ? AND role = 'assistant'",
+        "SELECT MAX(timestamp) as ts FROM memories WHERE session_id = ? AND role = 'assistant' AND archived = 0",
         (session_id,)
     ) as cursor:
         row = await cursor.fetchone()
@@ -110,7 +112,7 @@ async def has_user_message_today(session_id: str) -> bool:
     db = await get_db()
     async with db.execute(
         """SELECT COUNT(*) as cnt FROM memories
-           WHERE session_id = ? AND role = 'user'
+           WHERE session_id = ? AND role = 'user' AND archived = 0
            AND timestamp >= ? AND timestamp < ?""",
         (session_id, today_start, tomorrow_start)
     ) as cursor:

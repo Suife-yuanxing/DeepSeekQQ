@@ -73,10 +73,10 @@ class TestContextSelection:
 
 class TestTokenBudget:
     def test_estimate_tokens_chinese(self):
-        """中文 token 估算"""
+        """中文 token 估算（B21: ~0.7 字/token）"""
         from plugins.deepseek.context_optimizer import estimate_tokens
         tokens = estimate_tokens("你好世界")
-        assert 2 <= tokens <= 4
+        assert 4 <= tokens <= 7  # B21: 4 CJK chars / 0.7 ≈ 5.7 tokens
 
     def test_estimate_tokens_english(self):
         """英文 token 估算"""

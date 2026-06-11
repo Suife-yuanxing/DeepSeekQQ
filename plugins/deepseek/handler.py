@@ -337,6 +337,9 @@ class ChatContext:
     voice_mode: bool = False
     # 手机命令直接处理标记（跳过 LLM 调用）
     skip_llm: bool = False
+    # B2: 表情包分享上下文（走 normal pipeline 时使用）
+    emoji_share_name: str = ""
+    emoji_share_emotion: str = ""
 
 
 # ============================================================
@@ -384,14 +387,15 @@ async def _stage_session_recovery(ctx: ChatContext) -> Optional[str]:
     ctx.session_recovery = await recover_session_context(ctx.session_id, ctx.user_id)
     if ctx.session_recovery and ctx.session_recovery.get("bot_emotion_memory_hint"):
         ctx.bot_emotion_memory_hint = ctx.session_recovery["bot_emotion_memory_hint"]
-    # P0-3: 加载工作记忆
+    # P0-3: 加载工作记忆（B3: 共享锁防止竞态）
     try:
-        from .db_session import get_session_state
-        state = get_session_state(ctx.session_id)
-        if state and state.get("scratchpad"):
-            ctx.scratchpad = state["scratchpad"]
-    except Exception:
-        pass
+        from .db_session import get_session_state, scratchpad_lock
+        async with scratchpad_lock:
+            state = await get_session_state(ctx.session_id)
+            if state and state.get("scratchpad"):
+                ctx.scratchpad = state["scratchpad"]
+    except Exception as e:
+        logger.debug(f"[session] 加载工作记忆失败: {e}")
     return None
 
 
@@ -427,8 +431,8 @@ async def _stage_voice(ctx: ChatContext) -> Optional[str]:
                 logger.info("[STT] 语音识别失败或无内容")
                 try:
                     await ctx.bot.send(ctx.event, make_reply(ctx.event, Message("听不太清楚呢...能打字告诉我吗？")))
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.warning(f"[STT] 发送语音失败提示失败: {e}")
                 return _SKIP
     # 检测用户文字中是否提及语音相关词（用于上下文追踪）
     voice_mention_kw = ["发语音", "语音", "说话", "听听", "打电话", "讲话", "讲讲话"]
@@ -507,6 +511,29 @@ async def _stage_share_only(ctx: ChatContext) -> Optional[str]:
         # 图片分享走LLM回复流程，不在此阶段跳过
         if last_share and last_share.get("type") == "图片":
             return None
+
+        # B2 fix: 表情包分享不再绕过 pipeline，改为设置 raw_msg 走正常流程
+        if last_share and last_share.get("type") == "表情":
+            emoji_text = last_share.get("summary", "")
+            emoji_match = re.search(r'用户发送了(?:QQ表情|QQ商城表情|QQ内置表情|表情)[：:]?\s*(.+?)]', emoji_text)
+            emoji_name = emoji_match.group(1).strip() if emoji_match else "表情"
+            safe_emoji = emoji_name.replace("{", "").replace("}", "").replace("system", "").replace("assistant", "").replace("user", "")[:20]
+            sticker_emotion = last_share.get("sticker_emotion", "")
+
+            # 构建上下文提示
+            context_hint = ""
+            recent_msgs = getattr(ctx, 'recent_memories', []) or []
+            if recent_msgs:
+                user_msgs = [m["content"] for m in recent_msgs[-6:] if m.get("role") == "user"][-3:]
+                if user_msgs:
+                    context_hint = f"\n聊天上下文：{' | '.join(user_msgs)}"
+            emotion_hint = f"\n这个表情的情绪是「{sticker_emotion}」" if sticker_emotion else ""
+
+            ctx.raw_msg = f"用户给你发了一个QQ表情「{safe_emoji}」，没有说其他话。{context_hint}{emotion_hint}"
+            ctx.emoji_share_name = safe_emoji
+            ctx.emoji_share_emotion = sticker_emotion
+            return None  # 不跳过 pipeline，走正常 LLM 回复流程
+
         # 视频平台分享（抖音/B站）：群聊中也总是回复，让bot主动分析视频
         is_video_share = (
             last_share and (
@@ -517,9 +544,7 @@ async def _stage_share_only(ctx: ChatContext) -> Optional[str]:
             )
         )
         if is_video_share or not ctx.is_group or ctx.event.is_tome() or random.random() < 0.3:
-            if last_share and last_share.get("type") == "表情":
-                await _handle_emoji_share(ctx, last_share)
-            else:
+            if last_share:
                 await _handle_link_share(ctx)
         return _SKIP
     return None
@@ -616,10 +641,22 @@ async def _stage_context(ctx: ChatContext) -> Optional[str]:
     from .topic_tracker import get_topic_context
     topic_context = get_topic_context(ctx.session_id, ctx.recent_memories)
     if topic_context:
-        if not ctx.session_recovery:
+        if ctx.session_recovery is None:
             ctx.session_recovery = {}
         ctx.session_recovery["topic_context"] = topic_context
         logger.debug(f"[话题追踪] 注入话题上下文: {topic_context[:50]}...")
+
+    # B18+B24: 延迟复杂度分类 — 此时语音/图片/share 已处理完毕，用更新后的 raw_msg 重新判断
+    # B24: 语音消息即使 voice_features 为空，raw_msg 可能已被 STT 更新，需要重新分类
+    _needs_reclassify = (
+        ctx.has_share or bool(ctx.voice_features) or bool(ctx.image_path)
+        or (ctx.complexity == "simple" and len(ctx.raw_msg) > 10)  # STT 可能已更新 raw_msg
+    )
+    if ctx.raw_msg and _needs_reclassify:
+        _has_image = bool(ctx.image_path)
+        _has_voice = bool(ctx.voice_features) or (ctx.complexity == "simple" and len(ctx.raw_msg) > 10)
+        ctx.complexity = classify_message_complexity(ctx.raw_msg, _has_image, _has_voice)
+        logger.debug(f"[复杂度] 延迟重分类: {ctx.complexity} (raw_msg_len={len(ctx.raw_msg)}, img={_has_image}, voice={_has_voice})")
 
     # === 简单消息：跳过深度分析，直接用默认值 ===
     from .schedule import get_schedule_state
@@ -788,6 +825,10 @@ async def _run_batch1_queries(ctx: ChatContext):
         ctx.bot_mood_result["valence"] = ctx.bot_mood_result.get("valence", 0) + ctx.contagion_result.get("valence_delta", 0)
         ctx.bot_mood_result["arousal"] = ctx.bot_mood_result.get("arousal", 0.2) + ctx.contagion_result.get("arousal_delta", 0)
 
+    # B23: 情绪感染后重新计算 emotion_params，确保 temperature/max_tokens 反映最新情绪
+    if ctx.contagion_result:
+        ctx.emotion_params = get_emotion_params(ctx.analysis.emotion)
+
 
 def _run_sync_computations(ctx: ChatContext) -> str:
     """同步计算：作息、对话节奏、行为模式。返回 bot_mood_dominant。"""
@@ -802,6 +843,8 @@ def _run_sync_computations(ctx: ChatContext) -> str:
     prev_topic = ""
     if ctx.session_recovery:
         prev_topic = ctx.session_recovery.get("last_topic", "")
+    else:
+        ctx.session_recovery = {}  # B28: 防止后续 None 调用
     if ctx.analysis.context.topic_shift_score > 0.5 and prev_topic:
         ctx.topic_bridge = get_topic_bridge(
             prev_topic, ctx.analysis.context.topic_summary,
@@ -1114,8 +1157,8 @@ async def _stage_llm(ctx: ChatContext) -> Optional[str]:
                         extra_hints.append(content)
             if extra_hints:
                 scene_hint = "\n".join(extra_hints)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning(f"[场景提示] 加载模板失败: {e}")
 
     analysis_keywords = [
         "怎么看", "怎么讲", "分析一下", "评价", "观点", "有什么想法",
@@ -1391,8 +1434,10 @@ async def _stage_llm(ctx: ChatContext) -> Optional[str]:
         # Token 预算管理：先尝试语义压缩，再硬截断
         from .context_compressor import compress_context
         from .context_compressor import estimate_messages_tokens
+        from .config import MAX_INPUT_TOKENS
         est_tokens = estimate_messages_tokens(messages)
-        if est_tokens > 512:
+        # BUGFIX: 仅当消息 token 超过预算 50% 时才触发压缩，避免浪费 API 调用
+        if est_tokens > MAX_INPUT_TOKENS * 0.5:
             messages, compressed = await compress_context(
                 ctx.session_id, messages, call_deepseek_api
             )
@@ -1405,6 +1450,36 @@ async def _stage_llm(ctx: ChatContext) -> Optional[str]:
         ctx_stats = get_context_stats(ctx.recent_memories, selected_memories, sys_prompt)
         if ctx_stats.get("token_saved", 0) > 0:
             logger.debug(f"[上下文] 压缩率={ctx_stats['compression_ratio']:.1%} 节省={ctx_stats['token_saved']}tokens")
+
+    # 3D: Think-then-Speak — 复杂消息先做内部思考再生成回复
+    think_hint = ""
+    try:
+        from .thinker import build_think_prompt
+        from .thinker import format_think_result
+        from .thinker import should_think
+        intent = ctx.analysis.context.user_intent if ctx.analysis else "闲聊"
+        if should_think(ctx.raw_msg, ctx.complexity, intent):
+            think_prompt = build_think_prompt(
+                ctx.raw_msg,
+                ctx.recent_memories,
+                ctx.analysis.emotion.dominant if ctx.analysis else "平静",
+                ctx.analysis.context.topic_summary if ctx.analysis else "",
+                intent,
+                ctx.affection.get("score", 0),
+            )
+            think_raw = await call_deepseek_api(
+                [{"role": "user", "content": think_prompt}],
+                temperature=0.3,
+                task_type="analysis",
+                max_tokens=200,
+            )
+            think_hint = format_think_result(think_raw)
+            if think_hint:
+                # 注入到 system prompt 末尾
+                messages[0]["content"] += f"\n\n{think_hint}"
+                logger.debug(f"[Think] 思考注入: {think_hint[:80]}...")
+    except Exception as e:
+        logger.debug(f"[Think] 思考阶段失败（不影响主回复）: {e}")
 
     try:
         ctx.reply_text = await call_deepseek_api(
@@ -1488,6 +1563,32 @@ async def _stage_humanize(ctx: ChatContext) -> Optional[str]:
         return None
     text = ctx.reply_text
 
+    # B25: 保护 CQ 代码免受人性化处理破坏（phone_direct 等阶段可能生成 CQ 代码）
+    import re as _re
+    _cq_placeholders = {}
+    def _protect_cq(t: str) -> str:
+        """用占位符替换 CQ 代码，防止人性化函数破坏它们。"""
+        nonlocal _cq_placeholders
+        _cq_placeholders.clear()
+        cq_pattern = _re.compile(r'\[CQ:[^\]]+\]')
+        for i, match in enumerate(cq_pattern.finditer(t)):
+            placeholder = f"__CQPROTECT_{i}__"
+            _cq_placeholders[placeholder] = match.group()
+        for ph, cq in _cq_placeholders.items():
+            t = t.replace(cq, ph, 1)  # replace first occurrence
+        return t
+
+    def _restore_cq(t: str) -> str:
+        """还原被占位符替换的 CQ 代码。"""
+        for ph, cq in _cq_placeholders.items():
+            t = t.replace(ph, cq)
+        return t
+
+    _has_cq = _re.search(r'\[CQ:[^\]]+\]', text)
+    if _has_cq:
+        text = _protect_cq(text)
+        logger.debug(f"[人性化] 检测到 {len(_cq_placeholders)} 个 CQ 代码，已保护")
+
     # 节奏增强：反应词前缀（上下文感知版）
     from .handler_humanize import maybe_add_reaction_prefix
     emotion_v = ctx.analysis.emotion.valence if ctx.analysis else 0.0
@@ -1530,6 +1631,10 @@ async def _stage_humanize(ctx: ChatContext) -> Optional[str]:
     if bursts:
         # 用换行连接，后续 split_long_reply 会拆成多条消息
         text = "\n".join(bursts)
+
+    # B25: 还原被保护的 CQ 代码
+    if _has_cq:
+        text = _restore_cq(text)
 
     ctx.reply_text = text
     return None
@@ -1675,6 +1780,7 @@ async def _stage_post(ctx: ChatContext) -> Optional[str]:
         record_bot_message(ctx.session_id, ctx.reply_text, msg_type)
 
         # 晚安关键词检测：bot 回复包含晚安关键词时自动取消追问
+        # 注意：此处检查的是最终回复文本（含 MCP 输出），如果工具输出误含晚安关键词会误触发，但影响极小
         night_keywords = ["晚安", "快睡", "去睡", "睡觉吧", "好梦", "明天见"]
         if any(kw in ctx.reply_text for kw in night_keywords):
             from .follow_up import suppress_followup

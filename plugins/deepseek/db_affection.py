@@ -74,32 +74,20 @@ async def update_affection(user_id: str, delta: float = 1.0):
 
 
 async def decay_affection(inactive_days: int = 7, decay_points: float = -1.0):
-    """对长期不活跃用户的好感度做自然衰减。"""
+    """对长期不活跃用户的好感度做自然衰减。使用单条 SQL 替代 N+1 UPDATE。"""
     from datetime import datetime
     db = await get_db()
     threshold = datetime.now().timestamp() - inactive_days * 86400
-    # 先查出活跃用户集合，再更新非活跃用户（避免 NOT IN 全表扫描）
-    async with db.execute(
-        """SELECT DISTINCT REPLACE(session_id, 'private_', '') as uid FROM memories
-           WHERE session_id LIKE 'private_%' AND timestamp > ?""",
-        (threshold,)
-    ) as cursor:
-        active_rows = await cursor.fetchall()
-    active_ids = {r["uid"] for r in active_rows}
-
-    # 获取所有有好感度的用户
-    async with db.execute("SELECT user_id FROM affection WHERE score > 0") as cursor:
-        all_rows = await cursor.fetchall()
-
-    # 衰减非活跃用户
-    affected = 0
-    for row in all_rows:
-        if row["user_id"] not in active_ids:
-            await db.execute(
-                "UPDATE affection SET score = MAX(0, score + ?) WHERE user_id = ?",
-                (decay_points, row["user_id"])
-            )
-            affected += 1
+    # BUGFIX: 使用单条 UPDATE + 子查询，替代 N+1 循环；同时添加 archived=0 过滤
+    await db.execute(
+        """UPDATE affection SET score = MAX(0, score + ?)
+           WHERE score > 0 AND user_id NOT IN (
+               SELECT DISTINCT REPLACE(session_id, 'private_', '') FROM memories
+               WHERE session_id LIKE 'private_%' AND timestamp > ? AND archived = 0
+           )""",
+        (decay_points, threshold)
+    )
+    affected = db.total_changes
     if affected > 0:
         await db.commit()
         logger.info(f"[好感度] {affected} 个用户好感度自然衰减")
@@ -111,7 +99,7 @@ async def get_affection_decay_hint(user_id: str) -> str:
     db = await get_db()
     now = _time.time()
     async with db.execute(
-        "SELECT MAX(timestamp) as last_ts FROM memories WHERE session_id LIKE ?",
+        "SELECT MAX(timestamp) as last_ts FROM memories WHERE session_id LIKE ? AND archived = 0",
         (f"private_{user_id}",)
     ) as cursor:
         row = await cursor.fetchone()
@@ -187,9 +175,14 @@ async def check_and_trigger_milestone(user_id: str) -> Optional[str]:
         ) as cursor:
             if await cursor.fetchone():
                 continue
+        # BUGFIX: milestone_value 存储实际阈值而非布尔值
+        actual_value = (score if "affection" in key
+                        else total_chats if "messages" in key
+                        else streak if "streak" in key
+                        else int(info["check"]))
         await db.execute(
             "INSERT INTO relationship_milestones (user_id, milestone_type, milestone_value, triggered_at, triggered) VALUES (?, ?, ?, ?, 1)",
-            (str(user_id), key, int(info["check"]), now)
+            (str(user_id), key, actual_value, now)
         )
         await db.commit()
         logger.info(f"[里程碑] user={user_id[:6]} 触发: {key}")

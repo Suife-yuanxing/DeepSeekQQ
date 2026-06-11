@@ -154,12 +154,16 @@ async def get_active_members(group_id: str, hours: float = 24) -> List[Dict[str,
 
 
 async def get_recent_group_messages(group_id: str, limit: int = 20) -> List[Dict[str, Any]]:
-    """获取最近的群聊消息（从 memories 表）。"""
+    """获取最近的群聊消息（从 memories 表）。
+
+    B13 fix: memories 表不存储群成员的真实 user_id，role 列仅区分 user/assistant。
+    对于群聊消息，user_id 设为空字符串，调用方应通过 group_members 表获取成员信息。
+    """
     db = await get_db()
     messages = []
     async with db.execute(
         """SELECT role, content, timestamp FROM memories
-           WHERE session_id = ? ORDER BY timestamp DESC LIMIT ?""",
+           WHERE session_id = ? AND archived = 0 ORDER BY timestamp DESC LIMIT ?""",
         (f"group_{group_id}", limit)
     ) as cursor:
         async for row in cursor:
@@ -167,7 +171,8 @@ async def get_recent_group_messages(group_id: str, limit: int = 20) -> List[Dict
                 "role": row["role"],
                 "content": row["content"],
                 "timestamp": row["timestamp"],
-                "user_id": row["role"] if row["role"] != "assistant" else "bot",
+                # B13: role 列不存储真实 QQ 号，对非 bot 消息无法确定具体成员
+                "user_id": "bot" if row["role"] == "assistant" else "",
             })
     messages.reverse()  # 按时间正序
     return messages

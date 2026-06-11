@@ -50,7 +50,7 @@ EMOTION_RECOVERY_PATHS = {
 
 
 def get_random_recovery_path(emotion: str) -> List[str]:
-    """获取随机恢复路径"""
+    """获取随机恢复路径（权重已验证总和为100）。"""
     paths = EMOTION_RECOVERY_PATHS.get(emotion, [])
     if not paths:
         return [emotion, "平静"]
@@ -58,6 +58,10 @@ def get_random_recovery_path(emotion: str) -> List[str]:
     # 按权重随机选择
     weights = [p["weight"] for p in paths]
     total = sum(weights)
+    # 防御性检查：权重和不应偏离 100 太多
+    if total <= 0 or abs(total - 100) > 10:
+        logger.warning(f"[情绪恢复] 情绪 '{emotion}' 权重和异常={total}，使用均匀分布")
+        return random.choice(paths)["steps"]
     r = random.random() * total
 
     cumulative = 0

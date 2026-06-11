@@ -73,6 +73,7 @@ async def _call_deepseek_raw(messages: List[Dict[str, str]], temperature: float 
 
     for attempt in range(3):
         try:
+            # BUGFIX: 每次重试都重新获取 session，防止并发调用关闭共享 session 导致活锁
             session = await get_http_session()
             async with session.post(
                 url,
@@ -100,8 +101,8 @@ async def _call_deepseek_raw(messages: List[Dict[str, str]], temperature: float 
                     if _http_session:
                         try:
                             await _http_session.close()
-                        except Exception:
-                            pass
+                        except Exception as close_err:
+                            logger.debug(f"[API] 关闭会话失败: {close_err}")
                         _http_session = None
             await asyncio.sleep(2 ** attempt)
         except Exception as e:
@@ -166,8 +167,8 @@ async def call_deepseek_api(messages: List[Dict[str, str]], temperature: float =
             from .performance_monitor import track_api_call
             tokens_est = len(result) // 2  # 粗略估算输出 token
             track_api_call(task_type, api_duration, tokens_used=tokens_est, success=True)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"[API] 性能追踪异常: {e}")
         # Token 成本追踪
         try:
             from .token_tracker import get_tracker
@@ -178,16 +179,16 @@ async def call_deepseek_api(messages: List[Dict[str, str]], temperature: float =
                 input_chars=input_chars,
                 output_chars=len(result),
             )
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"[API] Token追踪异常: {e}")
         return result
 
     # 远程失败，记录
     try:
         from .performance_monitor import track_api_call
         track_api_call(task_type, api_duration, success=False, error="remote_failed")
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug(f"[API] 性能追踪异常: {e}")
 
     # ===== 第2层：本地 Ollama 模型 =====
     logger.info("[API] 降级到本地 Ollama 模型")

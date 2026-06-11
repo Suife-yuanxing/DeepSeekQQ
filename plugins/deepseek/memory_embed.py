@@ -236,6 +236,33 @@ def rrf_merge(
     return merged[:top_k]
 
 
+def adaptive_rrf_merge(
+    list_a: List[Tuple[int, float]],
+    list_b: List[Tuple[int, float]],
+    query_text: str = "",
+    top_k: int = 10,
+) -> List[Tuple[int, float]]:
+    """自适应 RRF 融合（借鉴 vstash arXiv:2604.15484）。
+
+    根据查询长度动态调整 RRF k 值：
+    - 长查询（>10字）：k=30 — 降低平滑，提高关键词匹配权重
+    - 中等查询（5-10字）：k=60 — 默认平衡
+    - 短查询（<5字）：k=120 — 高平滑，提高语义匹配权重
+
+    原理: 短查询关键词少，语义信号更重要；长查询关键词多，精确匹配更重要。
+    """
+    query_len = len(query_text) if query_text else 5
+    if query_len > 10:
+        k = 30
+    elif query_len < 5:
+        k = 120
+    else:
+        k = 60
+
+    logger.debug(f"[RRF] 自适应 k={k} (查询长度={query_len})")
+    return rrf_merge(list_a, list_b, k=k, top_k=top_k)
+
+
 # ============================================================
 # Embedding 存储管理
 # ============================================================

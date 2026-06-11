@@ -2,6 +2,7 @@
 """记忆系统测试 — 覆盖置信度、冷却、缓存清理。"""
 import sys
 import os
+import time
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import pytest
@@ -11,6 +12,11 @@ from plugins.deepseek.memory import (
 )
 
 pytestmark = [pytest.mark.unit]
+
+
+def _make_cache_entry(tags=None):
+    """B16: 创建新格式的缓存条目 (tags_list, timestamp)。"""
+    return (tags or ["记忆"], time.time())
 
 
 class TestMemoryRelevance:
@@ -38,20 +44,20 @@ class TestMemoryCacheCleanup:
 
     def test_no_cleanup_under_limit(self):
         for i in range(50):
-            _recently_used_memories[f"user_{i}"] = ["记忆"]
+            _recently_used_memories[f"user_{i}"] = _make_cache_entry()
         _cleanup_memory_cache()
         assert len(_recently_used_memories) == 50
 
     def test_cleanup_over_limit(self):
         for i in range(_MEMORY_CACHE_MAX_USERS + 50):
-            _recently_used_memories[f"user_{i}"] = ["记忆"]
+            _recently_used_memories[f"user_{i}"] = _make_cache_entry()
         _cleanup_memory_cache()
         assert len(_recently_used_memories) <= _MEMORY_CACHE_MAX_USERS
 
     def test_cleanup_preserves_half(self):
         total = _MEMORY_CACHE_MAX_USERS + 100
         for i in range(total):
-            _recently_used_memories[f"user_{i}"] = ["记忆"]
+            _recently_used_memories[f"user_{i}"] = _make_cache_entry()
         _cleanup_memory_cache()
         assert len(_recently_used_memories) == _MEMORY_CACHE_MAX_USERS
 

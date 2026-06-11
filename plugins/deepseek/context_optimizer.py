@@ -88,9 +88,36 @@ def select_context_messages(
 
         scored.append((i, score, msg))
 
+    # B20: 硬保底 — 最近 5 条始终保留，不受分数影响
+    guaranteed = set(range(max(0, total - 5), total))
     # 按分数排序，取 top N
     scored.sort(key=lambda x: x[1], reverse=True)
-    selected = scored[:max_count]
+    selected = []
+    selected_indices = set()
+    # 先选高分的（跳过已在保底中的，后面统一添加）
+    for idx, score, msg in scored:
+        if len(selected) >= max_count:
+            break
+        selected.append((idx, score, msg))
+        selected_indices.add(idx)
+    # 确保最近 5 条全部在内
+    for idx in guaranteed:
+        if idx not in selected_indices:
+            # 找到对应条目并加入
+            for s in scored:
+                if s[0] == idx:
+                    selected.append(s)
+                    break
+    # 如果超出 max_count，裁剪低分项（保留保底项）
+    if len(selected) > max_count:
+        # 保底项强制保留
+        must_keep = [s for s in selected if s[0] in guaranteed]
+        can_drop = [s for s in selected if s[0] not in guaranteed]
+        # 按分数升序排列可丢弃的（低分在前）
+        can_drop.sort(key=lambda x: x[1])
+        # 保留足够的可丢弃项以填满 max_count
+        keep_drop = can_drop[-(max_count - len(must_keep)):] if max_count > len(must_keep) else []
+        selected = must_keep + keep_drop
 
     # 按原始顺序排列（保证对话连贯）
     selected.sort(key=lambda x: x[0])
@@ -103,14 +130,34 @@ def select_context_messages(
 # ============================================================
 
 def estimate_tokens(text: str) -> int:
-    """估算文本的 token 数。
+    """估算文本的 token 数（B21 改进版）。
 
-    中文：约 1.5 字/token
-    英文：约 4 字符/token
+    CJK 统一表意文字: ~0.7 字符/token（DeepSeek tokenizer 实测约 0.6-0.8）
+    英文/数字: ~4 字符/token
+    标点/空格: ~6 字符/token（开销低）
     """
-    cn_chars = len(re.findall(r'[一-龥]', text))
-    en_chars = len(text) - cn_chars
-    return int(cn_chars / 1.5 + en_chars / 4)
+    import unicodedata
+    cjk = 0
+    latin = 0
+    other = 0
+    for ch in text:
+        # 覆盖广义 CJK: 基本汉字、扩展A-F、兼容汉字、日韩汉字、假名、谚文、注音
+        cp = ord(ch)
+        if (0x4E00 <= cp <= 0x9FFF or    # CJK 基本
+            0x3400 <= cp <= 0x4DBF or    # CJK 扩展A
+            0x20000 <= cp <= 0x2A6DF or  # CJK 扩展B
+            0xF900 <= cp <= 0xFAFF or    # CJK 兼容
+            0x3040 <= cp <= 0x30FF or    # 日文假名
+            0xAC00 <= cp <= 0xD7AF or    # 韩文谚文
+            0x3100 <= cp <= 0x312F or    # 注音
+            0x31A0 <= cp <= 0x31BF):     # 注音扩展
+            cjk += 1
+        elif ch.isascii() and (ch.isalpha() or ch.isdigit()):
+            latin += 1
+        else:
+            other += 1
+    # CJK: 0.7 字符/token, 拉丁: 4 字符/token, 其他: 6 字符/token
+    return max(1, int(cjk / 0.7 + latin / 4 + other / 6))
 
 
 def estimate_message_tokens(messages: List[Dict[str, str]]) -> int:
@@ -239,3 +286,5 @@ def get_context_stats(
         "total_input_tokens": system_tokens + selected_tokens,
         "token_saved": total_tokens - selected_tokens,
     }
+
+

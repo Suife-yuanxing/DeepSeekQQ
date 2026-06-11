@@ -1,6 +1,9 @@
 """数据库迁移机制 — ECC database-migrations 风格。
 
 版本化迁移文件，按顺序执行，支持状态追踪。
+
+B12 注意：init_db() 在 startup 时先于 migrations 运行，已创建全部表（使用 IF NOT EXISTS）。
+迁移仅处理增量变更（ALTER TABLE / 数据迁移）。纯建表的迁移保留为 no-op 以维持版本号连续性。
 """
 from typing import Any
 from typing import Callable
@@ -147,24 +150,6 @@ async def migrate_v4_add_memory_tiers(db: aiosqlite.Connection):
     await db.commit()
 
 
-@migration(6)
-async def migrate_v6_add_user_profiles(db: aiosqlite.Connection):
-    """Phase 4：添加用户画像表（关系风格、昵称、兴趣摘要等）。"""
-    await db.execute("""
-        CREATE TABLE IF NOT EXISTS user_profiles (
-            user_id TEXT PRIMARY KEY,
-            relationship_style TEXT DEFAULT 'neutral',
-            nickname TEXT DEFAULT '',
-            first_interaction REAL,
-            total_messages INTEGER DEFAULT 0,
-            last_known_mood TEXT DEFAULT '',
-            known_interests TEXT DEFAULT '',
-            bot_self_summary TEXT DEFAULT ''
-        )
-    """)
-    await db.commit()
-
-
 @migration(5)
 async def migrate_v5_add_emotion_log(db: aiosqlite.Connection):
     """添加情绪日志表（Phase 3）。"""
@@ -181,7 +166,26 @@ async def migrate_v5_add_emotion_log(db: aiosqlite.Connection):
             timestamp REAL
         )
     """)
-    await db.execute("CREATE INDEX IF NOT EXISTS idx_emotion_log_ts ON emotion_log(timestamp)")
+    # B14: idx_emotion_log_ts 已被 init_db() 中的复合索引 idx_emotion_log_user(user_id, timestamp) 替代
+    await db.execute("CREATE INDEX IF NOT EXISTS idx_emotion_log_user ON emotion_log(user_id, timestamp)")
+    await db.commit()
+
+
+@migration(6)
+async def migrate_v6_add_user_profiles(db: aiosqlite.Connection):
+    """Phase 4：添加用户画像表（关系风格、昵称、兴趣摘要等）。"""
+    await db.execute("""
+        CREATE TABLE IF NOT EXISTS user_profiles (
+            user_id TEXT PRIMARY KEY,
+            relationship_style TEXT DEFAULT 'neutral',
+            nickname TEXT DEFAULT '',
+            first_interaction REAL,
+            total_messages INTEGER DEFAULT 0,
+            last_known_mood TEXT DEFAULT '',
+            known_interests TEXT DEFAULT '',
+            bot_self_summary TEXT DEFAULT ''
+        )
+    """)
     await db.commit()
 
 
@@ -257,19 +261,7 @@ async def migrate_v10_add_mood_snapshots(db: aiosqlite.Connection):
 
 @migration(11)
 async def migrate_v11_add_bot_personality(db: aiosqlite.Connection):
-    """添加 bot 个性特征表（口头禅/话题偏好/习惯）。"""
-    await db.execute("""
-        CREATE TABLE IF NOT EXISTS bot_personality (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            trait_type TEXT NOT NULL,
-            content TEXT NOT NULL,
-            frequency REAL DEFAULT 0.5,
-            context TEXT DEFAULT '',
-            created_at REAL,
-            usage_count INTEGER DEFAULT 0,
-            last_used REAL DEFAULT 0
-        )
-    """)
+    """B8: bot_personality 表已移除 — 从未被使用过，空操作保留版本号。"""
     await db.commit()
 
 

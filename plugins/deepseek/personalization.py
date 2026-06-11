@@ -186,23 +186,6 @@ def get_growth_narrative(
     return None
 
 
-def get_growth_celebration(
-    affection_score: float,
-    prev_score: float = 0,
-) -> Optional[str]:
-    """检查是否需要庆祝关系进展。
-
-    当好感度跨越阶段阈值时触发庆祝提示。
-    """
-    if prev_score <= 0:
-        return None
-
-    for threshold, title, desc in _GROWTH_STAGES:
-        if affection_score >= threshold > prev_score:
-            return f"你们的关系升级到「{title}」了！{desc}。可以在对话中自然地表达这种变化。"
-
-    return None
-
 
 # ============================================================
 # 个性化口头禅 — 根据关系调整

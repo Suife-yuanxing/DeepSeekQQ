@@ -622,7 +622,15 @@ async def update_bot_emotion(user_msg: str, user_emotion: EmotionState, user_id:
 
     # 平静状态：检查随机波动 + 情绪传染
     from .emotion_deep import maybe_trigger_mood_swing
-    swing = maybe_trigger_mood_swing(old_mood["dominant"], 0)  # 好感度在 handler 中传入
+    # B4 fix: 查询真实好感度，而非硬编码 0（修复高好感 mood 永不触发的问题）
+    real_affection = 0
+    if user_id:
+        try:
+            from .db_affection import get_affection_score
+            real_affection = await get_affection_score(user_id)
+        except Exception:
+            pass
+    swing = maybe_trigger_mood_swing(old_mood["dominant"], real_affection)
     if swing:
         await update_bot_mood(swing["valence"], swing["arousal"], swing["dominant"], swing["reason"])
         return {"dominant": swing["dominant"], "reason": swing["reason"], "swing_hint": swing.get("hint", "")}

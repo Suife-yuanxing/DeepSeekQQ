@@ -87,10 +87,10 @@ async def update_user_preference_raw(user_id: str, pref_type: str, pref_key: str
     now = datetime.now().timestamp()
     await db.execute(
         """INSERT INTO user_preferences (user_id, pref_type, pref_key, pref_value, sample_count, last_updated)
-           VALUES (?, 'relationship_style', ?, ?, 1, ?)
+           VALUES (?, ?, ?, ?, 1, ?)
            ON CONFLICT(user_id, pref_type, pref_key)
            DO UPDATE SET pref_value = pref_value + ?, sample_count = sample_count + 1, last_updated = ?""",
-        (str(user_id), pref_key, weight, now, weight, now)
+        (str(user_id), pref_type, pref_key, weight, now, weight, now)
     )
     await db.commit()
 

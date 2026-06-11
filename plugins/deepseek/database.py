@@ -19,7 +19,6 @@ from .db_core import checkpoint_db
 from .db_core import close_db
 from .db_core import get_db
 from .db_memories import count_memories
-from .db_memories import delete_memories_except
 from .db_memories import get_keep_ids
 from .db_memories import get_last_bot_reply_time
 from .db_memories import get_oldest_memories
@@ -120,7 +119,7 @@ async def get_last_night_end_time(session_id: str) -> Optional[float]:
     yesterday_6pm = (now - timedelta(days=1)).replace(hour=18, minute=0, second=0).timestamp()
     today_6am = now.replace(hour=6, minute=0, second=0).timestamp()
     async with db.execute(
-        "SELECT MAX(timestamp) FROM memories WHERE session_id = ? AND timestamp BETWEEN ? AND ?",
+        "SELECT MAX(timestamp) FROM memories WHERE session_id = ? AND archived = 0 AND timestamp BETWEEN ? AND ?",
         (session_id, yesterday_6pm, today_6am)
     ) as cursor:
         row = await cursor.fetchone()
@@ -145,7 +144,7 @@ async def get_last_night_mood_summary(session_id: str) -> Optional[str]:
 
     # 查找昨晚最后几条 bot 回复
     async with db.execute(
-        "SELECT content FROM memories WHERE session_id = ? AND role = 'assistant' AND timestamp BETWEEN ? AND ? ORDER BY timestamp DESC LIMIT 5",
+        "SELECT content FROM memories WHERE session_id = ? AND role = 'assistant' AND archived = 0 AND timestamp BETWEEN ? AND ? ORDER BY timestamp DESC LIMIT 5",
         (session_id, yesterday_6pm, today_6am)
     ) as cursor:
         rows = await cursor.fetchall()
@@ -318,6 +317,8 @@ async def init_db():
     """)
     await db.execute("CREATE INDEX IF NOT EXISTS idx_memories_session ON memories(session_id, timestamp)")
     await db.execute("CREATE INDEX IF NOT EXISTS idx_memories_role ON memories(role, timestamp)")
+    # BUGFIX: 复合索引覆盖按 role 过滤的常用查询
+    await db.execute("CREATE INDEX IF NOT EXISTS idx_memories_session_role_ts ON memories(session_id, role, timestamp)")
     await db.execute("""
         CREATE TABLE IF NOT EXISTS article_cache (
             url_hash TEXT PRIMARY KEY,
@@ -463,6 +464,8 @@ async def init_db():
     # 替换旧的无用索引（仅有 timestamp），改为复合索引覆盖常用查询
     await db.execute("DROP INDEX IF EXISTS idx_emotion_log_ts")
     await db.execute("CREATE INDEX IF NOT EXISTS idx_emotion_log_user ON emotion_log(user_id, timestamp)")
+    # BUGFIX: 重新添加 timestamp 单列索引，供 web_admin 无 user_id 过滤的查询使用
+    await db.execute("CREATE INDEX IF NOT EXISTS idx_emotion_log_ts ON emotion_log(timestamp)")
     await db.execute("""
         CREATE TABLE IF NOT EXISTS user_profiles (
             user_id TEXT PRIMARY KEY,
@@ -507,18 +510,7 @@ async def init_db():
         )
     """)
     await db.execute("CREATE INDEX IF NOT EXISTS idx_mood_snap_user ON mood_snapshots(user_id, snapshot_time)")
-    await db.execute("""
-        CREATE TABLE IF NOT EXISTS bot_personality (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            trait_type TEXT NOT NULL,
-            content TEXT NOT NULL,
-            frequency REAL DEFAULT 0.5,
-            context TEXT DEFAULT '',
-            created_at REAL,
-            usage_count INTEGER DEFAULT 0,
-            last_used REAL DEFAULT 0
-        )
-    """)
+    # B8: bot_personality 表已移除 — 从未被任何代码读写，是死表
     await db.execute("""
         CREATE TABLE IF NOT EXISTS group_members (
             id INTEGER PRIMARY KEY AUTOINCREMENT,

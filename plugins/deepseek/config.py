@@ -261,3 +261,8 @@ MAX_REPLY_CHARS: int = _safe_int(getattr(cfg, "max_reply_chars", 900), 900, "max
 # === 记忆压缩 ===
 COMPRESS_TOKEN_THRESHOLD: int = _safe_int(getattr(cfg, "compress_token_threshold", 3000), 3000, "compress_token_threshold")
 COMPRESS_MESSAGE_THRESHOLD: int = _safe_int(getattr(cfg, "compress_message_threshold", 20), 20, "compress_message_threshold")
+
+# === 3D: Think-then-Speak 双通道回复 ===
+THINK_THEN_SPEAK_ENABLED: bool = str(getattr(cfg, "think_then_speak_enabled", "true")).lower() == "true"
+THINK_MAX_TOKENS: int = _safe_int(getattr(cfg, "think_max_tokens", 200), 200, "think_max_tokens")
+THINK_TEMPERATURE: float = _safe_float(getattr(cfg, "think_temperature", 0.3), 0.3, "think_temperature")

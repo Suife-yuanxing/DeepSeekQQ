@@ -75,7 +75,7 @@ async def get_silent_private_users(threshold: float) -> List[str]:
     db = await get_db()
     async with db.execute(
         """SELECT session_id, MAX(timestamp) as last_time
-           FROM memories WHERE session_id LIKE 'private_%'
+           FROM memories WHERE session_id LIKE 'private_%' AND archived = 0
            GROUP BY session_id HAVING last_time < ?""",
         (threshold,)
     ) as cursor:
