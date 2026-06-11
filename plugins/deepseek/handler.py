@@ -499,9 +499,12 @@ async def _stage_share_only(ctx: ChatContext) -> Optional[str]:
             return None
         # 视频平台分享（抖音/B站）：群聊中也总是回复，让bot主动分析视频
         is_video_share = (
-            last_share and last_share.get("restricted")
-            and last_share.get("platform") in ("douyin", "bilibili")
-            and last_share.get("type") == "网页"
+            last_share and (
+                (last_share.get("restricted")
+                 and last_share.get("platform") in ("douyin", "bilibili")
+                 and last_share.get("type") == "网页")
+                or last_share.get("type") in ("视频内容", "视频文件")
+            )
         )
         if is_video_share or not ctx.is_group or ctx.event.is_tome() or random.random() < 0.3:
             if last_share and last_share.get("type") == "表情":
@@ -1319,10 +1322,12 @@ async def _stage_llm(ctx: ChatContext) -> Optional[str]:
         from .image_reply import get_image_reply_prompt
         from .image_reply import is_emotional_share
         from .image_reply import should_analyze_in_detail
-        # 仅使用当前消息的图片分享（按时间戳过滤，防止旧图片内容泄漏）
+        # 仅使用当前消息的图片/视频分享（按时间戳过滤，防止旧内容泄漏）
         cutoff = getattr(ctx, 'share_cutoff', 0)
         current_shares = [s for s in shares_now if s.get("time", 0) >= cutoff]
         image_shares = [s for s in current_shares if s.get("type") == "图片" and s.get("vision_text")]
+        video_shares = [s for s in current_shares if s.get("type") in ("视频内容", "视频文件") and s.get("vision_text")]
+
         if image_shares:
             latest_image = image_shares[-1]
             image_type = latest_image.get("image_type", "unknown")
@@ -1352,13 +1357,18 @@ async def _stage_llm(ctx: ChatContext) -> Optional[str]:
         selected_memories = select_context_messages(ctx.recent_memories, ctx.raw_msg, history_limit)
         for mem in selected_memories:
             messages.append({"role": mem["role"], "content": mem["content"]})
-        # 构造用户消息：有图片时始终注入图片描述（无论是否有文字）
+        # 构造用户消息：有图片/视频时始终注入描述（无论是否有文字）
         user_msg_content = ctx.raw_msg
         if image_shares:
             vision_desc = image_shares[-1].get("vision_text", "")
             if vision_desc:
                 img_info = f"[用户发送了一张图片，视觉模型已识别内容：{vision_desc[:300]}]"
                 user_msg_content = f"{user_msg_content}\n{img_info}" if user_msg_content else img_info
+        if video_shares:
+            video_desc = video_shares[-1].get("vision_text", "")
+            if video_desc:
+                vid_info = f"[用户发送了一段视频，视觉模型已分析关键帧：{video_desc[:300]}]"
+                user_msg_content = f"{user_msg_content}\n{vid_info}" if user_msg_content else vid_info
         if not messages or messages[-1]["role"] != "user":
             messages.append({"role": "user", "content": user_msg_content})
 
@@ -1769,8 +1779,11 @@ async def _handle_link_share(ctx: ChatContext):
     # 构建系统提示
     # 判断是否为视频平台分享（需主动讨论而非仅确认）
     is_video_share = (
-        last_share and last_share.get("restricted")
-        and last_share.get("platform") in ("douyin", "bilibili")
+        last_share and (
+            (last_share.get("restricted")
+             and last_share.get("platform") in ("douyin", "bilibili"))
+            or last_share.get("type") in ("视频内容", "视频文件")
+        )
     )
 
     from .prompt import get_minimal_persona

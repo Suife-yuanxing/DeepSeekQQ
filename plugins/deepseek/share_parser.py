@@ -99,7 +99,9 @@ async def fetch_url_content(url: str) -> Optional[Dict[str, str]]:
     is_video_platform = (
         "bilibili.com/video" in url or "b23.tv" in url
         or "youtube.com" in url or "youtu.be" in url
-        or "tiktok.com" in url
+        or "tiktok.com" in url or "douyin.com" in url or "v.douyin.com" in url
+        or "xiaohongshu.com" in url or "xhslink.com" in url
+        or "kuaishou.com" in url
     )
     if is_video_platform:
         try:
@@ -929,6 +931,54 @@ def _handle_face_segment(seg) -> Dict[str, Any]:
             "summary": f"[用户发送了QQ表情：{face_text}]", "time": datetime.now().timestamp()}
 
 
+async def _handle_video_segment(video_url: str, user_text: str) -> Optional[Dict[str, Any]]:
+    """处理视频消息段：尝试通过帧提取+视觉模型分析视频内容。
+
+    优先尝试视频 URL 链接解析（如果是平台链接），
+    否则尝试下载视频文件并提取关键帧进行视觉分析。
+
+    Returns:
+        分享 dict，失败返回 None
+    """
+    import asyncio
+
+    # 检查是否为已知视频平台链接
+    video_platforms = (
+        "bilibili.com/video", "b23.tv", "youtube.com", "youtu.be",
+        "douyin.com", "v.douyin.com", "tiktok.com",
+        "xiaohongshu.com", "xhslink.com", "kuaishou.com",
+    )
+    is_platform_url = any(p in video_url for p in video_platforms)
+    if is_platform_url:
+        # 视频平台链接：用已有的 fetch_url_content 处理
+        return None  # 让 text 段的 URL 提取逻辑处理
+
+    # 视频文件：尝试帧提取 + 视觉分析
+    try:
+        from .video_processor import process_video
+        result = await asyncio.wait_for(
+            process_video(video_url),
+            timeout=90.0,  # 视频处理总超时（下载+帧提取+视觉分析）
+        )
+        if result:
+            return {
+                "type": "视频内容",
+                "source": "视频分析",
+                "summary": result,
+                "time": datetime.now().timestamp(),
+                "image_type": "video_frame",
+                "vision_text": result,
+            }
+    except asyncio.TimeoutError:
+        logger.warning(f"[视频分析] 总处理超时 (90s): {video_url[:80]}")
+    except ImportError:
+        logger.debug("[视频分析] video_processor 模块未就绪")
+    except Exception as e:
+        logger.warning(f"[视频分析] 处理异常: {type(e).__name__}: {e}")
+
+    return None
+
+
 async def _handle_json_card(seg, seen_urls: set) -> List[Dict[str, Any]]:
     """处理 JSON 分享卡片消息段。"""
     results = []
@@ -1040,13 +1090,46 @@ async def extract_and_cache_shares(event, session_id: str) -> bool:
                 "summary": raw[:300], "time": datetime.now().timestamp()
             })
 
+        elif seg.type == "video":
+            # QQ 视频消息 — 提取视频 URL 并处理
+            video_url = seg.data.get("url", "") or seg.data.get("file", "")
+            if video_url:
+                result = await _handle_video_segment(video_url, user_text)
+                if result:
+                    shares.append(result)
+
         elif seg.type == "file":
-            shares.append({
-                "type": "文件",
-                "source": seg.data.get("name", "未知文件"),
-                "summary": f"大小: {seg.data.get('size', '?')} 字节",
-                "time": datetime.now().timestamp()
-            })
+            file_name = seg.data.get("name", "未知文件")
+            file_size = seg.data.get("size", "?")
+            # 检查是否为视频文件扩展名
+            video_exts = (".mp4", ".avi", ".mov", ".mkv", ".webm", ".flv", ".wmv", ".m4v", ".3gp")
+            is_video_file = any(file_name.lower().endswith(ext) for ext in video_exts)
+            if is_video_file:
+                file_url = seg.data.get("url", "") or seg.data.get("file", "")
+                if file_url:
+                    result = await _handle_video_segment(file_url, user_text)
+                    if result:
+                        shares.append(result)
+                    else:
+                        # 视频处理失败，记录文件元信息
+                        shares.append({
+                            "type": "视频文件", "source": file_name,
+                            "summary": f"文件名: {file_name}，大小: {file_size} 字节（视频内容分析失败）",
+                            "time": datetime.now().timestamp()
+                        })
+                else:
+                    shares.append({
+                        "type": "视频文件", "source": file_name,
+                        "summary": f"文件名: {file_name}，大小: {file_size} 字节（无下载链接，无法分析）",
+                        "time": datetime.now().timestamp()
+                    })
+            else:
+                shares.append({
+                    "type": "文件",
+                    "source": file_name,
+                    "summary": f"大小: {file_size} 字节",
+                    "time": datetime.now().timestamp()
+                })
 
     if shares:
         if session_id not in _recent_shares:

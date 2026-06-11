@@ -150,7 +150,11 @@ async def _parse_bilibili(url: str) -> Optional[VideoInfo]:
     """
     try:
         from bilibili_api import video, sync
+    except ImportError:
+        logger.debug("[视频解析] bilibili-api-python 未安装，跳过 B站 SDK")
+        return None
 
+    try:
         vid = _extract_bilibili_id(url)
         if not vid:
             return None
@@ -206,7 +210,11 @@ async def _parse_with_ytdlp(url: str) -> Optional[VideoInfo]:
     支持：YouTube、抖音、Twitter、微博、小红书、快手等 1000+ 平台。
     设置短超时防止卡死。
     """
-    import yt_dlp
+    try:
+        import yt_dlp
+    except ImportError:
+        logger.debug("[视频解析] yt-dlp 未安装，跳过")
+        return None
 
     opts = {
         "quiet": True,

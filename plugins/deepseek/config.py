@@ -217,10 +217,10 @@ WEATHER_CACHE_TTL: int = _safe_int(getattr(cfg, "weather_cache_ttl", 1800), 1800
 QWEN_VL_API_KEY: str = str(getattr(cfg, "qwen_vl_api_key", "") or "").strip()
 QWEN_VL_MODEL: str = getattr(cfg, "qwen_vl_model", "qwen-vl-plus")
 
-# === 智谱AI GLM ===
+# === 智谱AI GLM（视觉免费模型 glm-4v-flash，永久免费、并发限制10）===
 GLM_API_KEY: str = str(getattr(cfg, "glm_api_key", "") or "").strip()
 GLM_MODEL: str = getattr(cfg, "glm_model", "glm-4-flash")
-GLM_VISION_MODEL: str = getattr(cfg, "glm_vision_model", "glm-4.6v")
+GLM_VISION_MODEL: str = getattr(cfg, "glm_vision_model", "glm-4v-flash")
 
 # === MiMo TTS ===
 TTS_ENGINE: str = getattr(cfg, "tts_engine", "baidu")  # "baidu" / "mimo" / "volcano"

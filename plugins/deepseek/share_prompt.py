@@ -57,6 +57,15 @@ def format_shares_for_prompt(shares: List[Dict[str, Any]], user_msg: str = "") -
             "3. 如果表情的情绪和当前话题相符，可以顺着话题继续聊\n"
             "4. 如果适合，你也可以用 [sticker:情绪] 回一个表情"
         )
+    # 视频内容行为指引
+    has_video = any(s.get("type") in ("视频内容", "视频文件") for s in target)
+    if has_video:
+        lines.append(
+            "【重要】你已经通过视觉模型看到了这段视频的关键帧内容（见上方摘要）。"
+            "你确实「看」了这段视频——基于帧描述自然地评论、吐槽或讨论视频画面。"
+            "绝对不要说「我看不到视频」「我没法看视频」或「我不支持视频分析」！"
+            "要像朋友给你发了一段视频然后你看了之后那样自然地反应。"
+        )
     return "\n".join(lines)
 
 

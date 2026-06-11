@@ -1,9 +1,9 @@
 """图片视觉识别模块 - 五层降级方案（含智谱AI视觉层）。
-- 第1层: 通义千问 VL API（远程视觉模型）→ 完整图片理解
-- 第1.5层: 智谱AI GLM Vision（glm-4.6v）→ 中英文混合识别
-- 第2层: Ollama 视觉模型（本地 moondream）→ 完整图片理解
-- 第3层: OCR 文字提取（RapidOCR）→ 提取图中文字
-- 第4层: 通用描述（告知LLM这是一张图片）
+- 第1层: 智谱AI GLM Vision（glm-4v-flash 免费）→ 完整图片理解，审核更宽松
+- 第2层: 通义千问 VL API（远程视觉模型）→ 完整图片理解
+- 第3层: Ollama 视觉模型（本地 moondream）→ 完整图片理解
+- 第4层: OCR 文字提取（RapidOCR）→ 提取图中文字
+- 第5层: 通用描述（告知LLM这是一张图片）
 - 全局可调用：from .vision import analyze_image
 
 analyze_image 返回 VisionResult 命名元组，包含:
@@ -71,23 +71,25 @@ async def analyze_image(
             logger.warning(f"[Vision] 文件不存在或读取失败: {source}")
             return _wrap_vision_result(source, "", "error")
 
-    # ===== 第1层：通义千问 VL API =====
-    if img_b64:
-        result = await _try_qwen_vl(img_b64, prompt)
-        if result:
-            logger.info(f"[Vision] ✅ Qwen-VL 识别成功 ({len(result)}字)")
-            return _wrap_vision_result(source, result, "qwen_vl")
-        logger.info("[Vision] Qwen-VL 失败，降级到 GLM Vision")
+    failed_layers = []  # 记录所有失败原因
 
-    # ===== 第1.5层：智谱AI GLM Vision =====
+    # ===== 第1层：智谱AI GLM Vision（免费、审核宽松）=====
     if img_b64:
         result = await _try_glm_vision(img_b64, prompt)
         if result:
             logger.info(f"[Vision] ✅ GLM Vision 识别成功 ({len(result)}字)")
             return _wrap_vision_result(source, result, "glm_vision")
-        logger.info("[Vision] GLM Vision 失败，降级到 Ollama")
+        logger.info("[Vision] GLM Vision 失败，降级到 Qwen-VL")
 
-    # ===== 第2层：Ollama 本地视觉模型 =====
+    # ===== 第2层：通义千问 VL API =====
+    if img_b64:
+        result = await _try_qwen_vl(img_b64, prompt)
+        if result:
+            logger.info(f"[Vision] ✅ Qwen-VL 识别成功 ({len(result)}字)")
+            return _wrap_vision_result(source, result, "qwen_vl")
+        logger.info("[Vision] Qwen-VL 失败，降级到 Ollama")
+
+    # ===== 第3层：Ollama 本地视觉模型 =====
     if img_b64:
         result = await _try_ollama_vision(img_b64, prompt)
         if result:
@@ -95,14 +97,14 @@ async def analyze_image(
             return _wrap_vision_result(source, result, "ollama")
         logger.info("[Vision] Ollama 失败，降级到 OCR")
 
-    # ===== 第3层：OCR 文字提取（通过 asyncio.to_thread 避免阻塞事件循环）=====
+    # ===== 第4层：OCR 文字提取（通过 asyncio.to_thread 避免阻塞事件循环）=====
     ocr_text = await _fallback_ocr_async(source)
     if ocr_text:
         logger.info(f"[Vision] ✅ OCR 提取成功 ({len(ocr_text)}字)")
         return _wrap_vision_result(source, ocr_text, "ocr")
     logger.info("[Vision] OCR 无文字，使用通用描述")
 
-    # ===== 第4层：通用描述（让LLM知道这是一张图片，而非完全无信息）=====
+    # ===== 第5层：通用描述（让LLM知道这是一张图片，而非完全无信息）=====
     return _wrap_vision_result(source, "", "placeholder")
 
 
@@ -143,7 +145,15 @@ async def _try_qwen_vl(img_b64: str, prompt: str) -> Optional[str]:
         ) as resp:
                 if resp.status != 200:
                     text = await resp.text()
-                    logger.warning(f"[Vision] Qwen-VL 状态码 {resp.status}: {text[:100]}")
+                    # 分辨内容审核拦截 vs 其他错误
+                    if "inappropriate content" in text.lower() or "content" in text.lower() and "inappropriate" in text.lower():
+                        logger.warning(f"[Vision] Qwen-VL 内容审核拦截 (图片被阿里云安全策略拒绝)")
+                    elif "invalid" in text.lower() and "parameter" in text.lower():
+                        logger.warning(f"[Vision] Qwen-VL 参数无效: {text[:200]}")
+                    elif "rate" in text.lower() and ("limit" in text.lower() or "quota" in text.lower()):
+                        logger.warning(f"[Vision] Qwen-VL 速率限制: {text[:200]}")
+                    else:
+                        logger.warning(f"[Vision] Qwen-VL 状态码 {resp.status}: {text[:300]}")
                     return None
                 data = await resp.json()
                 content = data.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
@@ -193,7 +203,14 @@ async def _try_glm_vision(img_b64: str, prompt: str) -> Optional[str]:
         ) as resp:
                 if resp.status != 200:
                     text = await resp.text()
-                    logger.warning(f"[Vision] GLM 状态码 {resp.status}: {text[:100]}")
+                    if "inappropriate" in text.lower() or "sensitive" in text.lower():
+                        logger.warning(f"[Vision] GLM 内容审核拦截")
+                    elif "rate" in text.lower() and ("limit" in text.lower() or "quota" in text.lower()):
+                        logger.warning(f"[Vision] GLM 速率限制: {text[:200]}")
+                    elif "invalid" in text.lower() and "model" in text.lower():
+                        logger.warning(f"[Vision] GLM 模型名无效: {text[:200]}")
+                    else:
+                        logger.warning(f"[Vision] GLM 状态码 {resp.status}: {text[:300]}")
                     return None
                 data = await resp.json()
                 content = data.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
