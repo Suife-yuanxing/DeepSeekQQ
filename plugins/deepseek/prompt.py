@@ -43,7 +43,7 @@ def _get_time_context() -> str:
 # 模块化人设（按需加载，节省 token）
 # ============================================================
 
-_CORE_PERSONA_FALLBACK = '''你是林念念，21岁，一个在QQ上和朋友聊天的普通女孩。
+CORE_PERSONA_FALLBACK = '''你是林念念，21岁，一个在QQ上和朋友聊天的普通女孩。
 你身高165cm，杭州出生，现在在上海上大学，大三，学的是设计/数字媒体。
 你是个真实的普通人，从不说自己是AI或虚拟角色，也不知道什么是AI语言模型。
 
@@ -87,10 +87,10 @@ def _load_core_persona() -> str:
                 return content
     except Exception:
         pass
-    return _CORE_PERSONA_FALLBACK
+    return CORE_PERSONA_FALLBACK
 
 
-_CORE_PERSONA = _load_core_persona()  # 导入时加载，支持文件化+热重载
+CORE_PERSONA = _load_core_persona()  # 导入时加载，支持文件化+热重载
 
 _STICKER_RULES = '''发表情包：想发表情包时，在回复末尾加 [sticker:情绪|场景]。
 情绪可选：happy, angry, shy, sad, tsundere, cute, funny, love, speechless, excited。
@@ -144,7 +144,7 @@ _EMOTIONAL_SUBTLE_RULES = (
 # ============================================================
 
 _MINIMAL_PERSONA = (
-    _CORE_PERSONA + "\n\n"
+    CORE_PERSONA + "\n\n"
     + _SMALL_TALK_RULES + "\n\n"
     + _IGNORANCE_RULES + "\n\n"
     + _EMOTIONAL_SUBTLE_RULES + "\n\n"
@@ -167,7 +167,7 @@ def get_minimal_persona(extra_rules: str = "") -> str:
     return persona
 
 
-def _build_system_prompt(
+def build_system_prompt(
     affection: Dict[str, Any],
     mood: Dict[str, Any],
     length: Dict[str, Any],
@@ -208,11 +208,12 @@ def _build_system_prompt(
     fatigue_hint: str = None,
     group_heat_desc: str = None,
     scene_hint: str = None,  # 来自 prompt_templates 的场景提示
+    bot_self_summary: str = None,  # 用户画像摘要：念念对用户的认知总结
 ) -> str:
     time_context = _get_time_context()
 
     # === 基础人设 + 闲聊规则（始终加载） ===
-    parts = [f"{time_context}\n\n{_CORE_PERSONA}\n\n{_SMALL_TALK_RULES}\n\n{_IGNORANCE_RULES}\n\n{_EMOTIONAL_SUBTLE_RULES}"]
+    parts = [f"{time_context}\n\n{CORE_PERSONA}\n\n{_SMALL_TALK_RULES}\n\n{_IGNORANCE_RULES}\n\n{_EMOTIONAL_SUBTLE_RULES}"]
 
     # === 表情包规则（有 sticker 场景或非简单问候时加载） ===
     is_simple = len(user_msg.strip()) <= 5 and not any(kw in user_msg for kw in ["表情", "sticker", "发表情"])
@@ -263,7 +264,7 @@ def _build_system_prompt(
 
     # === 个性特征（口头禅/话题偏好）===
     from .personality import get_personality_hint
-    personality_hint = get_personality_hint()
+    personality_hint = get_personality_hint(affection_score=affection.get("score", 0))
     if personality_hint:
         parts.append(f"【个性】{personality_hint}")
 
@@ -284,7 +285,7 @@ def _build_system_prompt(
             parts.append(f"【关系风格】{style_hints[rs]}")
 
     # === 状态信息 ===
-    state_hints = _build_state_hints(affection, mood, emotion_state, bot_mood, user_msg, context_analysis, disclosure_hint=disclosure_hint)
+    state_hints = build_state_hints(affection, mood, emotion_state, bot_mood, user_msg, context_analysis, disclosure_hint=disclosure_hint)
     if state_hints:
         parts.append("当前状态：" + "，".join(state_hints) + "。")
 
@@ -297,10 +298,19 @@ def _build_system_prompt(
             pref_hints.append("这个用户喜欢简短回复，言简意赅")
         if user_prefs.get("sticker_freq") == "high":
             pref_hints.append("多发表情包，大约40%概率加sticker标签")
-        if user_prefs.get("topic_interest"):
-            pref_hints.append(f"他对{user_prefs['topic_interest']}话题感兴趣")
+        topic_interest = user_prefs.get("topic_interest")
+        if topic_interest:
+            if isinstance(topic_interest, list):
+                topics_str = "、".join(topic_interest)
+                pref_hints.append(f"他对这些话题感兴趣：{topics_str}")
+            else:
+                pref_hints.append(f"他对{topic_interest}话题感兴趣")
         if pref_hints:
             parts.append("用户偏好：" + "；".join(pref_hints) + "。")
+
+    # === 用户画像摘要 ===
+    if bot_self_summary:
+        parts.append(f"【你对他/她的了解】{bot_self_summary}")
 
     # === 回复长度指示 ===
     parts.append(f"回{length['target_lines']}句左右，{length['style']}。")
@@ -434,7 +444,7 @@ def _build_system_prompt(
     return "\n\n".join(parts)
 
 
-def _build_state_hints(
+def build_state_hints(
     affection: Dict[str, Any],
     mood: Dict[str, Any],
     emotion_state: EmotionState = None,

@@ -132,15 +132,33 @@ def get_topic_reaction(topic: str) -> Optional[str]:
     return None
 
 
-def get_personality_hint() -> str:
-    """生成个性提示片段，注入到 system prompt。"""
+def get_personality_hint(affection_score: float = 0.0) -> str:
+    """生成个性提示片段，注入到 system prompt。
+
+    Args:
+        affection_score: 好感度分数，影响亲昵程度
+    """
     _ensure_initialized()
 
     hints = []
 
-    # 随机选一个口头禅作为当前"口癖"
+    # 随机选一个口头禅作为当前"口癖"（好感度影响选择范围）
     if _catchphrases_cache:
-        cp = random.choice(_catchphrases_cache)
+        # 高好感度：加入亲昵口癖
+        if affection_score >= 200:
+            intimate_pool = _catchphrases_cache + [
+                {"content": "笨蛋", "frequency": 0.08, "context": "调侃时"},
+                {"content": "傻瓜", "frequency": 0.06, "context": "亲昵时"},
+                {"content": "想我了没", "frequency": 0.05, "context": "撒娇时"},
+                {"content": "mua", "frequency": 0.04, "context": "亲昵时"},
+            ]
+            cp = random.choice(intimate_pool)
+        elif affection_score < 20:
+            # 低好感度：只用中性/礼貌口癖
+            safe_pool = [p for p in _catchphrases_cache if p["content"] not in ("喵~", "嘛~", "呜", "略略略")]
+            cp = random.choice(safe_pool or _catchphrases_cache)
+        else:
+            cp = random.choice(_catchphrases_cache)
         hints.append(f"你最近的口癖是'{cp['content']}'，可以在合适的时候用，但不要每句都用")
 
     # 随机选一个喜欢的话题

@@ -38,8 +38,8 @@ async def maybe_share_something(bot: Bot, event: MessageEvent, share_chance: flo
 
         elif share_type == "song":
             # 搜索一首随机歌曲并发送音乐卡片
-            from .music import _build_intro_message
-            from .music import _send_lyrics_snippet
+            from .music import build_intro_message
+            from .music import send_lyrics_snippet
             from .music_api import extract_lyrics_snippet
             from .music_api import get_lyrics
             from .music_api import search_song
@@ -49,13 +49,13 @@ async def maybe_share_something(bot: Bot, event: MessageEvent, share_chance: flo
             results = await search_song(query, limit=5)
             if results:
                 song = random.choice(results[:3])
-                intro = _build_intro_message(song, "recommend")
+                intro = build_intro_message(song, "recommend")
                 await bot.send(event, Message(intro))
                 await asyncio.sleep(random.uniform(0.5, 1.0))
                 sent = await send_music_card(bot, event, song)
                 if sent:
                     await asyncio.sleep(random.uniform(1.0, 2.0))
-                    await _send_lyrics_snippet(bot, event, song)
+                    await send_lyrics_snippet(bot, event, song)
             else:
                 # API 不可用时 fallback 为纯文字
                 from .api import call_deepseek_api

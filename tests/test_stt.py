@@ -20,43 +20,43 @@ class TestExtractVoiceUrl:
     """测试语音 URL 提取。"""
 
     def test_extract_from_record_segment(self):
-        from plugins.deepseek.stt import _extract_voice_url
+        from plugins.deepseek.stt import extract_voice_url
         event = MagicMock()
         seg = MagicMock()
         seg.type = "record"
         seg.data = {"url": "https://example.com/voice.amr"}
         event.get_message.return_value = [seg]
-        url = _extract_voice_url(event)
+        url = extract_voice_url(event)
         assert url == "https://example.com/voice.amr"
 
     def test_extract_from_file_field(self):
-        from plugins.deepseek.stt import _extract_voice_url
+        from plugins.deepseek.stt import extract_voice_url
         event = MagicMock()
         seg = MagicMock()
         seg.type = "record"
         seg.data = {"url": "", "file": "https://example.com/voice.amr"}
         event.get_message.return_value = [seg]
-        url = _extract_voice_url(event)
+        url = extract_voice_url(event)
         assert url == "https://example.com/voice.amr"
 
     def test_no_voice_returns_none(self):
-        from plugins.deepseek.stt import _extract_voice_url
+        from plugins.deepseek.stt import extract_voice_url
         event = MagicMock()
         seg = MagicMock()
         seg.type = "text"
         seg.data = {"text": "hello"}
         event.get_message.return_value = [seg]
-        url = _extract_voice_url(event)
+        url = extract_voice_url(event)
         assert url is None
 
     def test_empty_url_returns_none(self):
-        from plugins.deepseek.stt import _extract_voice_url
+        from plugins.deepseek.stt import extract_voice_url
         event = MagicMock()
         seg = MagicMock()
         seg.type = "record"
         seg.data = {"url": "", "file": ""}
         event.get_message.return_value = [seg]
-        url = _extract_voice_url(event)
+        url = extract_voice_url(event)
         assert url is None
 
 
@@ -175,7 +175,7 @@ class TestRecognizeVoice:
         seg.data = {"url": "https://example.com/voice.amr"}
         event.get_message.return_value = [seg]
 
-        with patch("plugins.deepseek.stt._download_voice", return_value="/tmp/voice.amr") as mock_dl, \
+        with patch("plugins.deepseek.stt.download_voice", return_value="/tmp/voice.amr") as mock_dl, \
              patch("plugins.deepseek.stt._convert_to_pcm", return_value="/tmp/voice.pcm") as mock_pcm, \
              patch("plugins.deepseek.stt._call_baidu_stt", return_value="你好世界") as mock_stt, \
              patch("asyncio.create_task"):
@@ -195,7 +195,7 @@ class TestRecognizeVoice:
         seg.data = {"url": "https://example.com/voice.amr"}
         event.get_message.return_value = [seg]
 
-        with patch("plugins.deepseek.stt._download_voice", return_value=None):
+        with patch("plugins.deepseek.stt.download_voice", return_value=None):
             result = await recognize_voice(event)
         assert result is None
 

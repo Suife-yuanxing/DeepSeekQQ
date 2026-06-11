@@ -146,8 +146,8 @@ class TestPromptInjection:
 
     def test_emotion_memory_hint_in_prompt(self):
         """bot_emotion_memory_hint 应注入到 system prompt 中。"""
-        from plugins.deepseek.prompt import _build_system_prompt
-        prompt = _build_system_prompt(
+        from plugins.deepseek.prompt import build_system_prompt
+        prompt = build_system_prompt(
             affection={"score": 100, "total_chats": 50, "streak_days": 3},
             mood={"dominant": "平静", "score": 50},
             length={"target_lines": 2, "style": "正常"},
@@ -159,8 +159,8 @@ class TestPromptInjection:
 
     def test_no_emotion_memory_when_empty(self):
         """无 hint 时不注入。"""
-        from plugins.deepseek.prompt import _build_system_prompt
-        prompt = _build_system_prompt(
+        from plugins.deepseek.prompt import build_system_prompt
+        prompt = build_system_prompt(
             affection={"score": 100, "total_chats": 50, "streak_days": 3},
             mood={"dominant": "平静", "score": 50},
             length={"target_lines": 2, "style": "正常"},

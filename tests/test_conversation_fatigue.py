@@ -198,8 +198,8 @@ class TestPromptInjection:
     """测试 prompt 注入。"""
 
     def test_fatigue_hint_in_prompt(self):
-        from plugins.deepseek.prompt import _build_system_prompt
-        prompt = _build_system_prompt(
+        from plugins.deepseek.prompt import build_system_prompt
+        prompt = build_system_prompt(
             affection={"score": 100, "total_chats": 50, "streak_days": 3},
             mood={"dominant": "平静", "score": 50},
             length={"target_lines": 2, "style": "正常"},
@@ -210,8 +210,8 @@ class TestPromptInjection:
         assert "聊累了" in prompt
 
     def test_no_fatigue_hint_when_empty(self):
-        from plugins.deepseek.prompt import _build_system_prompt
-        prompt = _build_system_prompt(
+        from plugins.deepseek.prompt import build_system_prompt
+        prompt = build_system_prompt(
             affection={"score": 100, "total_chats": 50, "streak_days": 3},
             mood={"dominant": "平静", "score": 50},
             length={"target_lines": 2, "style": "正常"},

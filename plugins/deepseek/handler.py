@@ -53,7 +53,7 @@ from .handler_humanize import introduce_mind_change
 from .handler_humanize import introduce_typo
 from .handler_humanize import introduce_uncertainty
 from .handler_humanize import maybe_add_kaomoji
-from .image_gen import _extract_draw_prompt
+from .image_gen import extract_draw_prompt
 from .image_gen import generate_image
 from .image_gen import should_generate_image
 from .media import build_rich_message
@@ -65,9 +65,9 @@ from .memory import recover_session_context
 from .memory import save_and_get_context_with_history
 from .memory import save_reply
 from .plugin_manager import get_enabled_plugins
-from .prompt import _build_system_prompt
+from .prompt import build_system_prompt
 from .prompt import estimate_reply_length
-from .reminder import _generate_reminder_reply
+from .reminder import generate_reminder_reply
 from .reminder import cancel_reminder_by_id
 from .reminder import create_reminder
 from .reminder import get_pending_reminders_context
@@ -98,7 +98,8 @@ from .voice import send_greeting_voice
 from .voice import send_voice
 from .voice import should_send_voice
 from .voice import generate_voice_file
-from .voice import _send_voice_file
+from .voice import send_voice_file
+from .voice import get_voice_tracker
 from ._audio_utils import validate_file
 from .voice_call import detect_voice_intent
 from .voice_call import enter_voice_mode
@@ -111,6 +112,7 @@ from .mcp_client import build_tools_prompt
 from .mcp_client import call_tool as mcp_call_tool
 from .mcp_client import parse_tool_call
 from .mcp_client import remove_tool_call
+from .time_validator import validate_time_in_reply
 
 # 向后兼容：现有测试引用的内部函数名
 _parse_target_lines = parse_target_lines
@@ -173,7 +175,7 @@ def classify_message_complexity(raw_msg: str, has_image: bool, has_voice: bool) 
 # 已读不回感知
 # ============================================================
 
-def _build_reply_gap_hint(gap_seconds: float, affection: dict, schedule, bot_mood: str, current_hour: int = -1) -> str:
+def build_reply_gap_hint(gap_seconds: float, affection: dict, schedule, bot_mood: str, current_hour: int = -1) -> str:
     """根据 bot 最后回复到用户当前消息的时间间隔，生成已读不回提示。"""
     import random
 
@@ -323,6 +325,8 @@ class ChatContext:
     # 对话疲劳感知
     fatigue_level: int = 0
     fatigue_hint: str = ""
+    # 用户画像摘要（念念对用户的认识总结）
+    user_profile_summary: str = ""
     # 结构化天气数据（供行为引擎使用，避免 regex 解析格式化字符串）
     _weather_info: Any = None
     # 场景路由结果（供 prompt_templates 使用）
@@ -386,31 +390,41 @@ async def _stage_voice(ctx: ChatContext) -> Optional[str]:
     if not STT_ENABLED:
         return None
     has_voice = any(seg.type == "record" for seg in ctx.event.get_message())
-    if has_voice and not ctx.raw_msg:
-        recognized = await recognize_voice(ctx.event)
-        if recognized:
-            ctx.raw_msg = recognized
-            logger.info(f"[STT] 语音识别结果: {ctx.raw_msg[:50]}")
+    if has_voice:
+        # 通知语音上下文追踪器：用户发了语音
+        tracker = get_voice_tracker()
+        tracker.user_sent_voice_message(ctx.user_id)
 
-            # 语音情绪识别（P1）：异步提取音频特征
-            from .stt import _download_voice
-            from .stt import _extract_voice_url
-            voice_url = _extract_voice_url(ctx.event)
-            if voice_url:
-                local_path = await _download_voice(voice_url)
-                if local_path:
-                    from .voice_emotion import extract_voice_features
-                    features = await extract_voice_features(local_path)
-                    if features:
-                        ctx.voice_features = features
-                        logger.info(f"[语音情绪] {features.get('estimated_emotion', '未知')} | 音量:{features.get('rms_volume', 0):.0f}")
-        else:
-            logger.info("[STT] 语音识别失败或无内容")
-            try:
-                await ctx.bot.send(ctx.event, make_reply(ctx.event, Message("听不太清楚呢...能打字告诉我吗？")))
-            except Exception:
-                pass
-            return _SKIP
+        if not ctx.raw_msg:
+            recognized = await recognize_voice(ctx.event)
+            if recognized:
+                ctx.raw_msg = recognized
+                logger.info(f"[STT] 语音识别结果: {ctx.raw_msg[:50]}")
+
+                # 语音情绪识别（P1）：异步提取音频特征
+                from .stt import download_voice
+                from .stt import extract_voice_url
+                voice_url = extract_voice_url(ctx.event)
+                if voice_url:
+                    local_path = await download_voice(voice_url)
+                    if local_path:
+                        from .voice_emotion import extract_voice_features
+                        features = await extract_voice_features(local_path)
+                        if features:
+                            ctx.voice_features = features
+                            logger.info(f"[语音情绪] {features.get('estimated_emotion', '未知')} | 音量:{features.get('rms_volume', 0):.0f}")
+            else:
+                logger.info("[STT] 语音识别失败或无内容")
+                try:
+                    await ctx.bot.send(ctx.event, make_reply(ctx.event, Message("听不太清楚呢...能打字告诉我吗？")))
+                except Exception:
+                    pass
+                return _SKIP
+    # 检测用户文字中是否提及语音相关词（用于上下文追踪）
+    voice_mention_kw = ["发语音", "语音", "说话", "听听", "打电话", "讲话", "讲讲话"]
+    if any(kw in ctx.raw_msg for kw in voice_mention_kw):
+        tracker = get_voice_tracker()
+        tracker.user_mentioned_voice(ctx.user_id)
     return None
 
 
@@ -815,7 +829,8 @@ def _run_sync_computations(ctx: ChatContext) -> str:
         user_city = getattr(ctx._weather_info, '_city', "") or ""
     schedule_period = ctx.schedule.period if ctx.schedule else "active"
     ctx.behavior_hint = get_behavior_hint(
-        weather_condition, weather_temp, schedule_period, bot_mood_dominant, city=user_city
+        weather_condition, weather_temp, schedule_period, bot_mood_dominant, city=user_city,
+        affection_score=ctx.affection.get("score", 0),
     ) or ""
 
     return bot_mood_dominant
@@ -843,6 +858,9 @@ async def _run_batch2_queries(ctx: ChatContext, bot_mood_dominant: str):
         from .personalization import get_personalization_hints
         profile = await get_or_create_user_profile(ctx.user_id)
         custom_nickname = profile.get("nickname", "") if profile else ""
+        # 读取用户画像摘要（bot 对自己的了解）
+        if profile:
+            ctx.user_profile_summary = profile.get("bot_self_summary", "") or ""
         affection_score = ctx.affection.get("score", 0)
         relationship_style = ctx.user_prefs.get("relationship_style", "")
         total_chats = ctx.affection.get("total_chats", 0)
@@ -892,7 +910,7 @@ async def _run_fatigue_and_gap(ctx: ChatContext, bot_mood_dominant: str):
     last_bot_ts = await get_last_bot_reply_time(ctx.session_id)
     if last_bot_ts > 0:
         gap_seconds = _time.time() - last_bot_ts
-        ctx.reply_gap_hint = _build_reply_gap_hint(
+        ctx.reply_gap_hint = build_reply_gap_hint(
             gap_seconds, ctx.affection, ctx.schedule, bot_mood_dominant
         )
 
@@ -938,7 +956,7 @@ async def _stage_reminder(ctx: ChatContext) -> Optional[str]:
         if id_match:
             reply_text = await cancel_reminder_by_id(ctx.user_id, int(id_match.group(1)))
         else:
-            reply_text = await _generate_reminder_reply("no_reminder")
+            reply_text = await generate_reminder_reply("no_reminder")
         await ctx.bot.send(ctx.event, make_reply(ctx.event, Message(reply_text)))
         return _SKIP
     return None
@@ -959,13 +977,13 @@ async def _stage_phone_direct(ctx: ChatContext) -> Optional[str]:
     避免 LLM 编造屏幕内容（幻觉），直接调用 MobileRun Portal 工具。
     复杂指令（如"看看微信谁给我发了消息"）仍走 LLM + 工具调用。
     """
-    from .mcp_client import _check_phone_permission, _ensure_phone_bridge
+    from .mcp_client import check_phone_permission, ensure_phone_bridge
 
     # 权限和在线检查
-    if not _check_phone_permission(ctx.user_id):
+    if not check_phone_permission(ctx.user_id):
         logger.info(f"[phone_direct] 权限不足 user={ctx.user_id}")
         return None
-    bridge = await _ensure_phone_bridge()
+    bridge = await ensure_phone_bridge()
     if not bridge:
         logger.info("[phone_direct] 手机不在线，跳过")
         return None
@@ -1101,7 +1119,7 @@ async def _stage_llm(ctx: ChatContext) -> Optional[str]:
 
         length_info = {"target_lines": 4, "style": "专业分析+个性点评"}
         search_ctx = format_search_for_prompt(ctx.search_result) if ctx.search_result else ""
-        sys_prompt = _build_system_prompt(
+        sys_prompt = build_system_prompt(
             ctx.affection, ctx.mood, length_info, ctx.relevant_tags, shares_now, ctx.raw_msg,
             context_analysis=ctx.analysis.context, emotion_state=ctx.analysis.emotion,
             search_context=search_ctx, reminder_context=ctx.reminder_context,
@@ -1133,6 +1151,7 @@ async def _stage_llm(ctx: ChatContext) -> Optional[str]:
             fatigue_hint=ctx.fatigue_hint or None,
             group_heat_desc=ctx.group_heat_description or None,
             scene_hint=scene_hint or None,
+            bot_self_summary=ctx.user_profile_summary or None,
         )
         sys_prompt += "\n回复风格：专业分析+个性点评。分析部分结构化、有深度，点评部分保持你念念的语气。绝对禁止括号动作描写。"
         messages = [{"role": "system", "content": sys_prompt}]
@@ -1147,7 +1166,8 @@ async def _stage_llm(ctx: ChatContext) -> Optional[str]:
         from .behavior_engine import get_verbosity_modifier
         schedule_period = ctx.schedule.period if ctx.schedule else "active"
         bot_mood_dom = ctx.bot_mood_result.get("dominant", "平静") if ctx.bot_mood_result else "平静"
-        verbosity = get_verbosity_modifier(schedule_period, bot_mood_dom)
+        verbosity = get_verbosity_modifier(schedule_period, bot_mood_dom,
+                                           affection_score=ctx.affection.get("score", 0))
         length_info["target_lines"] = max(1, round(length_info["target_lines"] * verbosity))
         ep = ctx.emotion_params
         if ep["temperature"] >= 1.0:
@@ -1157,7 +1177,7 @@ async def _stage_llm(ctx: ChatContext) -> Optional[str]:
         elif ep["temperature"] <= 0.7:
             length_info["style"] = "温柔低落"
         search_ctx = format_search_for_prompt(ctx.search_result) if ctx.search_result else ""
-        sys_prompt = _build_system_prompt(
+        sys_prompt = build_system_prompt(
             ctx.affection, ctx.mood, length_info, ctx.relevant_tags, shares_now, ctx.raw_msg,
             context_analysis=ctx.analysis.context, emotion_state=ctx.analysis.emotion,
             search_context=search_ctx, reminder_context=ctx.reminder_context,
@@ -1189,6 +1209,7 @@ async def _stage_llm(ctx: ChatContext) -> Optional[str]:
             fatigue_hint=ctx.fatigue_hint or None,
             group_heat_desc=ctx.group_heat_description or None,
             scene_hint=scene_hint or None,
+            bot_self_summary=ctx.user_profile_summary or None,
         )
 
         # 语音通话模式：注入口语化 prompt
@@ -1210,8 +1231,8 @@ async def _stage_llm(ctx: ChatContext) -> Optional[str]:
         import re as _re
         _phone_kw = ['截图', '截屏', '屏幕', '打开', '点击', '滑动', '输入', '手机', '桌面', '返回', '微信', '抖音']
         if any(kw in ctx.raw_msg for kw in _phone_kw):
-            from .mcp_client import _check_phone_permission, _ensure_phone_bridge as _ensure_bridge
-            if _check_phone_permission(ctx.user_id):
+            from .mcp_client import check_phone_permission, ensure_phone_bridge as _ensure_bridge
+            if check_phone_permission(ctx.user_id):
                 _bridge = await _ensure_bridge()
                 if _bridge:
                     sys_prompt += (
@@ -1414,7 +1435,7 @@ async def _stage_image_gen(ctx: ChatContext) -> Optional[str]:
     if not img_config:
         return None
     if img_config["id"] == "draw":
-        prompt = _extract_draw_prompt(ctx.raw_msg)
+        prompt = extract_draw_prompt(ctx.raw_msg)
     else:
         prompt = img_config["prompt"]
     ctx.image_path = await generate_image(prompt)
@@ -1447,17 +1468,23 @@ async def _stage_humanize(ctx: ChatContext) -> Optional[str]:
     emotion_a = ctx.analysis.emotion.arousal if ctx.analysis else 0.5
     emotion_dom = ctx.analysis.emotion.dominant if ctx.analysis and ctx.analysis.emotion.confidence >= 0.4 else "平静"
 
+    # 好感度分数
+    aff_score = ctx.affection.get("score", 0)
+
     # 传入用户消息和情绪，启用上下文感知反应词
     text = maybe_add_reaction_prefix(
         text, emotion_v,
         user_message=ctx.raw_msg,
-        emotion=emotion_dom
+        emotion=emotion_dom,
+        affection_score=aff_score,
     )
 
-    # 原有人性化处理
-    if random.random() < 0.03:
+    # 原有人性化处理 + 好感度修正：越熟越随意
+    typo_chance = 0.025 if aff_score >= 200 else (0.005 if aff_score < 20 else 0.03)
+    if random.random() < typo_chance:
         text = introduce_typo(text)
-    if random.random() < 0.02:
+    mind_change_chance = 0.025 if aff_score >= 200 else (0.005 if aff_score < 20 else 0.02)
+    if random.random() < mind_change_chance:
         text = introduce_mind_change(text)
     if random.random() < 0.01 and len(text) > 10:
         text = introduce_uncertainty(text)
@@ -1500,6 +1527,9 @@ async def _stage_post(ctx: ChatContext) -> Optional[str]:
             fallback_chance=fallback_chance,
         )
 
+    # 时间自检：修正 LLM 输出中不合理的时间表达
+    clean_text = validate_time_in_reply(clean_text)
+
     text_for_links, reply_urls = split_reply_and_links(clean_text)
     search_items = extract_shareable_from_search(ctx.search_result) if ctx.search_result else []
 
@@ -1521,7 +1551,16 @@ async def _stage_post(ctx: ChatContext) -> Optional[str]:
         "is_night": ctx.schedule.period == "sleeping" if ctx.schedule else False,
     }
 
-    send_as_voice = should_send_voice(ctx.raw_msg, clean_text, ctx.recent_memories, voice_mode=ctx.voice_mode)
+    bot_mood_dom = ctx.analysis.emotion.dominant if ctx.analysis and ctx.analysis.emotion.confidence >= 0.4 else "平静"
+    voice_tracker = get_voice_tracker()
+    send_as_voice = should_send_voice(
+        ctx.raw_msg, clean_text, ctx.recent_memories,
+        voice_mode=ctx.voice_mode,
+        affection_score=ctx.affection.get("score", 0),
+        bot_mood_dominant=bot_mood_dom,
+        voice_tracker=voice_tracker,
+        user_id=ctx.user_id,
+    )
     voice_max_len = 200 if ctx.voice_mode else 0
 
     # === 发消息前取消"正在输入"状态（更自然：打完字→取消输入→发送）===
@@ -1533,7 +1572,8 @@ async def _stage_post(ctx: ChatContext) -> Optional[str]:
         voice_path = await generate_voice_file(clean_text, emotion=voice_emotion, max_length=200)
         if voice_path and validate_file(voice_path, 100):
             logger.info(f"[语音通话] 发送语音: {clean_text[:30]}...")
-            await _send_voice_file(ctx.bot, ctx.event, voice_path)
+            await send_voice_file(ctx.bot, ctx.event, voice_path)
+            voice_tracker.voice_sent(ctx.user_id)
             # 语音模式下纯语音，不发送文字/链接/表情包/图片
             return
         else:
@@ -1543,6 +1583,7 @@ async def _stage_post(ctx: ChatContext) -> Optional[str]:
         logger.warning(f"[决策] 上下文判断发语音，跳过文字: {clean_text[:30]}...")
         voice_emotion = ctx.analysis.emotion.dominant if ctx.analysis and ctx.analysis.emotion.confidence >= 0.4 else None
         await send_voice(ctx.bot, ctx.event, clean_text, emotion=voice_emotion, max_length=voice_max_len)
+        voice_tracker.voice_sent(ctx.user_id)
         if reply_urls or search_items:
             rich_msg = build_rich_message("", reply_urls, search_items, show_links=ctx.is_explicit_search)
             if rich_msg:
@@ -1562,9 +1603,9 @@ async def _stage_post(ctx: ChatContext) -> Optional[str]:
                     # 首条：完整延迟（阅读+思考+打字）
                     await asyncio.sleep(calc_message_delay(part, typing_ctx))
                 else:
-                    # 追加：burst 延迟（2~5秒，模拟打完又想到要补）
+                    # 追加：burst 延迟（2.5~6秒，模拟打完又想到要补）
                     typing_ctx["is_first_reply"] = False
-                    await asyncio.sleep(random.uniform(2.0, 5.0))
+                    await asyncio.sleep(random.uniform(2.5, 6.0))
                 if not first_sent and use_quote:
                     await ctx.bot.send(ctx.event, make_quote_reply(ctx.event, Message(part)))
                     first_sent = True
@@ -1578,9 +1619,9 @@ async def _stage_post(ctx: ChatContext) -> Optional[str]:
                     # 首条：完整延迟（阅读+思考+打字）
                     await asyncio.sleep(calc_message_delay(part, typing_ctx))
                 else:
-                    # 追加：burst 延迟（2~5秒）
+                    # 追加：burst 延迟（2.5~6秒）
                     typing_ctx["is_first_reply"] = False
-                    await asyncio.sleep(random.uniform(2.0, 5.0))
+                    await asyncio.sleep(random.uniform(2.5, 6.0))
                 if not first_sent and use_quote:
                     await ctx.bot.send(ctx.event, make_quote_reply(ctx.event, Message(part)))
                     first_sent = True

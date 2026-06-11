@@ -340,81 +340,9 @@ class TestToolRegistry:
             assert "handler" in tool
             assert callable(tool["handler"])
 
-
 # ============================================================
-# 4. ADB Proxy 端点测试
+# 4. ADB Proxy 端点测试 — 已移除（adb_proxy.py 已废弃，MobileRun Portal 替代）
 # ============================================================
-
-class TestADBProxyEndpoints:
-    """ADB 代理 HTTP 端点测试。"""
-
-    def test_status_endpoint(self):
-        """/status 返回设备列表。"""
-        with patch("subprocess.run") as mock_run:
-            mock_run.return_value = types.SimpleNamespace(
-                returncode=0,
-                stdout="List of devices attached\nemulator-5554\tdevice\n"
-            )
-            from adb_proxy import ADBHandler, HTTPServer
-            # 通过构造请求参数测试
-            from urllib.parse import ParseResult
-            parsed = ParseResult(
-                scheme="", netloc="", path="/status", params="", query="", fragment=""
-            )
-            from urllib.parse import parse_qs
-            params = parse_qs("")
-
-            # 模拟 handler
-            handler = MagicMock(spec=ADBHandler)
-            handler.path = "/status"
-            handler.send_json = MagicMock()
-
-            # 用真实函数测试
-            def mock_send_json(data, status=200):
-                assert data.get("success") is True
-                assert "devices" in data
-
-            # 无法直接测试 HTTP 端点但可以测试 run_adb
-            ok, out = mock_run.return_value.returncode == 0, mock_run.return_value.stdout
-            assert ok
-            assert "emulator-5554" in out
-
-    def test_unknown_endpoint(self):
-        """未知端点返回 404。"""
-        from adb_proxy import ADBHandler
-        handler = MagicMock(spec=ADBHandler)
-        handler.path = "/unknown"
-        handler.send_json = MagicMock()
-
-        def mock_send_json(data, status=200):
-            pass  # 测试路由
-
-        # 预期未知路径会被识别
-        from urllib.parse import urlparse
-        parsed = urlparse("http://localhost:9000/unknown")
-        assert parsed.path == "/unknown"
-
-    @pytest.mark.parametrize("x,y,expected", [
-        ("100", "200", True),
-        ("abc", "200", False),  # 非法坐标
-        ("", "200", False),
-    ])
-    def test_tap_validation(self, x, y, expected):
-        """tap 端点参数校验。"""
-        if expected:
-            assert x.isdigit() and y.isdigit()
-        else:
-            assert not (x.isdigit() and y.isdigit())
-
-    def test_screenshot_base64_format(self):
-        """截屏返回的 base64 应该是纯 ASCII 字符串。"""
-        import base64
-        # 验证 base64 编解码闭环
-        test_data = b"\x89PNG\r\n\x1a\n" + b"\x00" * 10
-        encoded = base64.b64encode(test_data).decode("utf-8")
-        assert isinstance(encoded, str)
-        assert base64.b64decode(encoded) == test_data
-
 
 # ============================================================
 # 5. PhoneRelay 协议测试
@@ -524,17 +452,17 @@ class TestPhoneRelay:
 class TestPhoneHandlers:
     """手机工具 handler 函数测试。"""
 
-    def test_check_phone_permission_returns_false_by_default(self):
+    def testcheck_phone_permission_returns_false_by_default(self):
         """默认情况下无权限。"""
-        from plugins.deepseek.mcp_client import _check_phone_permission
-        assert _check_phone_permission("random_user") is False
+        from plugins.deepseek.mcp_client import check_phone_permission
+        assert check_phone_permission("random_user") is False
 
     def test_phone_handlers_return_none_no_permission(self):
         """无权限时 handler 返回 None。"""
         from plugins.deepseek.mcp_client import _phone_screenshot_handler
         import asyncio
         # 无权限应该返回 None（不做任何操作）
-        # 注意：这取决于 _check_phone_permission 的实现
+        # 注意：这取决于 check_phone_permission 的实现
         # 默认配置下 IPHONE_WS_USER 可能为空
         pass
 

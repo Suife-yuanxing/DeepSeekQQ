@@ -136,7 +136,7 @@ def should_generate_image(user_msg: str) -> Optional[Dict[str, Any]]:
     return None
 
 
-def _extract_draw_prompt(user_msg: str) -> str:
+def extract_draw_prompt(user_msg: str) -> str:
     """从用户消息中提取绘画描述，统一追加写实风格和角色一致性。"""
     cleaned = user_msg
     for kw in ["帮我画", "画一个", "画个", "画张", "画", "生成图片", "生成一张"]:

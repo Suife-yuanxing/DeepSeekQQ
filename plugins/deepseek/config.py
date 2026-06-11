@@ -218,7 +218,7 @@ QWEN_VL_API_KEY: str = str(getattr(cfg, "qwen_vl_api_key", "") or "").strip()
 QWEN_VL_MODEL: str = getattr(cfg, "qwen_vl_model", "qwen-vl-plus")
 
 # === 智谱AI GLM ===
-GLM_API_KEY: str = str(getattr(cfg, "glm_api_key", "") or "").strip() or "4ff6eccadd024d7692d42a1e7764ca7b.4QjTXBaiYvqnVTkL"
+GLM_API_KEY: str = str(getattr(cfg, "glm_api_key", "") or "").strip()
 GLM_MODEL: str = getattr(cfg, "glm_model", "glm-4-flash")
 GLM_VISION_MODEL: str = getattr(cfg, "glm_vision_model", "glm-4.6v")
 

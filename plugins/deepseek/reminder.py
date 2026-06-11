@@ -200,7 +200,7 @@ async def parse_reminder(user_msg: str) -> ReminderParseResult:
 # 提醒管理
 # ============================================================
 
-async def _generate_reminder_reply(scene: str, **kwargs) -> str:
+async def generate_reminder_reply(scene: str, **kwargs) -> str:
     """用 LLM 基于念念人设生成个性化的提醒相关回复。"""
     try:
         if scene == "create_success":
@@ -270,7 +270,7 @@ async def create_reminder(user_id: str, session_id: str, user_msg: str) -> str:
     parsed = await parse_reminder(user_msg)
 
     if not parsed.success:
-        return await _generate_reminder_reply("create_fail", error=parsed.error)
+        return await generate_reminder_reply("create_fail", error=parsed.error)
 
     reminder_id = await save_reminder(
         user_id=user_id,
@@ -284,7 +284,7 @@ async def create_reminder(user_id: str, session_id: str, user_msg: str) -> str:
     dt = datetime.fromtimestamp(parsed.trigger_time, tz=TZ)
     time_str = dt.strftime("%m月%d日 %H:%M")
 
-    return await _generate_reminder_reply(
+    return await generate_reminder_reply(
         "create_success",
         time_str=time_str,
         content=parsed.content,
@@ -308,7 +308,7 @@ async def check_and_fire_reminders(bot) -> None:
         # 用 LLM 生成个性化的提醒消息
         dt = datetime.now(TZ)
         time_str = dt.strftime("%H:%M")
-        msg = await _generate_reminder_reply("fire", content=content, time_str=time_str)
+        msg = await generate_reminder_reply("fire", content=content, time_str=time_str)
 
         try:
             if session_id.startswith("group_"):
@@ -336,17 +336,17 @@ async def list_reminders(user_id: str) -> str:
     """列出用户的所有待提醒。"""
     reminders = await get_user_reminders(user_id)
     if not reminders:
-        return await _generate_reminder_reply("list", items=[])
+        return await generate_reminder_reply("list", items=[])
 
-    return await _generate_reminder_reply("list", items=reminders)
+    return await generate_reminder_reply("list", items=reminders)
 
 
 async def cancel_reminder_by_id(user_id: str, reminder_id: int) -> str:
     """取消提醒。"""
     success = await cancel_reminder(user_id, reminder_id)
     if success:
-        return await _generate_reminder_reply("cancel_success", rid=reminder_id)
-    return await _generate_reminder_reply("cancel_fail", rid=reminder_id)
+        return await generate_reminder_reply("cancel_success", rid=reminder_id)
+    return await generate_reminder_reply("cancel_fail", rid=reminder_id)
 
 
 async def get_pending_reminders_context(user_id: str) -> str:

@@ -52,6 +52,7 @@ from .db_mood import update_catgirl_mood
 from .db_mood import update_user_mood
 from .db_preferences import get_quality_stats
 from .db_preferences import get_top_preference
+from .db_preferences import get_top_preferences
 from .db_preferences import get_user_preferences
 from .db_preferences import save_reply_quality
 from .db_preferences import update_user_preference

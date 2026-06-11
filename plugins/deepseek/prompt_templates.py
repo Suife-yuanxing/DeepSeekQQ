@@ -1,6 +1,6 @@
 """提示词模板系统 — 多场景拆分 + 热更新支持。
 
-将原有的 monolithic _build_system_prompt 拆分为：
+将原有的 monolithic build_system_prompt 拆分为：
 1. 基础模板（始终加载）
 2. 场景模板（按聊天场景选择）
 3. 动态上下文（记忆/情绪/好感度等运行时数据）
@@ -90,8 +90,8 @@ def list_templates() -> Dict[str, str]:
 # ============================================================
 
 # core_persona 从 prompt 模块导入，确保全项目人设唯一来源
-from .prompt import _CORE_PERSONA as _CORE_PERSONA_TEXT
-register_template("core_persona", _CORE_PERSONA_TEXT)
+from .prompt import CORE_PERSONA as CORE_PERSONA_TEXT
+register_template("core_persona", CORE_PERSONA_TEXT)
 
 register_template("small_talk_rules", '''【最重要】你是个真实的人，不是客服也不是百科全书。
 大多数时候回1-2句话就够了，像真人发QQ消息一样简短随意。
@@ -304,6 +304,7 @@ def build_prompt_from_scenes(
             "relationship_style",     # 关系风格
             "state_hints",            # 状态信息
             "user_prefs",             # 用户偏好
+            "bot_self_summary",       # 用户画像摘要（念念对用户的认知）
             "reply_length",           # 回复长度
             "memories",               # 记忆
             "shared_memory",          # 共同回忆

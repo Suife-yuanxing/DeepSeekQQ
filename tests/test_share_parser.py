@@ -9,26 +9,10 @@ import types
 import re
 from unittest.mock import AsyncMock, MagicMock, patch
 from collections import OrderedDict
+
+from tests.conftest import safe_module_mock
+
 pytestmark = [pytest.mark.unit]
-
-
-
-def _safe_module_mock(name: str, **attrs):
-    """创建安全的模块 mock：任何未显式设置的属性自动返回 MagicMock。
-
-    避免因 mock 属性不全导致其他模块（如 handler.py → context_analyzer.py → database）
-    导入失败。"""
-    mod = types.ModuleType(name)
-    for k, v in attrs.items():
-        setattr(mod, k, v)
-
-    def _fallback_getattr(attr_name):
-        if attr_name.startswith("_"):
-            raise AttributeError(attr_name)
-        return MagicMock()
-
-    mod.__getattr__ = _fallback_getattr
-    return mod
 
 
 # aiohttp 是第三方包，mock 不会污染项目模块
@@ -44,20 +28,20 @@ _SAVED_MODULES = {}
 def _setup_mocks():
     """设置 share_parser 导入所需的模块 mock。"""
     mocks = {
-        "plugins.deepseek.config": _safe_module_mock(
+        "plugins.deepseek.config": safe_module_mock(
             "plugins.deepseek.config",
             SHARE_TTL=1800, URL_FETCH_COOLDOWN=300,
         ),
-        "plugins.deepseek.api": _safe_module_mock(
+        "plugins.deepseek.api": safe_module_mock(
             "plugins.deepseek.api",
             get_http_session=AsyncMock(return_value=AsyncMock()),
         ),
-        "plugins.deepseek.database": _safe_module_mock(
+        "plugins.deepseek.database": safe_module_mock(
             "plugins.deepseek.database",
             get_article_cache=AsyncMock(return_value=None),
             save_article_cache=AsyncMock(return_value=None),
         ),
-        "plugins.deepseek.vision": _safe_module_mock(
+        "plugins.deepseek.vision": safe_module_mock(
             "plugins.deepseek.vision",
             recognize_sticker=AsyncMock(return_value=None),
             analyze_image=AsyncMock(return_value="[图片内容: 一只猫]"),
@@ -67,7 +51,7 @@ def _setup_mocks():
                 else (x or "")
             ),
         ),
-        "plugins.deepseek.image_reply": _safe_module_mock(
+        "plugins.deepseek.image_reply": safe_module_mock(
             "plugins.deepseek.image_reply",
             classify_image=MagicMock(return_value="photo_pet"),
             IMAGE_TYPE_STICKER="sticker",
@@ -89,7 +73,7 @@ def _setup_mocks():
                     del self[oldest]
             super().__setitem__(key, value)
 
-    mocks["plugins.deepseek.utils"] = _safe_module_mock(
+    mocks["plugins.deepseek.utils"] = safe_module_mock(
         "plugins.deepseek.utils", LRUDict=_LRUDict,
     )
 
@@ -130,46 +114,46 @@ def _mock_share_parser_deps():
 
 
 class TestIsValidShare:
-    """测试 _is_valid_share 校验逻辑。"""
+    """测试 is_valid_share 校验逻辑。"""
 
     def test_no_summary(self):
-        from plugins.deepseek.share_parser import _is_valid_share
-        assert _is_valid_share({"summary": ""}) is False
+        from plugins.deepseek.share_parser import is_valid_share
+        assert is_valid_share({"summary": ""}) is False
 
     def test_needs_paste_overrides_length(self):
-        from plugins.deepseek.share_parser import _is_valid_share
-        assert _is_valid_share({
+        from plugins.deepseek.share_parser import is_valid_share
+        assert is_valid_share({
             "summary": "short", "needs_paste": True, "platform": "小黑盒",
         }) is True
 
     def test_restricted_overrides_length(self):
-        from plugins.deepseek.share_parser import _is_valid_share
-        assert _is_valid_share({"summary": "short", "restricted": True}) is True
+        from plugins.deepseek.share_parser import is_valid_share
+        assert is_valid_share({"summary": "short", "restricted": True}) is True
 
     def test_short_summary_invalid(self):
-        from plugins.deepseek.share_parser import _is_valid_share
-        assert _is_valid_share({"summary": "太短了"}) is False
+        from plugins.deepseek.share_parser import is_valid_share
+        assert is_valid_share({"summary": "太短了"}) is False
 
     def test_long_enough_summary_valid(self):
-        from plugins.deepseek.share_parser import _is_valid_share
+        from plugins.deepseek.share_parser import is_valid_share
         long_summary = "这是一段足够长的摘要内容，" * 10
-        assert _is_valid_share({"summary": long_summary}) is True
+        assert is_valid_share({"summary": long_summary}) is True
 
     def test_invalid_marker_detected(self):
-        from plugins.deepseek.share_parser import _is_valid_share
+        from plugins.deepseek.share_parser import is_valid_share
         long_but_invalid = "页面框架" + "x" * 80
-        assert _is_valid_share({"summary": long_but_invalid}) is False
+        assert is_valid_share({"summary": long_but_invalid}) is False
 
     def test_restricted_short_content_valid(self):
-        from plugins.deepseek.share_parser import _is_valid_share
-        assert _is_valid_share({
+        from plugins.deepseek.share_parser import is_valid_share
+        assert is_valid_share({
             "summary": "抖音视频标题", "restricted": True, "platform": "douyin",
         }) is True
 
     def test_bilibili_video_restricted_content(self):
         """B站视频 restricted 标识应覆盖短摘要长度校验。"""
-        from plugins.deepseek.share_parser import _is_valid_share
-        assert _is_valid_share({
+        from plugins.deepseek.share_parser import is_valid_share
+        assert is_valid_share({
             "summary": "B站视频标题",
             "restricted": True,
             "platform": "bilibili",
@@ -614,15 +598,15 @@ class TestExtractBilibiliVideoData:
 
 
 class TestIsValidShareFetchFailed:
-    """测试 _is_valid_share 对 fetch_failed 的处理。"""
+    """测试 is_valid_share 对 fetch_failed 的处理。"""
 
     def test_fetch_failed_still_valid_for_bot_response(self):
-        """fetch_failed 的分享仍应通过 _is_valid_share（bot 需告知用户打不开）。
+        """fetch_failed 的分享仍应通过 is_valid_share（bot 需告知用户打不开）。
 
         但不会被缓存到 DB（由 fetch_url_content 控制）。
         """
-        from plugins.deepseek.share_parser import _is_valid_share
-        assert _is_valid_share({
+        from plugins.deepseek.share_parser import is_valid_share
+        assert is_valid_share({
             "summary": "[抖音视频链接，内容无法读取]",
             "restricted": True,
             "fetch_failed": True,
@@ -631,9 +615,9 @@ class TestIsValidShareFetchFailed:
 
     def test_fetch_failed_with_long_summary_still_valid(self):
         """fetch_failed 但有足够长 summary 的分享仍有效（非 restricted 场景的回退）。"""
-        from plugins.deepseek.share_parser import _is_valid_share
+        from plugins.deepseek.share_parser import is_valid_share
         # summary 足够长 → 有效（length > 80）
-        assert _is_valid_share({
+        assert is_valid_share({
             "summary": "这是一段足够长的摘要内容，" * 10,
             "fetch_failed": True,
         }) is True
@@ -721,7 +705,7 @@ class TestParseGeneric:
         from plugins.deepseek.share_parser import _parse_generic
         html = '<html><head><title>Empty</title></head><body></body></html>'
         result = _parse_generic(html)
-        # 即使内容很短，_parse_generic 也总是返回 dict（由 _is_valid_share 来判断是否有效）
+        # 即使内容很短，_parse_generic 也总是返回 dict（由 is_valid_share 来判断是否有效）
         assert result is not None
         assert result["title"] == "Empty"
 

@@ -146,7 +146,7 @@ _TIME_PREFIXES = {
 }
 
 
-def _build_intro_message(song: SongInfo, intent: str) -> str:
+def build_intro_message(song: SongInfo, intent: str) -> str:
     """根据歌曲信息和意图类型生成个性化提示语。"""
     from datetime import datetime
     hour = datetime.now().hour
@@ -189,7 +189,7 @@ def _pick(pool: list) -> str:
 
 # ── 歌词展示 + 语音歌唱 ──
 
-async def _send_lyrics_snippet(bot, event, song: SongInfo) -> None:
+async def send_lyrics_snippet(bot, event, song: SongInfo) -> None:
     """获取歌词片段，概率发送语音歌唱，否则发文本。"""
     from .config import MUSIC_VOICE_CHANCE
 
@@ -219,7 +219,7 @@ async def _send_voice_sing(bot, event, lyrics: list, song: SongInfo) -> None:
     """
     from .music_api import extract_chorus
     from .voice import generate_voice_file
-    from .voice import _send_voice_file
+    from .voice import send_voice_file
     from ._audio_utils import validate_file
 
     # 提取副歌部分（最多4行）
@@ -247,7 +247,7 @@ async def _send_voice_sing(bot, event, lyrics: list, song: SongInfo) -> None:
         # 用歌唱模式生成语音
         voice_path = await generate_voice_file(text, emotion="singing", max_length=200)
         if voice_path and validate_file(voice_path, 100):
-            await _send_voice_file(bot, event, voice_path)
+            await send_voice_file(bot, event, voice_path)
             logger.info(f"[音乐] 语音歌唱发送成功: {song.name} ({len(text)}字)")
         else:
             # fallback 为文本
@@ -282,7 +282,7 @@ async def _handle_recommend(bot, event) -> Optional[str]:
     song = random.choice(results[:5])
 
     # 个性化提示
-    intro = _build_intro_message(song, "recommend")
+    intro = build_intro_message(song, "recommend")
     await bot.send(event, make_reply(event, Message(intro)))
 
     # 发音乐卡片
@@ -290,7 +290,7 @@ async def _handle_recommend(bot, event) -> Optional[str]:
 
     # 发歌词/语音
     if sent:
-        await _send_lyrics_snippet(bot, event, song)
+        await send_lyrics_snippet(bot, event, song)
 
     return "SKIP"
 
@@ -321,7 +321,7 @@ async def _handle_search(bot, event, song_name: str) -> Optional[str]:
     logger.info(f"[音乐] 找到歌曲: {song.name} - {song.artist}")
 
     # 个性化提示
-    intro = _build_intro_message(song, "search")
+    intro = build_intro_message(song, "search")
     await bot.send(event, make_reply(event, Message(intro)))
 
     # 发音乐卡片
@@ -334,7 +334,7 @@ async def _handle_search(bot, event, song_name: str) -> Optional[str]:
         return "SKIP"
 
     # 发歌词/语音
-    await _send_lyrics_snippet(bot, event, song)
+    await send_lyrics_snippet(bot, event, song)
 
     return "SKIP"
 

@@ -63,18 +63,18 @@ class TestBurstSplit:
         assert result == []
 
     def test_split_semantic_sentences(self):
-        from plugins.deepseek.dialogue_rhythm import _split_reply_semantically
-        result = _split_reply_semantically("你好呀！今天天气真好。我们出去玩吧。")
+        from plugins.deepseek.dialogue_rhythm import split_reply_semantically
+        result = split_reply_semantically("你好呀！今天天气真好。我们出去玩吧。")
         assert len(result) >= 2
 
     def test_split_newlines(self):
-        from plugins.deepseek.dialogue_rhythm import _split_reply_semantically
-        result = _split_reply_semantically("第一行\n第二行\n第三行")
+        from plugins.deepseek.dialogue_rhythm import split_reply_semantically
+        result = split_reply_semantically("第一行\n第二行\n第三行")
         assert len(result) >= 2
 
     def test_split_short_returns_empty(self):
-        from plugins.deepseek.dialogue_rhythm import _split_reply_semantically
-        result = _split_reply_semantically("嗯")
+        from plugins.deepseek.dialogue_rhythm import split_reply_semantically
+        result = split_reply_semantically("嗯")
         assert result == []
 
 

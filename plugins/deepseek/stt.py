@@ -33,15 +33,15 @@ from .api import get_http_session
 from .config import BAIDU_TTS_AK
 from .config import BAIDU_TTS_SK
 from .config import STT_ENGINE
-from .voice import _get_baidu_token
+from .voice import get_baidu_token
 
 
 async def _get_baidu_vop_token() -> str:
     """获取百度语音识别 Token（复用 voice.py 的 Token 管理）。"""
-    return await _get_baidu_token()
+    return await get_baidu_token()
 
 
-def _extract_voice_url(event: MessageEvent) -> Optional[str]:
+def extract_voice_url(event: MessageEvent) -> Optional[str]:
     """从消息事件中提取语音文件URL。"""
     for seg in event.get_message():
         if seg.type == "record":
@@ -56,7 +56,7 @@ def _extract_voice_url(event: MessageEvent) -> Optional[str]:
     return None
 
 
-async def _download_voice(url: str) -> Optional[str]:
+async def download_voice(url: str) -> Optional[str]:
     """下载语音文件到本地临时目录。"""
     try:
         voice_dir = "./data/voice"
@@ -150,14 +150,14 @@ async def _call_baidu_stt(pcm_path: str) -> Optional[str]:
 async def recognize_voice(event: MessageEvent) -> Optional[str]:
     """主入口：从语音消息中识别文字。..."""
     # 提取语音URL
-    voice_url = _extract_voice_url(event)
+    voice_url = extract_voice_url(event)
     if not voice_url:
         return None
 
     logger.info(f"[STT] 检测到语音消息: {voice_url[:80]}...")
 
     # 下载语音
-    local_path = await _download_voice(voice_url)
+    local_path = await download_voice(voice_url)
     if not local_path:
         return None
 

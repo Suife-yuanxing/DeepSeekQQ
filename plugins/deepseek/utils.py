@@ -235,6 +235,10 @@ def calc_message_delay(text: str, context: dict = None) -> float:
     jitter = random.gauss(0, total * 0.15)
     total += jitter
 
+    # 首条消息整体略减15%（异步架构已吸收部分延迟，防止用户等太久）
+    if ctx.get("is_first_reply", True):
+        total *= 0.85
+
     # 边界：最少1.5秒（不可能比这更快），最多30秒
     return max(1.5, min(total, 30.0))
 

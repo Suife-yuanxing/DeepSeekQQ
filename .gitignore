@@ -29,6 +29,10 @@ logs/
 .idea/
 *.swp
 
+
+# Claude Code local settings (may contain MCP permissions/keys)
+.claude/settings.local.json
+
 # 证书和密钥
 *.pem
 *.crt

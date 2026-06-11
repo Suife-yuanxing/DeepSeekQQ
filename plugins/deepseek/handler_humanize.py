@@ -121,15 +121,26 @@ def select_contextual_reaction(
 
 
 def maybe_add_reaction_prefix(text: str, emotion_valence: float = 0.0,
-                               user_message: str = "", emotion: str = "平静") -> str:
+                               user_message: str = "", emotion: str = "平静",
+                               affection_score: float = 0.0) -> str:
     """10% 概率在回复前加一个反应词前缀（上下文感知版）。
 
     模拟真人看到消息后的第一反应：
     - "诶？你怎么知道的"
     - "噢对对对"
     - "嗯...让我想想"
+
+    好感度影响反应词频率：高好感更随意，低好感更克制。
     """
-    if random.random() > 0.10:
+    # 好感度修正触发概率
+    if affection_score >= 200:
+        trigger_chance = 0.14  # 熟人更随意
+    elif affection_score < 20:
+        trigger_chance = 0.05  # 生人保持礼貌
+    else:
+        trigger_chance = 0.10
+
+    if random.random() > trigger_chance:
         return text
     if len(text) < 5:
         return text

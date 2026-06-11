@@ -109,7 +109,7 @@ def should_split_to_bursts(
         return []
 
     # 尝试拆分
-    parts = _split_reply_semantically(reply_text)
+    parts = split_reply_semantically(reply_text)
     if len(parts) >= 2:
         logger.debug(f"[节奏] 连发拆分: {len(parts)} 条")
         return parts
@@ -117,7 +117,7 @@ def should_split_to_bursts(
     return []
 
 
-def _split_reply_semantically(text: str) -> List[str]:
+def split_reply_semantically(text: str) -> List[str]:
     """按语义断句拆分回复为 2-3 条连发消息。"""
     # 优先按换行拆
     lines = [l.strip() for l in text.split('\n') if l.strip()]

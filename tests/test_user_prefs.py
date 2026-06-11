@@ -120,8 +120,8 @@ class TestPromptUserPrefs:
     """测试 prompt 集成用户偏好。"""
 
     def test_pref_hint_in_prompt(self):
-        from plugins.deepseek.prompt import _build_system_prompt
-        result = _build_system_prompt(
+        from plugins.deepseek.prompt import build_system_prompt
+        result = build_system_prompt(
             affection={"score": 0, "level": 1, "title": "陌生人"},
             mood={"mood": "平淡", "score": 50},
             length={"target_lines": 2, "style": "自然闲聊"},
@@ -131,8 +131,8 @@ class TestPromptUserPrefs:
         assert "游戏" in result
 
     def test_no_prefs_no_hint(self):
-        from plugins.deepseek.prompt import _build_system_prompt
-        result = _build_system_prompt(
+        from plugins.deepseek.prompt import build_system_prompt
+        result = build_system_prompt(
             affection={"score": 0, "level": 1, "title": "陌生人"},
             mood={"mood": "平淡", "score": 50},
             length={"target_lines": 2, "style": "自然闲聊"},
@@ -141,8 +141,8 @@ class TestPromptUserPrefs:
         assert "用户偏好" not in result
 
     def test_sticker_high_pref(self):
-        from plugins.deepseek.prompt import _build_system_prompt
-        result = _build_system_prompt(
+        from plugins.deepseek.prompt import build_system_prompt
+        result = build_system_prompt(
             affection={"score": 0, "level": 1, "title": "陌生人"},
             mood={"mood": "平淡", "score": 50},
             length={"target_lines": 2, "style": "自然闲聊"},

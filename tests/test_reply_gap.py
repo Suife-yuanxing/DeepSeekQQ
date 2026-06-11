@@ -2,17 +2,17 @@
 import time
 import pytest
 from unittest.mock import patch, AsyncMock, MagicMock
-from plugins.deepseek.handler import _build_reply_gap_hint
+from plugins.deepseek.handler import build_reply_gap_hint
 pytestmark = [pytest.mark.unit, pytest.mark.needs_db]
 
 
 
 class TestBuildReplyGapHint:
-    """_build_reply_gap_hint 单元测试。"""
+    """build_reply_gap_hint 单元测试。"""
 
     def test_short_gap_returns_empty(self):
         """15分钟以内的间隔不触发提示。"""
-        result = _build_reply_gap_hint(
+        result = build_reply_gap_hint(
             gap_seconds=10 * 60,
             affection={"score": 100},
             schedule=None,
@@ -22,17 +22,17 @@ class TestBuildReplyGapHint:
 
     def test_zero_gap_returns_empty(self):
         """无间隔不触发提示。"""
-        result = _build_reply_gap_hint(0, {"score": 100}, None, "平静")
+        result = build_reply_gap_hint(0, {"score": 100}, None, "平静")
         assert result == ""
 
     def test_no_bot_reply_returns_empty(self):
         """无历史回复不触发提示。"""
-        result = _build_reply_gap_hint(0, {}, None, "平静")
+        result = build_reply_gap_hint(0, {}, None, "平静")
         assert result == ""
 
     def test_late_night_medium_gap_empty(self):
         """深夜3-8小时间隔不提示（用户可能在睡觉，不要打扰）。"""
-        result = _build_reply_gap_hint(
+        result = build_reply_gap_hint(
             gap_seconds=6 * 3600,  # 6小时
             affection={"score": 200},
             schedule=None,
@@ -44,7 +44,7 @@ class TestBuildReplyGapHint:
 
     def test_late_night_very_long_gap(self):
         """深夜8小时以上间隔应返回自然起床提示。"""
-        result = _build_reply_gap_hint(
+        result = build_reply_gap_hint(
             gap_seconds=10 * 3600,
             affection={"score": 200},
             schedule=None,
@@ -55,7 +55,7 @@ class TestBuildReplyGapHint:
 
     def test_late_night_short_gap_normal(self):
         """深夜短间隔（<3小时）走正常好感度逻辑。"""
-        result = _build_reply_gap_hint(
+        result = build_reply_gap_hint(
             gap_seconds=2 * 3600,
             affection={"score": 200},
             schedule=None,
@@ -70,7 +70,7 @@ class TestBuildReplyGapHint:
 
     def test_high_affection_medium_gap(self):
         """高好感度用户15-60分钟间隔应有撒娇提示。"""
-        result = _build_reply_gap_hint(
+        result = build_reply_gap_hint(
             gap_seconds=30 * 60,
             affection={"score": 250},
             schedule=None,
@@ -82,7 +82,7 @@ class TestBuildReplyGapHint:
 
     def test_high_affection_long_gap(self):
         """高好感度用户1-3小时间隔应有撒娇/委屈提示。"""
-        result = _build_reply_gap_hint(
+        result = build_reply_gap_hint(
             gap_seconds=2 * 3600,
             affection={"score": 250},
             schedule=None,
@@ -94,7 +94,7 @@ class TestBuildReplyGapHint:
 
     def test_high_affection_very_long_gap(self):
         """高好感度用户3-8小时间隔应有抱怨。"""
-        result = _build_reply_gap_hint(
+        result = build_reply_gap_hint(
             gap_seconds=5 * 3600,
             affection={"score": 250},
             schedule=None,
@@ -106,7 +106,7 @@ class TestBuildReplyGapHint:
 
     def test_medium_affection_medium_gap(self):
         """中好感度用户15-60分钟间隔应有自然提示。"""
-        result = _build_reply_gap_hint(
+        result = build_reply_gap_hint(
             gap_seconds=30 * 60,
             affection={"score": 80},
             schedule=None,
@@ -118,7 +118,7 @@ class TestBuildReplyGapHint:
 
     def test_low_affection_long_gap(self):
         """低好感度用户长间隔提示平淡。"""
-        result = _build_reply_gap_hint(
+        result = build_reply_gap_hint(
             gap_seconds=4 * 3600,
             affection={"score": 20},
             schedule=None,
@@ -130,7 +130,7 @@ class TestBuildReplyGapHint:
 
     def test_low_affection_short_gap_empty(self):
         """低好感度用户15-60分钟间隔不触发提示。"""
-        result = _build_reply_gap_hint(
+        result = build_reply_gap_hint(
             gap_seconds=20 * 60,
             affection={"score": 20},
             schedule=None,
@@ -141,7 +141,7 @@ class TestBuildReplyGapHint:
 
     def test_no_affection_uses_default(self):
         """无好感度数据时使用默认低好感度逻辑。"""
-        result = _build_reply_gap_hint(
+        result = build_reply_gap_hint(
             gap_seconds=4 * 3600,
             affection={},
             schedule=None,
@@ -153,7 +153,7 @@ class TestBuildReplyGapHint:
     def test_returns_string_type(self):
         """始终返回字符串类型。"""
         for gap in [0, 60, 600, 3600, 7200, 28800]:
-            result = _build_reply_gap_hint(gap, {"score": 100}, None, "平静", current_hour=14)
+            result = build_reply_gap_hint(gap, {"score": 100}, None, "平静", current_hour=14)
             assert isinstance(result, str)
 
 
@@ -162,8 +162,8 @@ class TestReplyGapPromptInjection:
 
     def test_prompt_includes_reply_gap(self):
         """reply_gap_hint 应注入到 system prompt 中。"""
-        from plugins.deepseek.prompt import _build_system_prompt
-        prompt = _build_system_prompt(
+        from plugins.deepseek.prompt import build_system_prompt
+        prompt = build_system_prompt(
             affection={"score": 100, "total_chats": 50, "streak_days": 3},
             mood={"dominant": "平静", "score": 50},
             length={"target_lines": 2, "style": "正常"},
@@ -175,8 +175,8 @@ class TestReplyGapPromptInjection:
 
     def test_prompt_no_reply_gap_when_empty(self):
         """无 reply_gap_hint 时不注入。"""
-        from plugins.deepseek.prompt import _build_system_prompt
-        prompt = _build_system_prompt(
+        from plugins.deepseek.prompt import build_system_prompt
+        prompt = build_system_prompt(
             affection={"score": 100, "total_chats": 50, "streak_days": 3},
             mood={"dominant": "平静", "score": 50},
             length={"target_lines": 2, "style": "正常"},

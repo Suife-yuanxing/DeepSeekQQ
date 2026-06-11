@@ -1,9 +1,10 @@
 """DeepSeek API 调用层。
-- 全局复用 aiohttp.ClientSession
-- 带指数退避重试（3次）
+- 全局复用 aiohttp.ClientSession（健康检查 + 自动重建）
+- 带指数退避重试（3次，仅对 429 和瞬时网络错误）
 - 用户级冷却限流
 - 轻量级响应清洗（不过度过滤括号）
-- 本地 Ollama 离线降级（自动，对调用方透明）
+- 降级：DeepSeek 远程 API → 友好错误提示
+  （Ollama 本地降级待实现，见 _call_local_llm 注释）
 """
 import asyncio
 import json
@@ -91,14 +92,17 @@ async def _call_deepseek_raw(messages: List[Dict[str, str]], temperature: float 
                 return clean_api_response(content)
         except (asyncio.TimeoutError, aiohttp.ClientError) as e:
             last_exception = str(e)
-            global _http_session
-            async with _session_lock:
-                if _http_session:
-                    try:
-                        await _http_session.close()
-                    except Exception:
-                        pass
-                    _http_session = None
+            # 仅在连接级错误（非超时）时重建 session，避免影响并发请求
+            is_fatal = isinstance(e, aiohttp.ClientConnectionError)
+            if is_fatal:
+                global _http_session
+                async with _session_lock:
+                    if _http_session:
+                        try:
+                            await _http_session.close()
+                        except Exception:
+                            pass
+                        _http_session = None
             await asyncio.sleep(2 ** attempt)
         except Exception as e:
             last_exception = str(e)
@@ -109,10 +113,14 @@ async def _call_deepseek_raw(messages: List[Dict[str, str]], temperature: float 
 
 
 async def _call_local_llm(messages: List[Dict[str, str]], temperature: float = 0.7) -> Optional[str]:
-    """降级方案：调用本地 Ollama 模型。"""
+    """降级方案：调用本地 Ollama 模型。
+
+    NOTE: local_llm 模块尚未实现，此函数始终返回 None。
+    如需启用，创建 plugins/deepseek/local_llm.py 并实现 call_ollama_chat 和 check_ollama_available。
+    """
     try:
-        from .local_llm import call_ollama_chat
-        from .local_llm import check_ollama_available
+        from .local_llm import call_ollama_chat  # noqa: F811 — 模块待创建
+        from .local_llm import check_ollama_available  # noqa: F811
         if not await check_ollama_available():
             logger.warning("[API] 本地 Ollama 服务也不可用")
             return None
@@ -127,7 +135,7 @@ async def _call_local_llm(messages: List[Dict[str, str]], temperature: float = 0
 
 async def call_deepseek_api(messages: List[Dict[str, str]], temperature: float = 0.9,
                            task_type: str = "chat", max_tokens: int = None) -> str:
-    """统一 API 入口 - 三层降级 + 任务分级路由（对调用方完全透明）。
+    """统一 API 入口 - 二层降级 + 任务分级路由（对调用方完全透明）。
 
     task_type 控制模型选择和 max_tokens：
     - "chat": 主聊天回复（默认，用配置模型，max_tokens=1500）

@@ -1,6 +1,6 @@
 """功能④：图片生成 — 触发词检测测试。"""
 import pytest
-from plugins.deepseek.image_gen import should_generate_image, _extract_draw_prompt
+from plugins.deepseek.image_gen import should_generate_image, extract_draw_prompt
 pytestmark = [pytest.mark.unit]
 
 
@@ -60,17 +60,17 @@ class TestExtractDrawPrompt:
     """测试绘画描述提取。"""
 
     def test_basic_extract(self):
-        result = _extract_draw_prompt("帮我画一只可爱的猫")
+        result = extract_draw_prompt("帮我画一只可爱的猫")
         assert "可爱的猫" in result
         assert "photorealistic" in result
         assert "consistent character" in result
 
     def test_short_input(self):
-        result = _extract_draw_prompt("画")
+        result = extract_draw_prompt("画")
         assert "photorealistic" in result
         assert "pink hair" in result
 
     def test_with_prefix(self):
-        result = _extract_draw_prompt("画一个漂亮的女孩")
+        result = extract_draw_prompt("画一个漂亮的女孩")
         assert "漂亮的女孩" in result
         assert "photorealistic" in result

@@ -269,7 +269,7 @@ def set_phone_user(user_id: str):
     _PHONE_USER_ID = user_id
 
 
-def _check_phone_permission(user_id: str) -> bool:
+def check_phone_permission(user_id: str) -> bool:
     """检查是否有手机控制权限。"""
     from .config import PHONE_WS_KEY
     if not PHONE_WS_KEY:
@@ -279,7 +279,7 @@ def _check_phone_permission(user_id: str) -> bool:
     return True
 
 
-async def _ensure_phone_bridge():
+async def ensure_phone_bridge():
     """检查手机是否在线（MobileRun Portal 直连模式，无需 controller）。"""
     from .phone_bridge import get_relay
     relay = get_relay()
@@ -289,9 +289,9 @@ async def _ensure_phone_bridge():
 
 
 async def _phone_screenshot_handler(user_id: str = "") -> Optional[str]:
-    if not _check_phone_permission(user_id):
+    if not check_phone_permission(user_id):
         return None
-    bridge = await _ensure_phone_bridge()
+    bridge = await ensure_phone_bridge()
     if not bridge:
         return "手机未连接，请检查 MobileRun Portal 是否在线"
     img_b64 = await bridge.screenshot()
@@ -301,18 +301,18 @@ async def _phone_screenshot_handler(user_id: str = "") -> Optional[str]:
 
 
 async def _phone_ui_tree_handler(user_id: str = "") -> Optional[str]:
-    if not _check_phone_permission(user_id):
+    if not check_phone_permission(user_id):
         return None
-    bridge = await _ensure_phone_bridge()
+    bridge = await ensure_phone_bridge()
     if not bridge:
         return "手机未连接"
     return await bridge.get_screen_text()
 
 
 async def _phone_tap_handler(x: int, y: int, user_id: str = "") -> Optional[str]:
-    if not _check_phone_permission(user_id):
+    if not check_phone_permission(user_id):
         return None
-    bridge = await _ensure_phone_bridge()
+    bridge = await ensure_phone_bridge()
     if not bridge:
         return "手机未连接"
     resp = await bridge.tap(x, y)
@@ -320,9 +320,9 @@ async def _phone_tap_handler(x: int, y: int, user_id: str = "") -> Optional[str]
 
 
 async def _phone_tap_text_handler(text: str, user_id: str = "") -> Optional[str]:
-    if not _check_phone_permission(user_id):
+    if not check_phone_permission(user_id):
         return None
-    bridge = await _ensure_phone_bridge()
+    bridge = await ensure_phone_bridge()
     if not bridge:
         return "手机未连接"
     resp = await bridge.tap_text(text)
@@ -332,9 +332,9 @@ async def _phone_tap_text_handler(text: str, user_id: str = "") -> Optional[str]
 async def _phone_swipe_handler(
     x1: int, y1: int, x2: int, y2: int, user_id: str = "",
 ) -> Optional[str]:
-    if not _check_phone_permission(user_id):
+    if not check_phone_permission(user_id):
         return None
-    bridge = await _ensure_phone_bridge()
+    bridge = await ensure_phone_bridge()
     if not bridge:
         return "手机未连接"
     resp = await bridge.swipe(x1, y1, x2, y2)
@@ -342,9 +342,9 @@ async def _phone_swipe_handler(
 
 
 async def _phone_scroll_up_handler(user_id: str = "") -> Optional[str]:
-    if not _check_phone_permission(user_id):
+    if not check_phone_permission(user_id):
         return None
-    bridge = await _ensure_phone_bridge()
+    bridge = await ensure_phone_bridge()
     if not bridge:
         return "手机未连接"
     resp = await bridge.scroll_up()
@@ -352,9 +352,9 @@ async def _phone_scroll_up_handler(user_id: str = "") -> Optional[str]:
 
 
 async def _phone_scroll_down_handler(user_id: str = "") -> Optional[str]:
-    if not _check_phone_permission(user_id):
+    if not check_phone_permission(user_id):
         return None
-    bridge = await _ensure_phone_bridge()
+    bridge = await ensure_phone_bridge()
     if not bridge:
         return "手机未连接"
     resp = await bridge.scroll_down()
@@ -362,9 +362,9 @@ async def _phone_scroll_down_handler(user_id: str = "") -> Optional[str]:
 
 
 async def _phone_type_handler(text: str, user_id: str = "") -> Optional[str]:
-    if not _check_phone_permission(user_id):
+    if not check_phone_permission(user_id):
         return None
-    bridge = await _ensure_phone_bridge()
+    bridge = await ensure_phone_bridge()
     if not bridge:
         return "手机未连接"
     resp = await bridge.type_text(text)
@@ -372,9 +372,9 @@ async def _phone_type_handler(text: str, user_id: str = "") -> Optional[str]:
 
 
 async def _phone_open_app_handler(app_name: str, user_id: str = "") -> Optional[str]:
-    if not _check_phone_permission(user_id):
+    if not check_phone_permission(user_id):
         return None
-    bridge = await _ensure_phone_bridge()
+    bridge = await ensure_phone_bridge()
     if not bridge:
         return "手机未连接"
     resp = await bridge.open_app(app_name)
@@ -382,9 +382,9 @@ async def _phone_open_app_handler(app_name: str, user_id: str = "") -> Optional[
 
 
 async def _phone_back_handler(user_id: str = "") -> Optional[str]:
-    if not _check_phone_permission(user_id):
+    if not check_phone_permission(user_id):
         return None
-    bridge = await _ensure_phone_bridge()
+    bridge = await ensure_phone_bridge()
     if not bridge:
         return "手机未连接"
     resp = await bridge.back()
@@ -392,9 +392,9 @@ async def _phone_back_handler(user_id: str = "") -> Optional[str]:
 
 
 async def _phone_home_handler(user_id: str = "") -> Optional[str]:
-    if not _check_phone_permission(user_id):
+    if not check_phone_permission(user_id):
         return None
-    bridge = await _ensure_phone_bridge()
+    bridge = await ensure_phone_bridge()
     if not bridge:
         return "手机未连接"
     resp = await bridge.home()
@@ -610,18 +610,18 @@ def _register_default_tools():
     # ==================== 时钟控制 ====================
 
     async def _phone_set_alarm_handler(hour: int, minute: int, label: str = "", user_id: str = "") -> Optional[str]:
-        if not _check_phone_permission(user_id):
+        if not check_phone_permission(user_id):
             return None
-        bridge = await _ensure_phone_bridge()
+        bridge = await ensure_phone_bridge()
         if not bridge:
             return "手机未连接"
         resp = await bridge.set_alarm(hour, minute, label)
         return resp.get("message", "闹钟设置请求已发送") if resp.get("success") else f"设置失败: {resp.get('error', '')}"
 
     async def _phone_set_timer_handler(minutes: int, label: str = "", user_id: str = "") -> Optional[str]:
-        if not _check_phone_permission(user_id):
+        if not check_phone_permission(user_id):
             return None
-        bridge = await _ensure_phone_bridge()
+        bridge = await ensure_phone_bridge()
         if not bridge:
             return "手机未连接"
         resp = await bridge.set_timer(minutes, label)

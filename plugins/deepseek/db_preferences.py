@@ -53,6 +53,19 @@ async def get_top_preference(user_id: str, pref_type: str) -> Optional[str]:
         return row["pref_key"] if row else None
 
 
+async def get_top_preferences(user_id: str, pref_type: str, limit: int = 3) -> list:
+    """获取 top-N 偏好值列表（按 pref_value 降序）。"""
+    db = await get_db()
+    async with db.execute(
+        """SELECT pref_key, pref_value FROM user_preferences
+           WHERE user_id = ? AND pref_type = ?
+           ORDER BY pref_value DESC LIMIT ?""",
+        (str(user_id), pref_type, limit)
+    ) as cursor:
+        rows = await cursor.fetchall()
+        return [row["pref_key"] for row in rows]
+
+
 async def update_user_preference(user_id: str, pref_type: str, pref_key: str, delta: float = 0.1):
     db = await get_db()
     now = datetime.now().timestamp()
@@ -68,7 +81,7 @@ async def update_user_preference(user_id: str, pref_type: str, pref_key: str, de
     await db.commit()
 
 
-async def _update_user_preference_raw(user_id: str, pref_type: str, pref_key: str, weight: float = 0.05):
+async def update_user_preference_raw(user_id: str, pref_type: str, pref_key: str, weight: float = 0.05):
     """内部用：直接更新偏好（供 relationship_style 等调用）。"""
     db = await get_db()
     now = datetime.now().timestamp()

@@ -37,6 +37,7 @@ from .database import get_recent_memories
 from .database import get_relevant_memory_tags
 from .database import get_session_state
 from .database import get_top_preference
+from .db_preferences import get_top_preferences
 from .database import get_user_mood
 from .database import save_memory_tags
 from .database import save_message
@@ -110,6 +111,9 @@ async def save_reply(session_id: str, user_id: str, raw_msg: str, reply_text: st
     safe_task(_extract_memory_tags(user_id, session_id, raw_msg, reply_text))
     # 功能③：异步学习用户偏好
     safe_task(_learn_preferences(user_id, raw_msg, reply_text, session_id))
+    # 用户画像：5%概率同步兴趣+生成概要（build_user_profile_summary 自带跳过逻辑）
+    if random.random() < 0.05:
+        safe_task(_sync_profile_summary(user_id))
     # 功能⑦：异步评估回复质量
     safe_task(_evaluate_reply_quality(user_id, session_id, raw_msg, reply_text))
     # 跨会话状态更新（含 bot 情绪快照）
@@ -395,19 +399,21 @@ async def _learn_preferences(user_id: str, raw_msg: str, reply_text: str, sessio
             period = "night"
         await update_user_preference(user_id, "active_hours", period, 0.1)
 
-        # 4. 话题兴趣：关键词提取
+        # 4. 话题兴趣：关键词提取（不再 break，一条消息可以匹配多个话题）
         topic_keywords = {
-            "游戏": ["游戏", "打", "玩", "排位", "段位", "王者", "原神", "LOL", "吃鸡"],
-            "音乐": ["歌", "音乐", "听", "唱", "专辑", "演唱会"],
-            "美食": ["吃", "饭", "美食", "好饿", "外卖", "做饭"],
-            "学习": ["作业", "考试", "学习", "课", "大学", "论文"],
-            "工作": ["上班", "加班", "工作", "老板", "同事", "工资"],
-            "感情": ["喜欢", "恋爱", "对象", "单身", "表白", "分手"],
+            "游戏": ["游戏", "打", "玩", "排位", "段位", "王者", "原神", "LOL", "吃鸡", "上分", "开黑", "联机", "steam", "switch", "塞尔达", "明日方舟", "星穹铁道", "铁道"],
+            "音乐": ["歌", "音乐", "听歌", "唱", "专辑", "演唱会", "乐队", "贝斯", "吉他", "钢琴", "说唱", "R&B", "KTV", "网易云", "QQ音乐", "播放"],
+            "美食": ["吃", "饭", "美食", "好饿", "外卖", "做饭", "火锅", "烧烤", "奶茶", "咖啡", "甜品", "蛋糕", "零食"],
+            "学习": ["作业", "考试", "学习", "课", "大学", "论文", "复习", "备考", "图书馆", "考研", "四六级", "期末"],
+            "工作": ["上班", "加班", "工作", "老板", "同事", "工资", "跳槽", "面试", "简历", "实习", "出差"],
+            "感情": ["喜欢", "恋爱", "对象", "单身", "表白", "分手", "暗恋", "crush", "前任", "谈恋爱"],
+            "番剧": ["番", "动漫", "追番", "B站", "动画", "漫画", "新番", "芙莉莲", "我推", "咒术"],
+            "运动": ["跑步", "健身", "运动", "减肥", "打球", "游泳", "瑜伽", "跳绳"],
         }
         for topic, keywords in topic_keywords.items():
             if any(kw in raw_msg for kw in keywords):
                 await update_user_preference(user_id, "topic_interest", topic, 0.1)
-                break
+                # 不再 break，让一条消息可以匹配多个话题
 
         # 5. 话题情绪关联：记录用户聊什么话题时的情绪
         from .emotion_deep import record_topic_emotion
@@ -448,6 +454,16 @@ async def _learn_preferences(user_id: str, raw_msg: str, reply_text: str, sessio
         logger.info(f"[偏好] 学习失败（非关键）: {e}")
 
 
+async def _sync_profile_summary(user_id: str):
+    """同步用户兴趣 + 生成画像摘要（低频率调用，自带跳过逻辑）。"""
+    try:
+        from .db_session import sync_known_interests, build_user_profile_summary
+        await sync_known_interests(user_id)
+        await build_user_profile_summary(user_id)
+    except Exception as e:
+        logger.debug(f"[画像] _sync_profile_summary 失败（非关键）: {e}")
+
+
 async def get_user_pref_hints(user_id: str) -> Dict[str, str]:
     """获取用户偏好的摘要字典，用于注入 prompt。"""
     try:
@@ -458,9 +474,10 @@ async def get_user_pref_hints(user_id: str) -> Dict[str, str]:
         top_sticker = await get_top_preference(user_id, "sticker_freq")
         if top_sticker:
             result["sticker_freq"] = top_sticker
-        top_topic = await get_top_preference(user_id, "topic_interest")
-        if top_topic:
-            result["topic_interest"] = top_topic
+        # 取 top-3 兴趣，而非 top-1
+        top_topics = await get_top_preferences(user_id, "topic_interest", limit=3)
+        if top_topics:
+            result["topic_interest"] = top_topics  # 列表，供 prompt.py 格式化
         # Phase 4：关系风格
         rel_style = await get_top_preference(user_id, "relationship_style")
         if rel_style:

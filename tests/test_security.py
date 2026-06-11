@@ -4,7 +4,7 @@ import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import pytest
-from plugins.deepseek.security import scan_input, get_blocked_reply, _user_msg_history
+from plugins.deepseek.security import scan_input, get_blocked_reply, user_msg_history
 pytestmark = [pytest.mark.unit]
 
 
@@ -70,7 +70,7 @@ class TestAbuseDetection:
     """测试滥用频率检测。"""
 
     def setup_method(self):
-        _user_msg_history.clear()
+        user_msg_history.clear()
 
     def test_rate_limit(self):
         uid = "test_user_1"

@@ -4,11 +4,11 @@ from typing import Any
 from typing import Dict
 from typing import List
 
-from .share_parser import _is_valid_share
+from .share_parser import is_valid_share
 
 
 def format_shares_for_prompt(shares: List[Dict[str, Any]], user_msg: str = "") -> str:
-    valid_shares = [s for s in shares if _is_valid_share(s)]
+    valid_shares = [s for s in shares if is_valid_share(s)]
     if not valid_shares:
         return ""
     multi_keywords = ["分别", "都讲", "全部", "每个", "这些", "讲讲"]
@@ -87,7 +87,7 @@ def _check_articles_related(shares: List[Dict[str, Any]]) -> bool:
 
 
 def build_analysis_prompt(shares: List[Dict[str, Any]], user_question: str) -> str:
-    valid_shares = [s for s in shares if _is_valid_share(s)]
+    valid_shares = [s for s in shares if is_valid_share(s)]
     if not valid_shares:
         return ""
 

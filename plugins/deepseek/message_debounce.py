@@ -22,7 +22,6 @@ class PendingSession:
     """待处理的会话消息队列。"""
     messages: List[MessageEvent] = field(default_factory=list)
     timer: Optional[asyncio.Task] = None
-    first_message_time: float = 0.0
 
 
 class MessageDebouncer:
@@ -86,10 +85,6 @@ class MessageDebouncer:
                 session.timer.cancel()
                 logger.debug(f"[Debounce] 重置定时器 session={session_key}")
 
-            # 记录第一条消息时间
-            if msg_count == 1:
-                session.first_message_time = asyncio.get_event_loop().time()
-
             logger.info(f"[Debounce] 入队 session={session_key} 累计{msg_count}条: {msg_text}")
 
             # 启动新定时器
@@ -137,7 +132,10 @@ class MessageDebouncer:
         策略：
         - 取最后一条消息作为基础（保留最新的事件信息）
         - 将所有消息文本用换行连接
-        - 保留第一条消息的非文本段（图片/表情/语音等）
+        - 图片：保留最多 MAX_MERGED_IMAGES 张（防止 token 爆炸）
+        - 分享卡片/JSON/XML：全部保留（share_parser 异步抓取，不占 prompt token）
+        - QQ 表情/商城表情：保留全部（小体积）
+        - 语音：只保留第一条
         """
         if not messages:
             raise ValueError("无法合并空消息列表")
@@ -145,48 +143,69 @@ class MessageDebouncer:
         from nonebot.adapters.onebot.v11 import Message
         from nonebot.adapters.onebot.v11 import MessageSegment
 
+        MAX_MERGED_IMAGES = 3
+
         # 取最后一条作为基础
         merged = messages[-1]
 
-        # 分离文本和非文本段
+        # 分离各类消息段
         text_parts = []
-        non_text_segments = []
+        image_segments = []
+        json_segments = []
+        face_segments = []
+        other_segments = []
 
         for msg in messages:
             for seg in msg.get_message():
-                if seg.type == "text":
+                seg_type = seg.type
+                if seg_type == "text":
                     text = str(seg).strip()
                     if text:
                         text_parts.append(text)
-                elif not non_text_segments:
-                    # 只保留第一条消息的非文本内容（图片/表情/语音等）
-                    non_text_segments.append(seg)
+                elif seg_type == "image":
+                    if len(image_segments) < MAX_MERGED_IMAGES:
+                        image_segments.append(seg)
+                elif seg_type in ("json", "xml"):
+                    json_segments.append(seg)  # 分享卡片，全部保留
+                elif seg_type in ("face", "mface"):
+                    face_segments.append(seg)  # QQ 表情，全部保留
+                elif seg_type == "record":
+                    if not other_segments:
+                        other_segments.append(seg)  # 语音只保留第一条
+                else:
+                    if not other_segments:
+                        other_segments.append(seg)  # 其他类型只保留第一条
 
-        # 构建合并后的消息：非文本段 + 合并文本
-        parts = non_text_segments[:]
+        # 构建合并后的消息：按类型分组排列
+        parts = []
+        parts.extend(image_segments)    # 图片优先
+        parts.extend(json_segments)     # 分享卡片
+        parts.extend(face_segments)     # QQ表情
+        parts.extend(other_segments)    # 语音等
         if text_parts:
             parts.append(MessageSegment.text("\n".join(text_parts)))
 
         if parts:
-            # OneBot V11 的 get_message() 返回 self.message 字段，
-            # 直接设置 message 属性（pydantic field）而非私有 _message
             merged.message = Message(parts)
 
         # 记录合并信息（用于日志）
         merged._debounce_merged_count = len(messages)
+        merged._debounce_first_time = messages[0].time if hasattr(messages[0], 'time') else 0
 
         return merged
 
-    def get_pending_count(self, session_key: str) -> int:
+    async def get_pending_count(self, session_key: str) -> int:
         """获取指定会话待处理消息数。"""
-        session = self._sessions.get(session_key)
-        return len(session.messages) if session else 0
+        async with self._lock:
+            session = self._sessions.get(session_key)
+            return len(session.messages) if session else 0
 
-    def clear_session(self, session_key: str) -> None:
+    async def clear_session(self, session_key: str) -> None:
         """清除指定会话的待处理消息。"""
-        session = self._sessions.pop(session_key, None)
-        if session and session.timer and not session.timer.done():
-            session.timer.cancel()
+        async with self._lock:
+            session = self._sessions.pop(session_key, None)
+            if session and session.timer and not session.timer.done():
+                session.timer.cancel()
 
 
 # 全局单例

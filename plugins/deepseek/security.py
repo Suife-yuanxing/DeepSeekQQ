@@ -39,7 +39,7 @@ _COMPILED_PATTERNS = [(re.compile(p, re.IGNORECASE), tag) for p, tag in _INJECTI
 # 滥用检测（频率 + 模式）
 # ============================================================
 
-_user_msg_history: Dict[str, list] = {}  # user_id -> [(timestamp, msg_hash)]
+user_msg_history: Dict[str, list] = {}  # user_id -> [(timestamp, msg_hash)]
 _ABUSE_WINDOW = 60        # 检测窗口（秒）
 _ABUSE_THRESHOLD = 15     # 窗口内最大消息数
 _ABUSE_SPAM_THRESHOLD = 5 # 连续相同消息数
@@ -51,16 +51,16 @@ _ABUSE_HISTORY_MAX_USERS = 500  # 硬上限
 def _cleanup_abuse_history():
     """定期清理过期的滥用检测记录，并强制执行上限。"""
     now = time.time()
-    expired = [uid for uid, msgs in _user_msg_history.items()
+    expired = [uid for uid, msgs in user_msg_history.items()
                if not msgs or now - msgs[-1][0] > _ABUSE_WINDOW * 2]
     for uid in expired:
-        del _user_msg_history[uid]
+        del user_msg_history[uid]
     # 强制上限：删除最旧的条目
-    if len(_user_msg_history) > _ABUSE_HISTORY_MAX_USERS:
-        sorted_uids = sorted(_user_msg_history.keys(),
-                             key=lambda u: _user_msg_history[u][-1][0] if _user_msg_history[u] else 0)
-        for uid in sorted_uids[:len(_user_msg_history) - _ABUSE_HISTORY_MAX_USERS]:
-            del _user_msg_history[uid]
+    if len(user_msg_history) > _ABUSE_HISTORY_MAX_USERS:
+        sorted_uids = sorted(user_msg_history.keys(),
+                             key=lambda u: user_msg_history[u][-1][0] if user_msg_history[u] else 0)
+        for uid in sorted_uids[:len(user_msg_history) - _ABUSE_HISTORY_MAX_USERS]:
+            del user_msg_history[uid]
 
 
 # ============================================================
@@ -89,10 +89,10 @@ def scan_input(user_msg: str, user_id: str = "") -> Tuple[bool, Optional[str]]:
         now = time.time()
         msg_hash = hash(user_msg.strip())
 
-        if user_id not in _user_msg_history:
-            _user_msg_history[user_id] = []
+        if user_id not in user_msg_history:
+            user_msg_history[user_id] = []
 
-        history = _user_msg_history[user_id]
+        history = user_msg_history[user_id]
         # 清理窗口外的记录
         history[:] = [(t, h) for t, h in history if now - t < _ABUSE_WINDOW]
         history.append((now, msg_hash))
@@ -110,7 +110,7 @@ def scan_input(user_msg: str, user_id: str = "") -> Tuple[bool, Optional[str]]:
                 return False, "abuse:spam"
 
     # 定期清理
-    if len(_user_msg_history) > 500:
+    if len(user_msg_history) > 500:
         _cleanup_abuse_history()
 
     return True, None

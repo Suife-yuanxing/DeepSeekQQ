@@ -5,8 +5,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import pytest
 from plugins.deepseek.prompt import (
-    _build_system_prompt, _build_state_hints, estimate_reply_length,
-    _CORE_PERSONA, _STICKER_RULES, _SHARE_RULES, _LOCATION_RULES,
+    build_system_prompt, build_state_hints, estimate_reply_length,
+    CORE_PERSONA, _STICKER_RULES, _SHARE_RULES, _LOCATION_RULES,
 )
 
 pytestmark = [pytest.mark.unit]
@@ -27,34 +27,34 @@ class TestModularPrompt:
         return base
 
     def test_simple_greeting_no_sticker_rules(self):
-        prompt = _build_system_prompt(**self._base_kwargs(user_msg="你好"))
-        assert _CORE_PERSONA[:20] in prompt
+        prompt = build_system_prompt(**self._base_kwargs(user_msg="你好"))
+        assert CORE_PERSONA[:20] in prompt
         assert _STICKER_RULES[:20] not in prompt
 
     def test_long_msg_includes_sticker_rules(self):
-        prompt = _build_system_prompt(**self._base_kwargs(user_msg="你觉得今天那个表情包怎么样"))
+        prompt = build_system_prompt(**self._base_kwargs(user_msg="你觉得今天那个表情包怎么样"))
         assert _STICKER_RULES[:20] in prompt
 
     def test_share_context_includes_share_rules(self):
-        prompt = _build_system_prompt(**self._base_kwargs(
+        prompt = build_system_prompt(**self._base_kwargs(
             recent_shares=[{"type": "链接", "summary": "测试"}]
         ))
         assert _SHARE_RULES[:20] in prompt
 
     def test_no_share_no_share_rules(self):
-        prompt = _build_system_prompt(**self._base_kwargs())
+        prompt = build_system_prompt(**self._base_kwargs())
         assert _SHARE_RULES[:20] not in prompt
 
     def test_weather_context_includes_location_rules(self):
-        prompt = _build_system_prompt(**self._base_kwargs(world_context="上海 多云 25°C"))
+        prompt = build_system_prompt(**self._base_kwargs(world_context="上海 多云 25°C"))
         assert _LOCATION_RULES[:20] in prompt
 
     def test_affection_hints(self):
-        hints = _build_state_hints({"score": 600}, {"mood": "开心", "score": 80})
+        hints = build_state_hints({"score": 600}, {"mood": "开心", "score": 80})
         assert any("亲密" in h for h in hints)
 
     def test_low_affection_no_hint(self):
-        hints = _build_state_hints({"score": 10}, {"mood": "平淡", "score": 50})
+        hints = build_state_hints({"score": 10}, {"mood": "平淡", "score": 50})
         assert not any("亲密" in h or "好感" in h or "喜欢" in h for h in hints)
 
 

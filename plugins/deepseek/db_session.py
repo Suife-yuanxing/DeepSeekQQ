@@ -166,9 +166,9 @@ async def update_user_profile(user_id: str, **kwargs):
 
 
 async def update_relationship_style(user_id: str, style: str, weight: float = 0.05):
-    from .db_preferences import _update_user_preference_raw
+    from .db_preferences import update_user_preference_raw
     try:
-        await _update_user_preference_raw(user_id, "relationship_style", style, weight)
+        await update_user_preference_raw(user_id, "relationship_style", style, weight)
     except Exception:
         pass
 
@@ -215,3 +215,128 @@ async def mark_disclosed(user_id: str, disclosure_key: str):
         (str(user_id), disclosure_key, now, now)
     )
     await db.commit()
+
+
+# ---------- 用户画像总结 ----------
+
+async def sync_known_interests(user_id: str):
+    """从 user_preferences 同步兴趣到 user_profiles.known_interests。
+
+    取 top-5 topic_interest 值，按权重排序，写入 known_interests 字段。
+    """
+    try:
+        from .db_preferences import get_user_preferences
+        prefs = await get_user_preferences(user_id)
+        topic_interests = prefs.get("topic_interest", {})
+        if not topic_interests:
+            return
+
+        # 按值降序取 top-5
+        sorted_interests = sorted(topic_interests.items(), key=lambda x: x[1], reverse=True)[:5]
+        interests_text = "、".join(k for k, v in sorted_interests if v >= 0.2)
+        if interests_text:
+            await update_user_profile(user_id, known_interests=interests_text)
+            logger.debug(f"[画像] sync_known_interests: {user_id[:8]} → {interests_text}")
+    except Exception as e:
+        logger.debug(f"[画像] sync_known_interests 失败: {e}")
+
+
+async def build_user_profile_summary(user_id: str, force: bool = False) -> Optional[str]:
+    """聚合用户记忆标签和偏好，调用 LLM 生成用户画像摘要。
+
+    摘要存入 user_profiles.bot_self_summary，供 prompt 注入。
+    非 force 模式下，已有摘要 72 小时内不重复生成。
+
+    Returns:
+        生成的摘要文本，或 None（无需更新/失败时）
+    """
+    try:
+        # 检查是否已有足够新的摘要
+        if not force:
+            profile = await get_or_create_user_profile(user_id)
+            existing = profile.get("bot_self_summary", "")
+            # 简单策略：有摘要就跳过（避免频繁调 LLM）
+            if existing and len(existing) >= 10:
+                return None
+
+        # 1. 收集 memory_tags
+        from .db_tags import get_all_memory_tags_for_user
+        tags = await get_all_memory_tags_for_user(user_id)
+        if not tags:
+            logger.debug(f"[画像] 用户 {user_id[:8]} 无记忆标签，跳过画像生成")
+            return None
+
+        # 分组整理
+        preferences = []
+        facts = []
+        taboos = []
+        for t in tags:
+            content = t.get("content", "").strip()
+            if not content:
+                continue
+            conf = t.get("confidence", 0)
+            if t.get("tag_type") == "preference":
+                preferences.append((content, conf))
+            elif t.get("tag_type") == "taboo":
+                taboos.append((content, conf))
+            else:
+                facts.append((content, conf))
+
+        # 2. 收集 user_preferences（取 top 兴趣和关系风格）
+        from .db_preferences import get_user_preferences
+        user_prefs = await get_user_preferences(user_id)
+
+        interests_str = ""
+        topic_interests = user_prefs.get("topic_interest", {})
+        if topic_interests:
+            sorted_topics = sorted(topic_interests.items(), key=lambda x: x[1], reverse=True)[:5]
+            interests_str = "、".join(k for k, v in sorted_topics if v >= 0.2)
+
+        relationship_style = ""
+        rel_styles = user_prefs.get("relationship_style", {})
+        if rel_styles:
+            relationship_style = max(rel_styles, key=rel_styles.get)
+
+        # 3. 如果标签太少（<3条），不值得调用 LLM
+        total_items = len(preferences) + len(facts) + len(taboos)
+        if total_items < 3 and not interests_str:
+            logger.debug(f"[画像] 用户 {user_id[:8]} 信息太少（{total_items}条），跳过")
+            return None
+
+        # 4. 构建 LLM prompt
+        lines = ['念念在和一个QQ好友长期聊天。请根据以下信息，用念念的口吻总结“念念眼中的这个好友”（2-3句话，80字内，像在和朋友聊天时想到的）。']
+        if interests_str:
+            lines.append(f"经常聊的话题：{interests_str}")
+        if relationship_style:
+            style_map = {"tsundere": "互相斗嘴的关系", "gentle": "温柔相处的关系", "polite": "礼貌客气的关系"}
+            lines.append(f"相处风格：{style_map.get(relationship_style, relationship_style)}")
+        if preferences:
+            lines.append("记住的偏好：" + "；".join(p[0] for p in preferences[:5]))
+        if facts:
+            lines.append("知道的事实：" + "；".join(f[0] for f in facts[:5]))
+        if taboos:
+            lines.append("注意的禁忌：" + "；".join(t[0] for t in taboos[:3]))
+        lines.append("只输出总结文本，不要引号。")
+
+        prompt = "\n".join(lines)
+
+        # 5. 调用 LLM
+        from .api import call_deepseek_api
+        messages = [
+            {"role": "system", "content": "你是念念，一个21岁的普通女孩。用自然的口语化方式总结你对朋友的了解。"},
+            {"role": "user", "content": prompt},
+        ]
+        summary = await call_deepseek_api(messages, temperature=0.7, max_tokens=150, task_type="summary")
+
+        summary = summary.strip()[:200]
+        if not summary or len(summary) < 10:
+            return None
+
+        # 6. 写入数据库
+        await update_user_profile(user_id, bot_self_summary=summary)
+        logger.info(f"[画像] 生成画像摘要: {user_id[:8]} → {summary[:50]}...")
+        return summary
+
+    except Exception as e:
+        logger.info(f"[画像] build_user_profile_summary 失败（非关键）: {e}")
+        return None

@@ -265,10 +265,11 @@ def get_random_behavior(
     schedule_period: str = "active",
     bot_mood_dominant: str = "平静",
     trigger_chance: float = 0.03,
+    affection_score: float = 0.0,
 ) -> Optional[Dict[str, Any]]:
     """生成随机行为（3%概率）。
 
-    根据时段和情绪选择行为类型，返回行为配置。
+    根据时段、情绪和好感度选择行为类型，返回行为配置。
     """
     if random.random() > trigger_chance:
         return None
@@ -294,6 +295,18 @@ def get_random_behavior(
                 w = int(w * 0.3)
             elif behavior["type"] == "mood_share":
                 w = int(w * 2)
+
+        # 好感度修正：高好感更亲密，低好感更克制
+        if affection_score >= 200:
+            if behavior["type"] in ("tease", "curiosity"):
+                w = int(w * 2.0)  # 熟人之间更放得开
+            elif behavior["type"] == "promise":
+                w = int(w * 1.5)
+        elif affection_score < 20:
+            if behavior["type"] == "tease":
+                w = 0  # 陌生人不会调戏
+            elif behavior["type"] == "promise":
+                w = int(w * 0.3)
 
         weights.append(max(1, w))
 
@@ -321,6 +334,7 @@ def get_verbosity_modifier(
     bot_mood_dominant: str = "平静",
     hour: int = None,
     is_weekend: bool = False,
+    affection_score: float = 0.0,
 ) -> float:
     """返回回复长度/活跃度的修正系数（0.5~1.5）。
 
@@ -361,6 +375,12 @@ def get_verbosity_modifier(
         "冷淡": 0.5,
     }
     modifier *= mood_mods.get(bot_mood_dominant, 1.0)
+
+    # 好感度修正：越熟越话多，越生越克制
+    if affection_score >= 200:
+        modifier += 0.1
+    elif affection_score < 20:
+        modifier -= 0.1
 
     # 随机波动（±10%）
     modifier *= random.uniform(0.9, 1.1)
@@ -613,6 +633,7 @@ def get_real_world_behavior(
     schedule_period: str = "active",
     bot_mood_dominant: str = "平静",
     city: str = "",
+    affection_score: float = 0.0,
 ) -> Optional[str]:
     """综合现实世界行为生成。
 
@@ -646,7 +667,7 @@ def get_real_world_behavior(
         return f"刚刚发生了一个小事：{micro}。随口提一句，不超过一句话。"
 
     # 6. 随机行为（5%概率）
-    random_behavior = get_random_behavior(schedule_period, bot_mood_dominant, trigger_chance=0.05)
+    random_behavior = get_random_behavior(schedule_period, bot_mood_dominant, trigger_chance=0.05, affection_score=affection_score)
     if random_behavior:
         return f"你突然{random_behavior['type']}：{random_behavior['text']}。"
 
@@ -663,6 +684,7 @@ def get_behavior_hint(
     schedule_period: str = "active",
     bot_mood_dominant: str = "平静",
     city: str = "",
+    affection_score: float = 0.0,
 ) -> Optional[str]:
     """综合生成行为模式提示，供 prompt 注入。
 
@@ -671,4 +693,5 @@ def get_behavior_hint(
     return get_real_world_behavior(
         weather_condition, weather_temp,
         schedule_period, bot_mood_dominant, city,
+        affection_score=affection_score,
     )

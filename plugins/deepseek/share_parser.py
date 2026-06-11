@@ -45,7 +45,7 @@ _INVALID_MARKERS = [
 ]
 
 
-def _is_valid_share(s: Dict[str, Any]) -> bool:
+def is_valid_share(s: Dict[str, Any]) -> bool:
     """校验分享内容是否有效（统一入口，同时供外部模块调用）。
 
     校验逻辑：
@@ -92,6 +92,32 @@ async def fetch_url_content(url: str) -> Optional[Dict[str, str]]:
     cached = await get_article_cache(cache_key)
     if cached:
         return cached
+
+    # ═══════════════════════════════════════════════
+    # 视频平台：优先使用 SDK 解析（绕开 HTML 抓取）
+    # ═══════════════════════════════════════════════
+    is_video_platform = (
+        "bilibili.com/video" in url or "b23.tv" in url
+        or "youtube.com" in url or "youtu.be" in url
+        or "tiktok.com" in url
+    )
+    if is_video_platform:
+        try:
+            from .video_parser import parse_video_url
+            video_info = await parse_video_url(url)
+            if video_info and video_info.title:
+                result = video_info.to_share_dict(url)
+                if result and result.get("summary"):
+                    _url_fetch_cooldown[url] = now
+                    await save_article_cache(
+                        cache_key, url,
+                        result.get("title", ""),
+                        result.get("author", ""),
+                        result["summary"]
+                    )
+                    return result
+        except Exception as e:
+            logger.debug(f"[分享] video_parser SDK 失败，降级 HTML: {e}")
 
     headers = {
         "User-Agent": (
@@ -785,7 +811,7 @@ async def _handle_text_segment(seg, seen_urls: set) -> List[Dict[str, Any]]:
             continue
         seen_urls.add(url)
         article = await fetch_url_content(url)
-        if _is_valid_share(article):
+        if is_valid_share(article):
             display = f"{article.get('title', '无标题')} - {article.get('author', '未知')}"
             results.append({
                 "type": "网页",
@@ -922,7 +948,7 @@ async def _handle_json_card(seg, seen_urls: set) -> List[Dict[str, Any]]:
                         break
                     seen_urls.add(card_url)
                     article = await fetch_url_content(card_url)
-                    if _is_valid_share(article):
+                    if is_valid_share(article):
                         results.append({
                             "type": "网页",
                             "source": f"{article.get('title', title)} - {article.get('author', '未知')}",
