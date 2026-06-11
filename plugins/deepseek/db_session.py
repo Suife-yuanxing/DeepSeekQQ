@@ -12,24 +12,36 @@ from .db_core import get_db
 
 # ---------- session_state ----------
 async def save_session_state(session_id: str, topic: str = "", emotion: str = "",
-                             context_summary: str = "", bot_mood: str = "{}"):
+                             context_summary: str = "", bot_mood: str = "{}",
+                             scratchpad: str = None):
     db = await get_db()
     now = datetime.now().timestamp()
-    await db.execute(
-        """INSERT INTO session_state (session_id, last_topic, last_emotion, last_interaction, context_summary, bot_mood_snapshot)
-           VALUES (?, ?, ?, ?, ?, ?)
-           ON CONFLICT(session_id) DO UPDATE SET
-           last_topic = ?, last_emotion = ?, last_interaction = ?, context_summary = ?, bot_mood_snapshot = ?""",
-        (session_id, topic, emotion, now, context_summary, bot_mood,
-         topic, emotion, now, context_summary, bot_mood)
-    )
+    if scratchpad is not None:
+        await db.execute(
+            """INSERT INTO session_state (session_id, last_topic, last_emotion, last_interaction, context_summary, bot_mood_snapshot, scratchpad)
+               VALUES (?, ?, ?, ?, ?, ?, ?)
+               ON CONFLICT(session_id) DO UPDATE SET
+               last_topic = ?, last_emotion = ?, last_interaction = ?, context_summary = ?, bot_mood_snapshot = ?, scratchpad = ?""",
+            (session_id, topic, emotion, now, context_summary, bot_mood, scratchpad,
+             topic, emotion, now, context_summary, bot_mood, scratchpad)
+        )
+    else:
+        await db.execute(
+            """INSERT INTO session_state (session_id, last_topic, last_emotion, last_interaction, context_summary, bot_mood_snapshot)
+               VALUES (?, ?, ?, ?, ?, ?)
+               ON CONFLICT(session_id) DO UPDATE SET
+               last_topic = ?, last_emotion = ?, last_interaction = ?, context_summary = ?, bot_mood_snapshot = ?""",
+            (session_id, topic, emotion, now, context_summary, bot_mood,
+             topic, emotion, now, context_summary, bot_mood)
+        )
     await db.commit()
 
 
 async def get_session_state(session_id: str) -> Optional[Dict[str, Any]]:
     db = await get_db()
     async with db.execute(
-        "SELECT last_topic, last_emotion, last_interaction, context_summary, bot_mood_snapshot FROM session_state WHERE session_id = ?",
+        "SELECT last_topic, last_emotion, last_interaction, context_summary, bot_mood_snapshot, "
+        "COALESCE(scratchpad, '') as scratchpad FROM session_state WHERE session_id = ?",
         (session_id,)
     ) as cursor:
         row = await cursor.fetchone()
@@ -41,6 +53,7 @@ async def get_session_state(session_id: str) -> Optional[Dict[str, Any]]:
             "last_interaction": row["last_interaction"],
             "context_summary": row["context_summary"],
             "bot_mood_snapshot": row["bot_mood_snapshot"],
+            "scratchpad": row["scratchpad"],
         }
 
 

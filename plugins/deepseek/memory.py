@@ -118,6 +118,8 @@ async def save_reply(session_id: str, user_id: str, raw_msg: str, reply_text: st
     safe_task(_evaluate_reply_quality(user_id, session_id, raw_msg, reply_text))
     # 跨会话状态更新（含 bot 情绪快照）
     safe_task(_update_session_state(session_id, raw_msg, reply_text, bot_mood))
+    # P0-3: 工作记忆更新
+    safe_task(_update_scratchpad_task(session_id, user_id, raw_msg, reply_text, bot_mood))
     # 记忆系统深化：提取共同回忆和私人梗
     safe_task(_extract_shared_memories(user_id, raw_msg, reply_text))
     safe_task(_extract_private_memes(user_id, raw_msg, reply_text))
@@ -140,11 +142,9 @@ async def save_reply(session_id: str, user_id: str, raw_msg: str, reply_text: st
 
 
 def _is_memory_relevant(memory_content: str, user_msg: str) -> bool:
-    """判断记忆是否与当前用户消息相关（关键词 + 语义）。"""
-    # 标准 CJK 区间：基本汉字 + 扩展 A 区
+    """判断记忆是否与当前用户消息相关（中文 + 英文关键词）。"""
+    # CJK 关键词
     user_keywords = set(re.findall(r'[一-鿿]{2,6}', user_msg))
-    if not user_keywords:
-        return False
     for kw in user_keywords:
         if kw in memory_content:
             return True
@@ -152,69 +152,110 @@ def _is_memory_relevant(memory_content: str, user_msg: str) -> bool:
     for kw in mem_keywords:
         if kw in user_msg:
             return True
+    # 英文关键词：3个字母以上的单词
+    en_user = set(w.lower() for w in re.findall(r'[a-zA-Z]{3,}', user_msg))
+    en_mem = set(w.lower() for w in re.findall(r'[a-zA-Z]{3,}', memory_content))
+    if en_user & en_mem:
+        return True
     return False
 
 
 async def _get_relevant_memories(user_id: str, session_id: str, current_msg: str, limit: int = 5) -> List[str]:
-    """获取相关记忆提示语。置信度 + 冷却 + 关键词相关性 + 语义回退。"""
+    """获取相关记忆提示语。关键词 + 语义混合检索 + RRF 融合 + 加权随机选择。
+
+    两路检索:
+    1. 关键词: 置信度排序的 top-N 标签 → CJK 关键词重叠检查
+    2. 语义: GLM embedding 余弦相似度 → top-10
+
+    通过 RRF (Reciprocal Rank Fusion) 融合两路结果。
+    """
     _cleanup_memory_cache()
     try:
         now = datetime.now().timestamp()
-        rows = await get_relevant_memory_tags(user_id, limit)
+        rows = await get_relevant_memory_tags(user_id, limit * 3)
 
         cooldown_list = _recently_used_memories.get(user_id, [])
 
-        candidates = []
+        # ===== 第1路: 关键词检索 =====
+        kw_candidates = []
         for row in rows:
             content = row["content"]
-            # 冷却检查
             if content in cooldown_list:
                 continue
-            # 时间衰减：超过14天且置信度低的不使用
             days_ago = (now - row["last_used"]) / 86400
             if days_ago > 14 and (row["confidence"] if row["confidence"] else 0.5) < 0.3:
                 continue
-            # 相关性检查
-            if not _is_memory_relevant(content, current_msg):
-                continue
-            candidates.append((content, row["confidence"] if row["confidence"] else 0.5))
+            if _is_memory_relevant(content, current_msg):
+                kw_candidates.append((
+                    row["id"],
+                    content,
+                    row["confidence"] if row["confidence"] else 0.5,
+                ))
 
-        # 关键词匹配不到时，尝试语义检索
-        if not candidates:
+        # ===== 第2路: 语义检索 =====
+        sem_ids = set()
+        sem_candidates = []
+        try:
+            from .memory_embed import semantic_search_memories
+            sem_results = await semantic_search_memories(user_id, current_msg, top_k=10)
+            for tag_id, sim_score in sem_results:
+                sem_ids.add(tag_id)
+                # 找到对应的 content
+                for row in rows:
+                    if row["id"] == tag_id:
+                        content = row["content"]
+                        if content not in cooldown_list:
+                            sem_candidates.append((tag_id, content, sim_score))
+                        break
+        except ImportError:
+            logger.debug("[记忆] memory_embed 模块未就绪，跳过语义检索")
+        except Exception as e:
+            logger.debug(f"[记忆] 语义检索跳过: {e}")
+
+        # ===== RRF 融合 =====
+        if sem_candidates and kw_candidates:
             try:
-                from .vector_search import hybrid_search_memories
-                semantic_results = hybrid_search_memories(user_id, current_msg, top_k=limit)
-                for r in semantic_results:
-                    content = r.get("text", "")
-                    if content and content not in cooldown_list:
-                        # 去掉 [preference] 等前缀
-                        clean = content.split("] ", 1)[-1] if "] " in content else content
-                        score = r.get("score", 0.3)
-                        candidates.append((clean, min(0.7, score)))
-            except Exception:
-                pass  # 语义检索失败不阻塞
+                from .memory_embed import rrf_merge
+                kw_ranked = [(cid, conf) for cid, _, conf in kw_candidates[:10]]
+                sem_ranked = [(cid, sim) for cid, _, sim in sem_candidates[:10]]
+                merged = rrf_merge(kw_ranked, sem_ranked, top_k=limit + 2)
 
-        # 按置信度加权随机选择
+                # 构建融合后的 candidates 列表
+                all_by_id = {}
+                for cid, content, conf in kw_candidates:
+                    all_by_id[cid] = (content, conf)
+                for cid, content, sim in sem_candidates:
+                    if cid not in all_by_id:
+                        all_by_id[cid] = (content, sim)
+
+                candidates = [(all_by_id[cid][0], all_by_id[cid][1])
+                              for cid, _ in merged if cid in all_by_id]
+            except ImportError:
+                candidates = [(c, conf) for _, c, conf in kw_candidates]
+        else:
+            # 只有一路有结果时直接使用
+            candidates = [(c, conf) for _, c, conf in kw_candidates]
+            if not candidates:
+                candidates = [(c, sim) for _, c, sim in sem_candidates]
+
+        # ===== 加权随机选择 =====
         if candidates:
-            # 置信度高的更容易被选中
             weights = [max(0.1, c) for _, c in candidates]
             total = sum(weights)
             probs = [w / total for w in weights]
             idx = random.choices(range(len(candidates)), weights=probs, k=1)[0]
             selected_content = candidates[idx][0]
 
-            # 记录冷却
             if user_id not in _recently_used_memories:
                 _recently_used_memories[user_id] = []
             _recently_used_memories[user_id].append(selected_content)
             _recently_used_memories[user_id] = _recently_used_memories[user_id][-MEMORY_COOLDOWN_ROUNDS:]
 
-            # 提升被引用标签的置信度
             safe_task(boost_memory_tag(user_id, selected_content))
 
             return [f"[{selected_content}]"]
 
-        # 摘要记忆 fallback
+        # ===== 摘要记忆 fallback =====
         summary = await get_memory_summary(session_id)
         if summary:
             summary_keywords = set(re.findall(r'[一-鿿]{2,}', summary))
@@ -289,6 +330,28 @@ async def _summarize_and_compress(session_id: str):
     logger.info(f"[记忆] 会话 {session_id} 已压缩，摘要：{summary[:60]}...")
 
 
+async def _update_scratchpad_task(session_id: str, user_id: str, raw_msg: str, reply_text: str, bot_mood: dict = None):
+    """P0-3: 异步更新跨轮工作记忆。"""
+    try:
+        from .db_session import get_session_state, save_session_state
+        from .prompt import update_scratchpad
+
+        state = await get_session_state(session_id) or {}
+        current = state.get("scratchpad", "")
+        emotion = bot_mood.get("dominant", "") if bot_mood else ""
+
+        new_scratchpad = await update_scratchpad(
+            session_id, raw_msg, reply_text, current, emotion
+        )
+        if new_scratchpad:
+            # 直接 UPDATE scratchpad 列
+            await save_session_state(session_id, scratchpad=new_scratchpad)
+    except ImportError:
+        pass
+    except Exception as e:
+        logger.debug(f"[记忆] scratchpad 更新跳过: {e}")
+
+
 async def _extract_memory_tags(user_id: str, session_id: str, user_msg: str, reply_text: str):
     """从对话中提取用户标签。新标签初始置信度 0.5。"""
     # Phase 4：群聊也提取记忆标签（范围限定为关键事实）
@@ -321,20 +384,27 @@ async def _extract_memory_tags(user_id: str, session_id: str, user_msg: str, rep
         tags = json.loads(clean)
         if not isinstance(tags, list):
             return
-        await save_memory_tags(user_id, tags)
+        ids = await save_memory_tags(user_id, tags)
         logger.info(f"[记忆] 提取并保存了 {len(tags)} 条标签")
-        # 使向量索引缓存失效，异步重建
-        try:
-            from .vector_search import _user_retrievers
-            from .vector_search import index_user_memories
-            was_cached = user_id in _user_retrievers
-            _user_retrievers.pop(user_id, None)
-            if was_cached:
-                safe_task(index_user_memories(user_id))
-        except Exception:
-            pass
+        # 异步生成 embedding（新标签）
+        if ids:
+            safe_task(_embed_new_tags(ids, tags))
     except Exception as e:
         logger.info(f"[记忆] 提取失败（非关键错误）: {e}")
+
+
+async def _embed_new_tags(ids: list, tags: list):
+    """为新增的记忆标签异步生成 embedding。"""
+    try:
+        from .memory_embed import ensure_tag_embedding
+        for tag_id, tag in zip(ids, tags):
+            content = tag.get("content", "")
+            if content:
+                await ensure_tag_embedding(tag_id, content)
+    except ImportError:
+        pass
+    except Exception as e:
+        logger.debug(f"[记忆] embedding 生成跳过: {e}")
 
 
 async def apply_affection_delta(user_id: str, raw_msg: str):

@@ -322,6 +322,8 @@ class ChatContext:
     # 群聊热度状态机
     group_heat_state: str = ""           # dormant / idle / active
     group_heat_description: str = ""     # 群活跃度自然语言描述
+    # P0-3: 工作记忆 — 跨轮次对话状态
+    scratchpad: str = ""
     # 对话疲劳感知
     fatigue_level: int = 0
     fatigue_hint: str = ""
@@ -382,6 +384,14 @@ async def _stage_session_recovery(ctx: ChatContext) -> Optional[str]:
     ctx.session_recovery = await recover_session_context(ctx.session_id, ctx.user_id)
     if ctx.session_recovery and ctx.session_recovery.get("bot_emotion_memory_hint"):
         ctx.bot_emotion_memory_hint = ctx.session_recovery["bot_emotion_memory_hint"]
+    # P0-3: 加载工作记忆
+    try:
+        from .db_session import get_session_state
+        state = get_session_state(ctx.session_id)
+        if state and state.get("scratchpad"):
+            ctx.scratchpad = state["scratchpad"]
+    except Exception:
+        pass
     return None
 
 
@@ -1157,6 +1167,8 @@ async def _stage_llm(ctx: ChatContext) -> Optional[str]:
             bot_self_summary=ctx.user_profile_summary or None,
         )
         sys_prompt += "\n回复风格：专业分析+个性点评。分析部分结构化、有深度，点评部分保持你念念的语气。绝对禁止括号动作描写。"
+        if ctx.scratchpad:
+            sys_prompt += f"\n\n【当前对话状态】{ctx.scratchpad}"
         messages = [{"role": "system", "content": sys_prompt}]
         for mem in ctx.recent_memories[-ANALYSIS_HISTORY_LIMIT:]:
             messages.append({"role": mem["role"], "content": mem["content"]})
@@ -1348,8 +1360,12 @@ async def _stage_llm(ctx: ChatContext) -> Optional[str]:
                     image_prompt += "\n用户在分享有趣/好看的内容，附和一下就好，不用分析。"
                 sys_prompt += f"\n{image_prompt}"
 
+        if ctx.scratchpad:
+            sys_prompt += f"\n\n【当前对话状态】{ctx.scratchpad}"
+
         messages = [{"role": "system", "content": sys_prompt}]
-        history_limit = REPLY_LENGTH_CONFIG["context_depth"] * CHAT_HISTORY_MULTIPLIER
+        # P0-2: 历史消息数 3x 提升（6 → 18），配合 28K token 预算
+        history_limit = REPLY_LENGTH_CONFIG["context_depth"] * CHAT_HISTORY_MULTIPLIER * 3
 
         # 智能上下文选择（替代简单的保留最近N条）
         from .context_optimizer import fit_messages_to_budget

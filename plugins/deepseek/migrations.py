@@ -401,3 +401,18 @@ async def migrate_v14_add_social_features(db: aiosqlite.Connection):
         )
     """)
     await db.commit()
+
+
+@migration(15)
+async def migrate_v15_add_embedding_and_scratchpad(db: aiosqlite.Connection):
+    """语义记忆检索 + 工作记忆 + 无损压缩：embedding / scratchpad / archived 列。"""
+    for col_sql, table in [
+        ("ALTER TABLE memory_tags ADD COLUMN embedding BLOB", "memory_tags"),
+        ("ALTER TABLE session_state ADD COLUMN scratchpad TEXT DEFAULT ''", "session_state"),
+        ("ALTER TABLE memories ADD COLUMN archived INTEGER DEFAULT 0", "memories"),
+    ]:
+        try:
+            await db.execute(col_sql)
+        except Exception:
+            pass  # 列已存在
+    await db.commit()

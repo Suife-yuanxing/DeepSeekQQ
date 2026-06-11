@@ -88,6 +88,11 @@ REPLY_LENGTH_CONFIG = {
     "context_depth": 3,
 }
 
+# === Token 预算管理 ===
+# DeepSeek 窗口 64K，分配 44% 给输入（~28K），留余量给输出和系统开销
+MAX_INPUT_TOKENS: int = _safe_int(getattr(cfg, "max_input_tokens", 28000), 28000, "max_input_tokens")
+RESERVE_OUTPUT_TOKENS: int = _safe_int(getattr(cfg, "reserve_output_tokens", 2000), 2000, "reserve_output_tokens")
+
 # === 主动消息 ===
 def _get_target_users():
     """动态获取目标用户列表，确保运行时读取最新 MY_QQ 值。"""

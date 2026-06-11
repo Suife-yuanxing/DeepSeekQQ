@@ -125,20 +125,25 @@ def estimate_message_tokens(messages: List[Dict[str, str]]) -> int:
 def fit_messages_to_budget(
     messages: List[Dict[str, str]],
     system_prompt: str,
-    max_input_tokens: int = 6000,
-    reserve_output: int = 1000,
+    max_input_tokens: int = None,
+    reserve_output: int = None,
 ) -> List[Dict[str, str]]:
     """将消息列表裁剪到 token 预算内。
 
     Args:
         messages: 消息列表（包含 system + history + user）
         system_prompt: system prompt 文本
-        max_input_tokens: 最大输入 token 数
-        reserve_output: 预留给输出的 token 数
+        max_input_tokens: 最大输入 token 数（默认从 config 读取，28K）
+        reserve_output: 预留给输出的 token 数（默认从 config 读取，2K）
 
     Returns:
         裁剪后的消息列表
     """
+    from .config import MAX_INPUT_TOKENS, RESERVE_OUTPUT_TOKENS
+    if max_input_tokens is None:
+        max_input_tokens = MAX_INPUT_TOKENS
+    if reserve_output is None:
+        reserve_output = RESERVE_OUTPUT_TOKENS
     system_tokens = estimate_tokens(system_prompt) + 4
     available = max_input_tokens - system_tokens - reserve_output
 
