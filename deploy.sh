@@ -15,6 +15,19 @@ NO_RESTART=false
 SKIP_SYNTAX=false
 PORTS=(8082 8765)
 
+# 探测 Python：优先使用 venv，其次系统 python3/python
+if [ -f "$SCRIPT_DIR/.venv/bin/python" ]; then
+    PYTHON="$SCRIPT_DIR/.venv/bin/python"
+elif command -v python3 &>/dev/null; then
+    PYTHON="python3"
+elif command -v python &>/dev/null; then
+    PYTHON="python"
+else
+    echo "❌ 找不到 Python，请确保已安装或 venv 已创建"
+    exit 1
+fi
+echo "🐍 Python: $PYTHON"
+
 for arg in "$@"; do
     case "$arg" in
         --no-restart) NO_RESTART=true ;;
@@ -90,9 +103,9 @@ if [ "$SKIP_SYNTAX" = false ]; then
     echo "🔍 语法检查..."
     SYNTAX_OK=true
     while IFS= read -r pyfile; do
-        if ! python -c "import py_compile; py_compile.compile('$pyfile', doraise=True)" 2>/dev/null; then
+        if ! $PYTHON -c "import py_compile; py_compile.compile('$pyfile', doraise=True)" 2>/dev/null; then
             # py_compile 静默失败，用 compile() 内置函数再试一次以获取错误详情
-            ERROR_MSG=$(python -c "
+            ERROR_MSG=$($PYTHON -c "
 import sys
 try:
     with open('$pyfile') as f:
@@ -121,9 +134,9 @@ fi
 # 4. 安装所有依赖
 echo "📦 安装依赖..."
 if [ -f pyproject.toml ]; then
-    pip install -e . -q 2>/dev/null || pip install -e .
+    $PYTHON -m pip install -e . -q 2>/dev/null || $PYTHON -m pip install -e .
 elif [ -f requirements.txt ]; then
-    pip install -r requirements.txt -q 2>/dev/null || pip install -r requirements.txt
+    $PYTHON -m pip install -r requirements.txt -q 2>/dev/null || $PYTHON -m pip install -r requirements.txt
 else
     echo "⚠️ 未找到依赖文件，跳过"
 fi
@@ -131,7 +144,7 @@ fi
 # 5. 数据库迁移（如果有）
 if [ -f plugins/deepseek/migrations.py ]; then
     echo "🗃️ 检查数据库迁移..."
-    python -c "from plugins.deepseek.migrations import run_migrations; import asyncio; asyncio.run(run_migrations())" 2>/dev/null || echo "⚠️ 迁移检查跳过"
+    $PYTHON -c "from plugins.deepseek.migrations import run_migrations; import asyncio; asyncio.run(run_migrations())" 2>/dev/null || echo "⚠️ 迁移检查跳过"
 fi
 
 # 6. 重启服务（安全模式：stop → 等端口释放 → start）
