@@ -144,7 +144,7 @@ def _build_analysis_prompt(user_msg: str, history: List[Dict[str, Any]], shares:
     # 取最近3条消息作为上下文
     recent = history[-6:] if len(history) > 6 else history
     history_text = "\n".join([
-        f"{'用户' if m['role'] == 'user' else '猫娘'}：{m['content'][:80]}"
+        f"{'用户' if m['role'] == 'user' else '念念'}：{m['content'][:80]}"
         for m in recent
     ])
 

@@ -306,7 +306,7 @@ async def _generate_follow_up(
         count_hint = "之前已经追问过一次了，这次语气更强烈一点"
 
     prompt = (
-        "你是一个猫娘，正在和用户聊天。\n"
+        "你是林念念，一个普通的21岁女孩，正在和朋友聊天。\n"
         f"你之前发了一条消息：「{original_msg[:100]}」\n"
         f"这条消息的类型是{msg_type}。\n"
         f"用户没有回复。\n\n"

@@ -38,7 +38,7 @@ from .config import VOICE_DIR
 # 火山引擎 TTS API 端点
 VOLCANO_TTS_URL = "https://openspeech.bytedance.com/api/v1/tts"
 
-# 情绪 → 音色映射（猫娘人设联动 — 娇喘女声大模型音色为主调）
+# 情绪 → 音色映射（念念人设联动 — 娇喘女声大模型音色为主调）
 EMOTION_VOICE_MAP = {
     "开心": "zh_female_jiaochuannv_uranus_bigtts",
     "兴奋": "zh_female_jiaochuannv_uranus_bigtts",

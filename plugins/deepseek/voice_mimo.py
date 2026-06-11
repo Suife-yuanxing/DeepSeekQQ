@@ -53,7 +53,7 @@ EMOTION_STYLE_MAP = {
     "撒娇": "撒娇甜美，软软的",
 }
 
-# 情绪 → 音色映射（猫娘人设：活泼用冰糖，温柔用茉莉）
+# 情绪 → 音色映射（念念人设：活泼用冰糖，温柔用茉莉）
 EMOTION_VOICE_MAP = {
     "开心": "冰糖",     # 活泼少女，元气满满
     "兴奋": "冰糖",     # 活泼少女
@@ -101,7 +101,7 @@ async def generate_mimo_voice(text: str, emotion: Optional[str] = None) -> Optio
     style = EMOTION_STYLE_MAP.get(emotion, DEFAULT_STYLE) if emotion else DEFAULT_STYLE
     style_instruction = f"用{style}的语气说话"
 
-    # 根据情绪选择音色（猫娘人设联动）
+    # 根据情绪选择音色（念念人设联动）
     voice = EMOTION_VOICE_MAP.get(emotion, DEFAULT_VOICE) if emotion else DEFAULT_VOICE
 
     payload = {

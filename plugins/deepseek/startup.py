@@ -84,7 +84,7 @@ async def on_start():
     from .config import RANDOM_REPLY_CHANCE
     from .config import VOICE_ENABLED_GROUP
     from .config import VOICE_ENABLED_PRIVATE
-    logger.info("✅ DeepSeek猫娘插件已启动~ 喵！")
+    logger.info("✅ 林念念已启动~ 诶嘿！")
     logger.info(f"ffmpeg 检测: {'已安装 ✅' if has_ff else '未安装 ❌ 语音可能无法发送'}")
     logger.info(f"语音开关: 私聊={VOICE_ENABLED_PRIVATE}, 群聊={VOICE_ENABLED_GROUP}")
     logger.info(f"群聊随机回复概率: {RANDOM_REPLY_CHANCE*100:.1f}%")

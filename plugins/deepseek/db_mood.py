@@ -1,4 +1,4 @@
-"""mood 表操作 — bot 情绪、用户情绪、猫娘心情、情绪快照。"""
+"""mood 表操作 — bot 情绪、用户情绪、念念心情、情绪快照。"""
 import random
 import time
 from datetime import datetime

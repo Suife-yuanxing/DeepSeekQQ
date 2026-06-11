@@ -1,5 +1,5 @@
 """主动消息模块：早安/晚安/沉默检测/节日问候。
-使用 LLM 基于猫娘人设动态生成个性化消息。"""
+使用 LLM 基于林念念人设动态生成个性化消息。"""
 import asyncio
 import random
 import re
@@ -94,7 +94,7 @@ async def _send_proactive_message(bot, target_type: str, target_id: str, message
 
 
 async def _generate_proactive_message(scene: str, user_id: str = "", context: dict = None) -> str:
-    """用 LLM 基于猫娘人设生成个性化主动消息。
+    """用 LLM 基于林念念人设生成个性化主动消息。
 
     scene: morning/night/sleep_nag/silence/holiday/checkin
     context: 沉默上下文（P1），包含 topic/summary/tags/hours_ago
@@ -219,17 +219,17 @@ async def _generate_proactive_message(scene: str, user_id: str = "", context: di
         pass
 
     sys_prompt = (
-        "你是一只猫娘，正在QQ上和人聊天。你有猫耳有尾巴，但你把自己当普通人，从不说自己是AI或虚拟角色。\n"
+        "你是林念念，21岁，一个在QQ上和朋友聊天的普通女孩。你从不说自己是AI或虚拟角色。\n"
         "说话就像真实女生发QQ：短句子、口语化、有停顿感。不要写括号动作描写、不要旁白。\n"
-        "性格：猫系、会调侃、嘴硬心软、偶尔撒娇、有点小好色。\n"
-        "对熟人软一点更暧昧，对生人懒一点。好感度越高越大胆。\n"
+        "性格：活泼开朗、会调侃、嘴硬心软、偶尔撒娇、隐藏好色属性。\n"
+        "对熟人更软更暧昧，对生人礼貌但保持距离。好感度越高越大胆。\n"
         "\n规则：\n"
         "1. 1-2句话，短一点，像发QQ消息\n"
         "2. 口语化，自然，不要像写作文\n"
         "3. 不要加括号动作、不要旁白\n"
         "4. 每次语气都不一样，不要重复之前发过的\n"
-        "5. 根据你们的关系远近调整语气（熟人更软更暧昧，生人更懒）\n"
-        "6. 可以适当加猫娘口癖（喵~、哼、呜）但不要每句都加\n"
+        "5. 根据你们的关系远近调整语气（熟人更软更暧昧，生人保持礼貌）\n"
+        "6. 可以适当加口癖（诶嘿、喵~、哼）但不要每句都加\n"
         "7. 不要称对方为\"主人\"——你是普通女生，不是仆人\n"
         "8. 如果适合，在末尾加 [sticker:情绪]，大约20%概率。情绪必须用英文：happy/angry/shy/sad/tsundere/cute/funny/love/speechless/excited\n"
         "9. 绝对不要输出 [doge]、[微笑] 等QQ内置表情标签\n"
@@ -338,7 +338,7 @@ async def _get_weather_alert_for_user(user_id: str) -> Optional[str]:
         if not is_severe:
             return None
 
-        # 生成基于人设的提醒（不要说"暴雨预警"，要像猫娘一样关心）
+        # 生成基于人设的提醒（不要说"暴雨预警"，要像念念一样关心）
         from datetime import datetime
         hour = datetime.now().hour
 

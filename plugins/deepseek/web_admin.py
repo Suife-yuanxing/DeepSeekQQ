@@ -397,7 +397,7 @@ _DASHBOARD_HTML = """<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>猫娘 Bot 管理后台</title>
+<title>念念 Bot 管理后台</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:#1a1a2e;color:#e0e0e0;padding:20px}
@@ -429,7 +429,7 @@ pre{background:#0a0a1a;padding:8px;border-radius:4px;overflow-x:auto;font-size:1
 </style>
 </head>
 <body>
-<h1>🐱 猫娘 Bot 管理后台</h1>
+<h1>🐱 念念 Bot 管理后台</h1>
 
 <div id="status-card" class="card">
   <h2>运行状态</h2>

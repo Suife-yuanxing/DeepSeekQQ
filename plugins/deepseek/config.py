@@ -66,6 +66,20 @@ SERVER_PORT: int = _safe_int(getattr(cfg, "port", 8080), 8080, "port")
 # === 主人 QQ ===
 MY_QQ: str = str(getattr(cfg, "my_qq", ""))
 
+# === 人设（可通过 .env 覆盖） ===
+BOT_NAME: str = str(getattr(cfg, "bot_name", "林念念") or "").strip() or "林念念"
+BOT_AGE: int = _safe_int(getattr(cfg, "bot_age", 21), 21, "bot_age")
+BOT_GENDER: str = str(getattr(cfg, "bot_gender", "女") or "").strip() or "女"
+BOT_HEIGHT: int = _safe_int(getattr(cfg, "bot_height", 165), 165, "bot_height")
+BOT_BIRTHDAY: str = str(getattr(cfg, "bot_birthday", "6月15日") or "").strip() or "6月15日"
+BOT_ZODIAC: str = str(getattr(cfg, "bot_zodiac", "双子座") or "").strip() or "双子座"
+BOT_CITY: str = str(getattr(cfg, "bot_city", "上海") or "").strip() or "上海"
+BOT_HOMETOWN: str = str(getattr(cfg, "bot_hometown", "杭州") or "").strip() or "杭州"
+BOT_OCCUPATION: str = str(getattr(cfg, "bot_occupation", "大学生") or "").strip() or "大学生"
+BOT_UNIVERSITY: str = str(getattr(cfg, "bot_university", "") or "").strip()
+BOT_MAJOR: str = str(getattr(cfg, "bot_major", "设计/数字媒体") or "").strip() or "设计/数字媒体"
+BOT_CAT_NAME: str = str(getattr(cfg, "bot_cat_name", "团团") or "").strip() or "团团"
+
 # === 回复长度策略 ===
 REPLY_LENGTH_CONFIG = {
     "min_lines": 1,

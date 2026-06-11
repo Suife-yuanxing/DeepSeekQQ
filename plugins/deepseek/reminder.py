@@ -201,7 +201,7 @@ async def parse_reminder(user_msg: str) -> ReminderParseResult:
 # ============================================================
 
 async def _generate_reminder_reply(scene: str, **kwargs) -> str:
-    """用 LLM 基于猫娘人设生成个性化的提醒相关回复。"""
+    """用 LLM 基于念念人设生成个性化的提醒相关回复。"""
     try:
         if scene == "create_success":
             prompt = (
@@ -239,7 +239,7 @@ async def _generate_reminder_reply(scene: str, **kwargs) -> str:
             return ""
 
         sys = (
-            "你是一只猫娘，正在QQ上和人聊天。你的性格：猫系、会调侃、嘴硬、偶尔撒娇、有点小好色。"
+            "你是林念念，一个21岁的普通女孩，正在QQ上和朋友聊天。你的性格：活泼开朗、会调侃、嘴硬、偶尔撒娇、隐藏好色属性。"
             "口语化、短句、像发QQ消息。不要加括号动作。只输出回复内容，不要任何其他文字。"
         )
         messages = [

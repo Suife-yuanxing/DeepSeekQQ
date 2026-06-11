@@ -519,7 +519,7 @@ async def _stage_group_filter(ctx: ChatContext) -> Optional[str]:
         return None
 
     # 昵称匹配
-    nicknames = ["猫娘", "kitty", "喵喵", "bot", "机器人"]
+    nicknames = ["念念", "kitty", "bot", "机器人"]
     if any(nick in ctx.raw_msg for nick in nicknames):
         ctx.group_heat_state = heat_state
         ctx.group_heat_description = heat_manager.get_activity_description(ctx.session_id)
@@ -1134,7 +1134,7 @@ async def _stage_llm(ctx: ChatContext) -> Optional[str]:
             group_heat_desc=ctx.group_heat_description or None,
             scene_hint=scene_hint or None,
         )
-        sys_prompt += "\n回复风格：专业分析+个性点评。分析部分结构化、有深度，点评部分保持你的猫娘语气。绝对禁止括号动作描写。"
+        sys_prompt += "\n回复风格：专业分析+个性点评。分析部分结构化、有深度，点评部分保持你念念的语气。绝对禁止括号动作描写。"
         messages = [{"role": "system", "content": sys_prompt}]
         for mem in ctx.recent_memories[-ANALYSIS_HISTORY_LIMIT:]:
             messages.append({"role": mem["role"], "content": mem["content"]})
