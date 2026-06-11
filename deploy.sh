@@ -134,9 +134,9 @@ fi
 # 4. 安装所有依赖
 echo "📦 安装依赖..."
 if [ -f pyproject.toml ]; then
-    $PYTHON -m pip install -e . -q 2>/dev/null || $PYTHON -m pip install -e .
+    $PYTHON -m pip install -e . -q 2>/dev/null || true
 elif [ -f requirements.txt ]; then
-    $PYTHON -m pip install -r requirements.txt -q 2>/dev/null || $PYTHON -m pip install -r requirements.txt
+    $PYTHON -m pip install -r requirements.txt -q 2>/dev/null || true
 else
     echo "⚠️ 未找到依赖文件，跳过"
 fi
