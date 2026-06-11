@@ -206,7 +206,21 @@ async def on_start():
         if PHONE_WS_KEY:
             from .phone_bridge import get_relay
             relay = get_relay()
-            await relay.start(port=PHONE_RELAY_PORT, api_key=PHONE_WS_KEY)
+            # 端口重试：防止旧进程还未释放端口时直接失败
+            max_retries = 5
+            for attempt in range(1, max_retries + 1):
+                try:
+                    await relay.start(port=PHONE_RELAY_PORT, api_key=PHONE_WS_KEY)
+                    break
+                except OSError as e:
+                    if "address already in use" in str(e).lower() and attempt < max_retries:
+                        wait = attempt * 3
+                        logger.warning(
+                            f"[手机] 端口 {PHONE_RELAY_PORT} 被占用，第{attempt}次重试（等待{wait}s）..."
+                        )
+                        await asyncio.sleep(wait)
+                    else:
+                        raise
             logger.info(f"[手机] MobileRun Portal 中继已启动 ws://0.0.0.0:{PHONE_RELAY_PORT}")
             logger.info(f"[手机] 手机端请用 MobileRun Portal 连接 wss://<服务器IP>:8443/?token=<PHONE_WS_KEY>")
         else:
