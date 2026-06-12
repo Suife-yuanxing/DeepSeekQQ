@@ -68,6 +68,8 @@ from .memory import save_reply
 from .plugin_manager import get_enabled_plugins
 from .prompt import build_system_prompt
 from .prompt import estimate_reply_length
+from .values import get_value_hints as _get_value_hints
+from .values import get_opinion_injection as _get_opinion_injection
 from .reminder import generate_reminder_reply
 from .reminder import cancel_reminder_by_id
 from .reminder import create_reminder
@@ -334,6 +336,10 @@ class ChatContext:
     activity_hint: str = ""
     # 人设演化提示
     personality_drift_hints: list = field(default_factory=list)
+    # 价值体系：bot的立场/三观
+    value_hints: list = field(default_factory=list)
+    past_opinions: list = field(default_factory=list)
+    past_opinions_hint: str = ""
     # 结构化天气数据（供行为引擎使用，避免 regex 解析格式化字符串）
     _weather_info: Any = None
     # 场景路由结果（供 prompt_templates 使用）
@@ -691,6 +697,7 @@ async def _run_full_analysis(ctx: ChatContext, history_for_analysis: list):
     await _run_batch2_queries(ctx, bot_mood_dominant)
     await _run_fatigue_and_gap(ctx, bot_mood_dominant)
     await _run_personality_drift(ctx)
+    await _run_value_analysis(ctx)
 
 
 async def _run_core_analysis(ctx: ChatContext, history_for_analysis: list):
@@ -1002,6 +1009,55 @@ async def _run_personality_drift(ctx: ChatContext):
         logger.debug(f"[人设演化] 跳过（非关键路径）: {e}")
 
 
+async def _run_value_analysis(ctx: ChatContext):
+    """价值体系分析：检测话题立场冲突，查询历史立场。"""
+    try:
+        aff_score = ctx.affection.get("score", 0)
+
+        # 获取价值提示（关键词匹配 + 冲突检测，不调用LLM）
+        ctx.value_hints = _get_value_hints(ctx.raw_msg, aff_score)
+
+        # 查询该用户相关的历史立场
+        from .opinion_tracker import get_past_opinions, build_past_opinions_hint
+        ctx.past_opinions = await get_past_opinions(ctx.user_id, limit=5)
+        if ctx.past_opinions:
+            ctx.past_opinions_hint = build_past_opinions_hint(ctx.past_opinions)
+
+        if ctx.value_hints:
+            logger.debug(f"[价值体系] 检测到 {len(ctx.value_hints)} 条立场提示")
+    except Exception as e:
+        logger.debug(f"[价值体系] 分析跳过（非关键）: {e}")
+
+
+async def _record_expressed_opinions(ctx: ChatContext):
+    """从回复中记录bot表达的相关立场（fire-and-forget）。"""
+    try:
+        from .opinion_tracker import record_opinion
+
+        # 提取话题关键词（在bot回复中匹配）
+        from .values import find_relevant_values
+        relevant = find_relevant_values(ctx.reply_text)
+        if not relevant:
+            return
+
+        for rv in relevant[:3]:  # 最多记录3条
+            agreement = "neutral"
+            if any(kw in ctx.reply_text for kw in ["确实", "没错", "对对", "同意", "赞同", "你说得对"]):
+                agreement = "agree"
+            elif any(kw in ctx.reply_text for kw in ["不过", "但是", "可是", "我觉得", "不是", "不对", "不一定"]):
+                agreement = "disagree"
+
+            await record_opinion(
+                user_id=ctx.user_id,
+                topic=rv["topic"],
+                bot_stance=rv["opinion"][:100],
+                user_stance=ctx.raw_msg[:100],
+                agreement_level=agreement,
+            )
+    except Exception as e:
+        logger.debug(f"[意见追踪] 记录失败（非关键）: {e}")
+
+
 @stage("schedule_interrupt")
 async def _stage_schedule_interrupt(ctx: ChatContext) -> Optional[str]:
     """作息规律：根据时间决定是否中断消息处理。"""
@@ -1241,6 +1297,8 @@ async def _stage_llm(ctx: ChatContext) -> Optional[str]:
             bot_self_summary=ctx.user_profile_summary or None,
             activity_hint=ctx.activity_hint or None,
             personality_drift_hints=ctx.personality_drift_hints or None,
+            value_hints=ctx.value_hints or None,
+            past_opinions_hint=ctx.past_opinions_hint or None,
         )
         sys_prompt += "\n回复风格：专业分析+个性点评。分析部分结构化、有深度，点评部分保持你念念的语气。绝对禁止括号动作描写。"
         if ctx.scratchpad:
@@ -1303,6 +1361,8 @@ async def _stage_llm(ctx: ChatContext) -> Optional[str]:
             bot_self_summary=ctx.user_profile_summary or None,
             activity_hint=ctx.activity_hint or None,
             personality_drift_hints=ctx.personality_drift_hints or None,
+            value_hints=ctx.value_hints or None,
+            past_opinions_hint=ctx.past_opinions_hint or None,
         )
 
         # 语音通话模式：注入口语化 prompt
@@ -1699,6 +1759,10 @@ async def _stage_post(ctx: ChatContext) -> Optional[str]:
     from .promise_tracker import process_bot_reply
     from .utils import safe_task
     safe_task(process_bot_reply(ctx.reply_text, ctx.user_id, ctx.session_id))
+
+    # 意见追踪：记录bot表达的立场（fire-and-forget）
+    if ctx.value_hints or ctx.past_opinions:
+        safe_task(_record_expressed_opinions(ctx))
 
     sticker_chance = ctx.emotion_params.get("sticker_chance", 0.25)
     reply_filtered, sticker_kept = filter_sticker_tag(ctx.reply_text, ctx.session_id, keep_probability=sticker_chance)

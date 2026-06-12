@@ -169,10 +169,21 @@ _SMALL_TALK_RULES = (
 )
 
 _TOPIC_RULES = (
-    "对话风格：你是回应者，不是主持人。"
-    "对方发起话题你跟着聊（乒乓式对话），不要主动开启多个新话题。"
+    "对话风格：你是聊天参与者，不是客服。"
+    "可以顺着聊也可以有自己的想法，不用每条消息都附和对方。"
+    "不要主动开启太多新话题，但聊到你有立场的话题时可以自然表达自己的看法。"
     "不要像客服一样反问\"你呢？\"、\"你觉得呢？\"，除非对方明确把话题抛回来。"
     "更不要连珠炮式提问——\"你喜欢什么？那你觉得呢？你有没有...？\"这很假。"
+)
+
+_INDEPENDENT_OPINION_RULES = (
+    "【独立思考】你有自己的三观和立场，不是应声虫。\n"
+    "1. 对话题有自己的看法——同意就说同意，不同意就自然表达不同意见，不确定就说不知道\n"
+    "2. 表达不同意见时保持念念的风格：傲娇嘴硬、自嘲调侃、温和认真都可以，不要像辩论选手\n"
+    "3. 不要为了反对而反对（别当杠精），也不要为了附和而附和（别当舔狗）\n"
+    "4. 观点表达完就过去了，不要一直揪着同一个话题不放，像真人聊天一样自然转换\n"
+    "5. 在你的核心话题上（奶茶、游戏、猫、早起等），可以更直接地表达立场\n"
+    "6. 对不了解的话题坦诚说不知道，可以表达好奇或无所谓的态度"
 )
 
 _IGNORANCE_RULES = (
@@ -261,11 +272,13 @@ def build_system_prompt(
     bot_self_summary: str = None,  # 用户画像摘要：念念对用户的认知总结
     activity_hint: str = None,  # 当前活动状态
     personality_drift_hints: list = None,  # 人设演化提示
+    value_hints: list = None,  # 价值体系提示（来自 values.py）
+    past_opinions_hint: str = None,  # 历史立场提示（来自 opinion_tracker.py）
 ) -> str:
     time_context = _get_time_context()
 
     # === 基础人设 + 闲聊规则（始终加载） ===
-    parts = [f"{time_context}\n\n{CORE_PERSONA}\n\n{_SMALL_TALK_RULES}\n\n{_IGNORANCE_RULES}\n\n{_EMOTIONAL_SUBTLE_RULES}"]
+    parts = [f"{time_context}\n\n{CORE_PERSONA}\n\n{_SMALL_TALK_RULES}\n\n{_IGNORANCE_RULES}\n\n{_EMOTIONAL_SUBTLE_RULES}\n\n{_INDEPENDENT_OPINION_RULES}"]
 
     # === 表情包规则（有 sticker 场景或非简单问候时加载） ===
     is_simple = len(user_msg.strip()) <= 5 and not any(kw in user_msg for kw in ["表情", "sticker", "发表情"])
@@ -322,6 +335,15 @@ def build_system_prompt(
     if personality_drift_hints:
         for hint in personality_drift_hints:
             parts.append(f"【兴趣变化】{hint}")
+
+    # === 价值体系：bot的立场/三观 ===
+    if value_hints:
+        for hint in value_hints:
+            parts.append(f"【你的立场】{hint}")
+
+    # === 历史立场一致性 ===
+    if past_opinions_hint:
+        parts.append(past_opinions_hint)
 
     # === 个性特征（口头禅/话题偏好）===
     from .personality import get_personality_hint

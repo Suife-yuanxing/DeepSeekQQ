@@ -573,6 +573,24 @@ async def init_db():
             UNIQUE(group_id, meme_type, content)
         )
     """)
+    # 意见记忆表：bot表达过的立场，防止前后矛盾
+    await db.execute("""
+        CREATE TABLE IF NOT EXISTS opinion_memory (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id TEXT NOT NULL,
+            topic TEXT NOT NULL,
+            bot_stance TEXT NOT NULL,
+            user_stance TEXT DEFAULT '',
+            agreement_level TEXT DEFAULT 'neutral',
+            created_at REAL NOT NULL,
+            last_mentioned_at REAL,
+            mention_count INTEGER DEFAULT 1,
+            UNIQUE(user_id, topic)
+        )
+    """)
+    await db.execute("CREATE INDEX IF NOT EXISTS idx_opinion_user ON opinion_memory(user_id)")
+    await db.execute("CREATE INDEX IF NOT EXISTS idx_opinion_topic ON opinion_memory(topic)")
+
     await db.execute("""
         CREATE TABLE IF NOT EXISTS social_references (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
