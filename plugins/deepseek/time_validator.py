@@ -153,6 +153,30 @@ def validate_time_in_reply(reply_text: str) -> str:
             fixed_count += 1
             logger.debug(f"[时间校验] 替换 '{matched_text}' → '{fix}'（当前{hour}时，合法{start_h}-{end_h}时）")
 
+    # === 具体小时数校验（防止编造"凌晨2点"、"都12点了"等） ===
+    # 匹配：X点、X点钟、X:XX、X点半、X点多
+    _hour_pattern = re.compile(
+        r'(?:都?|已经)?(\d{1,2})\s*(?:点|:\d{2}|时)'
+        r'(?:\s*(?:半|多|了|整|钟|左右|差不多))?'
+    )
+    for m in _hour_pattern.finditer(text):
+        mentioned_hour = int(m.group(1))
+        if mentioned_hour > 23:
+            continue
+        # 允许 ±1 小时的误差（LLM 四舍五入）
+        if abs(mentioned_hour - hour) <= 1:
+            continue
+        # 编造了小时数 → 替换为真实时间
+        real_hour = hour
+        old_text = m.group(0)
+        # 保留原始格式中的修饰词
+        suffix = old_text[len(m.group(1)):]  # "点半了" → "点半了"
+        new_text = f"{real_hour}{suffix}"
+        text = text.replace(old_text, new_text, 1)
+        fixed_count += 1
+        logger.info(f"[时间校验] 小时修正: '{old_text}' → '{new_text}'（实际{hour}点）")
+        break  # 只修正第一个编造的小时
+
     # 清理多余空格和标点
     if fixed_count > 0:
         text = re.sub(r'\s{2,}', ' ', text)

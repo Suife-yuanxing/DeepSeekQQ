@@ -37,6 +37,7 @@ def _get_time_context() -> str:
     return (
         f"今天是{date_str} {weekday}，当前时间是{period} {time_str}（北京时间）。"
         f"\n重要：如果回复中需要提到时间，必须使用以上真实时间，绝对不要猜测或编造时间！"
+        f'\n绝对禁止编造具体小时数（如"凌晨2点""都12点了"），你看到的 {time_str} 就是唯一的真实时间。'
     )
 
 
@@ -258,6 +259,8 @@ def build_system_prompt(
     group_heat_desc: str = None,
     scene_hint: str = None,  # 来自 prompt_templates 的场景提示
     bot_self_summary: str = None,  # 用户画像摘要：念念对用户的认知总结
+    activity_hint: str = None,  # 当前活动状态
+    personality_drift_hints: list = None,  # 人设演化提示
 ) -> str:
     time_context = _get_time_context()
 
@@ -310,6 +313,15 @@ def build_system_prompt(
     # === 作息状态 ===
     if schedule and schedule.period in ("sleeping", "waking", "meal", "lazy", "night_owl"):
         parts.append(f"【作息状态】{schedule.description}")
+
+    # === 当前活动状态 ===
+    if activity_hint:
+        parts.append(f"【当前状态】{activity_hint}")
+
+    # === 人设演化 ===
+    if personality_drift_hints:
+        for hint in personality_drift_hints:
+            parts.append(f"【兴趣变化】{hint}")
 
     # === 个性特征（口头禅/话题偏好）===
     from .personality import get_personality_hint

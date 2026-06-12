@@ -31,6 +31,58 @@ def introduce_typo(text: str) -> str:
     return text
 
 
+# ============================================================
+# 口吃/重复字符效果
+# ============================================================
+
+# 句首可重复的单字（中文常见口吃模式）
+_STUTTER_STARTERS = set("我你就这也那还不过可要是有对好真太")
+
+# 语气词重复池
+_STUTTER_INTERJECTIONS = ["嗯", "哈", "啊", "呃", "唔"]
+
+# 否定重复池
+_STUTTER_NEGATIONS = ["不", "没"]
+
+
+def introduce_stutter(text: str, arousal: float = 0.5) -> str:
+    """模拟口吃/重复字符效果。
+
+    触发条件由调用方控制（3%基础概率，高arousal翻倍到6%）。
+    与 typo 互斥（调用方保证同一消息只触发一种）。
+    """
+    if len(text) < 4:
+        return text
+
+    roll = random.random()
+
+    # 30%: 句首重复（第一个字重复2-3次）
+    if roll < 0.30 and text[0] in _STUTTER_STARTERS:
+        repeat_count = random.randint(2, 3)
+        return text[0] * repeat_count + text[1:]
+
+    # 25%: 语气词重复（嗯嗯嗯、哈哈哈哈）
+    if roll < 0.55:
+        for interj in _STUTTER_INTERJECTIONS:
+            if interj in text[:8]:
+                count = random.randint(3, 6)
+                return text.replace(interj, interj * count, 1)
+
+    # 25%: 否定重复（不不不、没有没有）
+    if roll < 0.80:
+        for neg in _STUTTER_NEGATIONS:
+            idx = text.find(neg)
+            if idx >= 0 and idx < 8:
+                if neg == "不" and text[idx:idx+2] not in ("不是", "不过", "不然"):
+                    count = random.randint(3, 5)
+                    return text[:idx] + neg * count + text[idx+1:]
+                elif neg == "没" and text[idx:idx+2] in ("没有", "没想", "没关"):
+                    return text[:idx] + "没" * random.randint(3, 4) + text[idx+1:]
+
+    # 20%: fallthrough — 不做变换，降低侵入性
+    return text
+
+
 _MIND_CHANGE_PIVOTS = [
     "等等，其实...",
     "算了不说了，",

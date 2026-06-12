@@ -50,6 +50,7 @@ from .handler_helpers import make_reply
 from .handler_helpers import parse_target_lines
 from .handler_helpers import should_quote
 from .handler_humanize import introduce_mind_change
+from .handler_humanize import introduce_stutter
 from .handler_humanize import introduce_typo
 from .handler_humanize import introduce_uncertainty
 from .handler_humanize import maybe_add_kaomoji
@@ -329,6 +330,10 @@ class ChatContext:
     fatigue_hint: str = ""
     # 用户画像摘要（念念对用户的认识总结）
     user_profile_summary: str = ""
+    # 当前活动状态（activity_sim模块）
+    activity_hint: str = ""
+    # 人设演化提示
+    personality_drift_hints: list = field(default_factory=list)
     # 结构化天气数据（供行为引擎使用，避免 regex 解析格式化字符串）
     _weather_info: Any = None
     # 场景路由结果（供 prompt_templates 使用）
@@ -361,8 +366,10 @@ def stage(name: str):
 # Pipeline 阶段定义
 # ============================================================
 
+# 功能调试专用，在无授权时禁止更改
 @stage("private_whitelist")
 async def _stage_private_whitelist(ctx: ChatContext) -> Optional[str]:
+    """私聊仅限主人（MY_QQ）访问，其余用户静默忽略。"""
     if not ctx.is_group and ctx.user_id != MY_QQ:
         logger.debug(f"[私聊白名单] 忽略非主人私聊: user={ctx.user_id[:6]}")
         return _SKIP
@@ -683,6 +690,7 @@ async def _run_full_analysis(ctx: ChatContext, history_for_analysis: list):
     bot_mood_dominant = _run_sync_computations(ctx)
     await _run_batch2_queries(ctx, bot_mood_dominant)
     await _run_fatigue_and_gap(ctx, bot_mood_dominant)
+    await _run_personality_drift(ctx)
 
 
 async def _run_core_analysis(ctx: ChatContext, history_for_analysis: list):
@@ -834,6 +842,10 @@ def _run_sync_computations(ctx: ChatContext) -> str:
     """同步计算：作息、对话节奏、行为模式。返回 bot_mood_dominant。"""
     from .schedule import get_schedule_state
     ctx.schedule = get_schedule_state()
+
+    # 当前活动状态（activity_sim）
+    from .activity_sim import get_activity_hint
+    ctx.activity_hint = get_activity_hint()
     bot_mood_dominant = ctx.bot_mood_result.get("dominant", "平静") if ctx.bot_mood_result else "平静"
 
     # 对话节奏：话题桥接/过渡
@@ -969,6 +981,25 @@ async def _run_fatigue_and_gap(ctx: ChatContext, bot_mood_dominant: str):
         ctx.reply_gap_hint = build_reply_gap_hint(
             gap_seconds, ctx.affection, ctx.schedule, bot_mood_dominant
         )
+
+
+async def _run_personality_drift(ctx: ChatContext):
+    """人设演化：兴趣漂移检测 + 口头禅学习。"""
+    try:
+        from .personality_drift import get_personality_drift_hints, maybe_learn_catchphrase
+
+        # 兴趣漂移提示
+        drift_hints = await get_personality_drift_hints(ctx.user_id)
+        if drift_hints:
+            ctx.personality_drift_hints = drift_hints
+
+        # 尝试学习口头禅（仅在好感度600+时）
+        aff_score = ctx.affection.get("score", 0)
+        if aff_score >= 600:
+            from .utils import safe_task
+            safe_task(maybe_learn_catchphrase(ctx.user_id, aff_score))
+    except Exception as e:
+        logger.debug(f"[人设演化] 跳过（非关键路径）: {e}")
 
 
 @stage("schedule_interrupt")
@@ -1208,6 +1239,8 @@ async def _stage_llm(ctx: ChatContext) -> Optional[str]:
             group_heat_desc=ctx.group_heat_description or None,
             scene_hint=scene_hint or None,
             bot_self_summary=ctx.user_profile_summary or None,
+            activity_hint=ctx.activity_hint or None,
+            personality_drift_hints=ctx.personality_drift_hints or None,
         )
         sys_prompt += "\n回复风格：专业分析+个性点评。分析部分结构化、有深度，点评部分保持你念念的语气。绝对禁止括号动作描写。"
         if ctx.scratchpad:
@@ -1268,6 +1301,8 @@ async def _stage_llm(ctx: ChatContext) -> Optional[str]:
             group_heat_desc=ctx.group_heat_description or None,
             scene_hint=scene_hint or None,
             bot_self_summary=ctx.user_profile_summary or None,
+            activity_hint=ctx.activity_hint or None,
+            personality_drift_hints=ctx.personality_drift_hints or None,
         )
 
         # 语音通话模式：注入口语化 prompt
@@ -1606,15 +1641,31 @@ async def _stage_humanize(ctx: ChatContext) -> Optional[str]:
         affection_score=aff_score,
     )
 
+    # 自然带出当前活动（5%概率，在typo/stutter之前）
+    from .activity_sim import get_natural_activity_mention
+    activity_mention = get_natural_activity_mention()
+    if activity_mention:
+        text = activity_mention + text
+
     # 原有人性化处理 + 好感度修正：越熟越随意
+    typo_applied = False
     typo_chance = 0.025 if aff_score >= 200 else (0.005 if aff_score < 20 else 0.03)
     if random.random() < typo_chance:
         text = introduce_typo(text)
+        typo_applied = True
     mind_change_chance = 0.025 if aff_score >= 200 else (0.005 if aff_score < 20 else 0.02)
     if random.random() < mind_change_chance:
         text = introduce_mind_change(text)
     if random.random() < 0.01 and len(text) > 10:
         text = introduce_uncertainty(text)
+
+    # 口吃效果：与 typo 互斥（同一条消息只触发一种文字效果）
+    from .handler_humanize import introduce_stutter
+    stutter_chance = 0.06 if emotion_a > 0.7 else 0.03
+    if aff_score >= 200:
+        stutter_chance *= 1.3  # 熟人更随意
+    if not typo_applied and random.random() < stutter_chance:
+        text = introduce_stutter(text, emotion_a)
 
     # 颜文字：根据情绪在句尾加表情符号
     text = maybe_add_kaomoji(
@@ -1643,6 +1694,11 @@ async def _stage_humanize(ctx: ChatContext) -> Optional[str]:
 @stage("post_process")
 async def _stage_post(ctx: ChatContext) -> Optional[str]:
     await save_reply(ctx.session_id, ctx.user_id, ctx.raw_msg, ctx.reply_text, ctx.bot_mood_result)
+
+    # 承诺追踪：从回复中提取承诺
+    from .promise_tracker import process_bot_reply
+    from .utils import safe_task
+    safe_task(process_bot_reply(ctx.reply_text, ctx.user_id, ctx.session_id))
 
     sticker_chance = ctx.emotion_params.get("sticker_chance", 0.25)
     reply_filtered, sticker_kept = filter_sticker_tag(ctx.reply_text, ctx.session_id, keep_probability=sticker_chance)

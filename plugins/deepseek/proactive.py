@@ -152,6 +152,7 @@ async def _generate_proactive_message(scene: str, user_id: str = "", context: di
     weekday_names = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"]
     weekday = weekday_names[now.weekday()]
     exact_time = f"现在是{now.strftime('%Y年%m月%d日')} {weekday} {now.strftime('%H:%M')}（北京时间）。"
+    exact_time += f"\n禁止编造具体小时数，{now.strftime('%H:%M')} 是唯一的真实时间。"
 
     # 早安场景：携带昨晚上下文
     morning_prompt = f"{exact_time}现在是早上，你要给主人发一条早安消息。语气要自然，像刚睡醒一样，不要像客服。"
@@ -768,6 +769,53 @@ async def _sleep_nag(bot):
         await _send_proactive_message(bot, "private", str(uid), msg, scene="sleep_nag")
 
 
+async def _check_promises(bot):
+    """检查到期承诺并推送兑现/道歉消息。"""
+    try:
+        from .promise_tracker import (
+            get_due_promises, get_forgotten_to_apologize,
+            get_fulfill_prefix, get_forgotten_apology,
+            mark_fulfilled, mark_apologized,
+        )
+    except Exception:
+        return
+
+    # 1. 兑现到期承诺
+    due = await get_due_promises()
+    for p in due:
+        try:
+            uid = p["user_id"]
+            prefix = get_fulfill_prefix(p["promise_text"])
+            msg = f"{prefix}"
+            await _send_proactive_message(bot, "private", uid, msg, scene="promise_fulfill")
+            await mark_fulfilled(p["id"])
+            logger.info(f"[承诺追踪] 兑现: {p['promise_text'][:30]} → {uid}")
+        except Exception as e:
+            logger.error(f"[承诺追踪] 兑现失败: {e}")
+
+    # 2. 遗忘道歉（在due_at后1-3天内）
+    forgotten = await get_forgotten_to_apologize()
+    for p in forgotten:
+        try:
+            uid = p["user_id"]
+            msg = get_forgotten_apology(p["promise_text"])
+            await _send_proactive_message(bot, "private", uid, msg, scene="promise_apology")
+            await mark_apologized(p["id"])
+            logger.info(f"[承诺追踪] 遗忘道歉: {p['promise_text'][:30]} → {uid}")
+        except Exception as e:
+            logger.error(f"[承诺追踪] 道歉失败: {e}")
+
+
+def _weekly_personality_eval():
+    """人设演化周评估（同步wrapper，由scheduler调用）。"""
+    try:
+        import asyncio as _asyncio
+        from .personality_drift import weekly_eval_all_users
+        _asyncio.create_task(weekly_eval_all_users())
+    except Exception:
+        pass
+
+
 async def _holiday_greeting(bot):
     cfg = PROACTIVE_CONFIG["holiday_greeting"]
     if not cfg["enabled"]:
@@ -838,8 +886,16 @@ async def register_proactive_jobs(bot):
     if snc.get("enabled", True):
         _scheduler.add_job(_sleep_nag, 'cron', hour='0-1', minute='*/30', args=[bot], id="sleep_nag", replace_existing=True, jitter=120)
 
+    # 承诺检查：每30分钟检查一次到期承诺
+    _scheduler.add_job(_check_promises, 'interval', minutes=30, args=[bot],
+                       id="promise_check", jitter=120, replace_existing=True)
+
+    # 人设演化：每周日凌晨3点评估兴趣变化
+    _scheduler.add_job(_weekly_personality_eval, 'cron', day_of_week='sun', hour=3, minute=17,
+                       id="weekly_personality_eval", jitter=300, replace_existing=True)
+
     _scheduler.start()
-    logger.info(f"✅ 主动消息已启动 | 早安:8:30/9:30/10:30(±5min) | 晚安:00:00/00:30/01:00(±5min) | 沉默检查:每{sc['check_interval_hours']}h | 凌晨催睡:00:00-02:00/30min | 节日:每天0:01 | 随机问候:每2h")
+    logger.info(f"✅ 主动消息已启动 | 早安:8:30/9:30/10:30(±5min) | 晚安:00:00/00:30/01:00(±5min) | 沉默检查:每{sc['check_interval_hours']}h | 凌晨催睡:00:00-02:00/30min | 节日:每天0:01 | 随机问候:每2h | 承诺检查:每30min")
 
 
 # ---------- Phase 7：主动消息增强 ----------

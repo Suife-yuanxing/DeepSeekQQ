@@ -367,6 +367,23 @@ async def init_db():
     await db.execute("CREATE INDEX IF NOT EXISTS idx_reminders_trigger ON reminders(status, trigger_time)")
     await db.execute("CREATE INDEX IF NOT EXISTS idx_reminders_user ON reminders(user_id, status)")
     await db.execute("""
+        CREATE TABLE IF NOT EXISTS promises (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id TEXT NOT NULL,
+            session_id TEXT NOT NULL,
+            promise_text TEXT NOT NULL,
+            due_hint TEXT DEFAULT '',
+            created_at REAL NOT NULL,
+            due_at REAL NOT NULL,
+            fulfilled INTEGER DEFAULT 0,
+            forgotten INTEGER DEFAULT 0,
+            fulfilled_at REAL,
+            apologized_at REAL
+        )
+    """)
+    await db.execute("CREATE INDEX IF NOT EXISTS idx_promises_user_due ON promises(user_id, fulfilled, due_at)")
+    await db.execute("CREATE INDEX IF NOT EXISTS idx_promises_due ON promises(fulfilled, due_at)")
+    await db.execute("""
         CREATE TABLE IF NOT EXISTS user_preferences (
             user_id TEXT NOT NULL,
             pref_type TEXT NOT NULL,
