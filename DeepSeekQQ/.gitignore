@@ -1,0 +1,48 @@
+# 环境变量（含密钥）
+.env
+.env.local
+
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+*.so
+
+# 数据文件（太大且频繁变化）
+data/
+*.db
+*.sqlite
+*.sqlite3
+
+# 语音文件
+*.mp3
+*.ogg
+*.wav
+*.sil
+
+# 日志
+*.log
+logs/
+
+# 编辑器
+.vscode/
+.idea/
+*.swp
+
+
+# Claude Code local settings (may contain MCP permissions/keys)
+.claude/settings.local.json
+
+# 证书和密钥
+*.pem
+*.crt
+*.key
+
+# 二进制/安装包
+*.apk
+
+# 截图（临时文件）
+screenshot.png
+# 系统文件
+.DS_Store
+Thumbs.db

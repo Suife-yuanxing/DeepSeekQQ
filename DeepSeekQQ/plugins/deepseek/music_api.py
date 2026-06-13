@@ -1,0 +1,256 @@
+"""网易云音乐 API 封装（直接调用网易云内部接口，无需额外服务）。
+
+API 端点:
+- 搜索: POST https://music.163.com/api/search/get
+- 歌词: GET  https://music.163.com/api/song/lyric?id=xxx&lv=1
+- 详情: GET  https://music.163.com/api/song/detail?ids=[xxx]
+"""
+import logging
+import re
+from dataclasses import dataclass
+from typing import Dict
+from typing import List
+from typing import Optional
+from typing import Tuple
+
+import aiohttp
+
+logger = logging.getLogger("music_api")
+
+_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+    "Referer": "https://music.163.com",
+}
+
+# ── 数据结构 ──
+
+@dataclass
+class SongInfo:
+    """歌曲信息"""
+    id: int
+    name: str
+    artist: str          # 歌手名（多个用 / 连接）
+    album: str           # 专辑名
+    cover_url: str       # 封面图 URL
+    duration: int        # 时长（毫秒）
+    duration_str: str    # 时长（如 "4:29"）
+
+    @staticmethod
+    def from_api(data: dict) -> "SongInfo":
+        """从搜索 API 返回的歌曲数据构造"""
+        artists = "/".join(a.get("name", "") for a in data.get("artists", []))
+        album_data = data.get("album", {})
+        cover = album_data.get("picUrl", "")
+        # 搜索结果中 cover 在 album.picUrl，详情中在 album.blurPicUrl
+        if not cover:
+            cover = album_data.get("blurPicUrl", "")
+        duration = data.get("duration", 0)
+        return SongInfo(
+            id=data["id"],
+            name=data.get("name", "未知"),
+            artist=artists or "未知",
+            album=album_data.get("name", ""),
+            cover_url=cover,
+            duration=duration,
+            duration_str=_format_duration(duration),
+        )
+
+    @staticmethod
+    def from_detail(data: dict) -> "SongInfo":
+        """从详情 API 返回的歌曲数据构造"""
+        artists = "/".join(a.get("name", "") for a in data.get("artists", []))
+        album_data = data.get("album", {})
+        cover = album_data.get("picUrl", "") or album_data.get("blurPicUrl", "")
+        duration = data.get("duration", 0)
+        return SongInfo(
+            id=data["id"],
+            name=data.get("name", "未知"),
+            artist=artists or "未知",
+            album=album_data.get("name", ""),
+            cover_url=cover,
+            duration=duration,
+            duration_str=_format_duration(duration),
+        )
+
+
+def _format_duration(ms: int) -> str:
+    """毫秒转 mm:ss 格式"""
+    if ms <= 0:
+        return ""
+    total_sec = ms // 1000
+    return f"{total_sec // 60}:{total_sec % 60:02d}"
+
+
+# ── API 调用 ──
+
+async def search_song(keyword: str, limit: int = 5) -> List[SongInfo]:
+    """
+    搜索歌曲。
+    返回匹配结果列表（按相关度排序）。
+    """
+    url = "https://music.163.com/api/search/get"
+    data = {
+        "s": keyword,
+        "type": 1,       # 1=歌曲
+        "limit": limit,
+        "offset": 0,
+    }
+    try:
+        async with aiohttp.ClientSession() as session, session.post(url, data=data, headers=_HEADERS,
+                                 timeout=aiohttp.ClientTimeout(total=8)) as resp:
+            if resp.status != 200:
+                logger.warning(f"[音乐] 搜索失败 status={resp.status}")
+                return []
+            result = await resp.json()
+            songs = result.get("result", {}).get("songs", [])
+            return [SongInfo.from_api(s) for s in songs if s.get("id")]
+    except Exception as e:
+        logger.error(f"[音乐] 搜索异常: {e}")
+        return []
+
+
+async def get_song_detail(song_id: int) -> Optional[SongInfo]:
+    """获取单首歌曲详情（含封面）。"""
+    url = "https://music.163.com/api/song/detail"
+    params = {"ids": f"[{song_id}]"}
+    try:
+        async with aiohttp.ClientSession() as session, session.get(url, params=params, headers=_HEADERS,
+                                timeout=aiohttp.ClientTimeout(total=8)) as resp:
+            if resp.status != 200:
+                return None
+            result = await resp.json()
+            songs = result.get("songs", [])
+            if not songs:
+                return None
+            return SongInfo.from_detail(songs[0])
+    except Exception as e:
+        logger.error(f"[音乐] 获取详情异常: {e}")
+        return None
+
+
+async def get_lyrics(song_id: int) -> Optional[List[str]]:
+    """
+    获取歌词文本（纯歌词，不含时间戳）。
+    返回歌词行列表，或 None。
+    """
+    url = "https://music.163.com/api/song/lyric"
+    params = {"id": song_id, "lv": 1, "kv": 1, "tv": -1}
+    try:
+        async with aiohttp.ClientSession() as session, session.get(url, params=params, headers=_HEADERS,
+                                timeout=aiohttp.ClientTimeout(total=8)) as resp:
+            if resp.status != 200:
+                return None
+            result = await resp.json()
+            lrc_text = result.get("lrc", {}).get("lyric", "")
+            if not lrc_text:
+                return None
+            return _parse_lrc(lrc_text)
+    except Exception as e:
+        logger.error(f"[音乐] 获取歌词异常: {e}")
+        return None
+
+
+def _parse_lrc(lrc_text: str) -> List[str]:
+    """解析 LRC 歌词，提取纯文本行（跳过元数据和空白行）。"""
+    lines = []
+    meta_keywords = {"作词", "作曲", "编曲", "制作人", "录音", "混音", "和声",
+                     "吉他", "贝斯", "鼓", "键盘", "弦乐", "出品", "监制"}
+    for line in lrc_text.split("\n"):
+        line = line.strip()
+        if not line:
+            continue
+        # 去掉时间戳 [mm:ss.xxx]
+        text = re.sub(r"\[\d+:\d+\.\d+\]", "", line).strip()
+        if not text:
+            continue
+        # 跳过元数据行
+        if any(kw in text for kw in meta_keywords) and "：" in text:
+            continue
+        if ":" in text and text.split(":")[0].strip() in meta_keywords:
+            continue
+        lines.append(text)
+    return lines
+
+
+def extract_lyrics_snippet(lyrics: List[str], max_lines: int = 3) -> str:
+    """从歌词中提取一段展示（优先取副歌附近的内容）。"""
+    if not lyrics:
+        return ""
+    # 优先取副歌，其次取中间偏前
+    chorus = extract_chorus(lyrics)
+    if chorus:
+        snippet = chorus[:max_lines]
+    else:
+        start = min(4, len(lyrics) - max_lines)
+        snippet = lyrics[start:start + max_lines]
+    return "\n".join(f"♪ {line}" for line in snippet)
+
+
+def extract_chorus(lyrics: List[str], max_lines: int = 6) -> List[str]:
+    """从歌词中提取副歌（高潮/chorus）部分。
+
+    识别策略（按优先级）：
+    1. LRC 标签识别：查找 [Chorus]、[副歌]、[Hook] 等标记
+    2. 重复检测：找出出现2次以上的连续2-3行段落（典型的副歌重复）
+    3. 位置推断：取全曲 40%-60% 位置（通常副歌出现的位置）
+
+    Returns:
+        副歌歌词行列表，最多 max_lines 行
+    """
+    if not lyrics:
+        return []
+
+    # ── 策略1：LRC 标签 ──
+    # 注意：我们处理的是 _parse_lrc 之后的纯文本行，LRC标签已被剥离
+    # 但可以在原始歌词中保留标签检测（这里假设纯文本）
+
+    # ── 策略2：重复检测（2-3行连续匹配） ──
+    for window_size in [3, 2]:
+        seen = {}
+        for i in range(len(lyrics) - window_size + 1):
+            key = tuple(lyrics[i:i + window_size])
+            # 用文本相似度比较（忽略标点差异）
+            normalized_key = tuple(
+                line.strip().rstrip('。，！？…~-—').lower()
+                for line in key
+            )
+            if normalized_key in seen:
+                # 找到重复段落！返回较长的那一段
+                prev_start = seen[normalized_key]
+                # 取出现位置到 max_lines 行（两段中选较长的上下文）
+                end = min(i + max_lines, len(lyrics))
+                prev_end = min(prev_start + max_lines, len(lyrics))
+                if end - i >= prev_end - prev_start:
+                    return lyrics[i:end]
+                else:
+                    return lyrics[prev_start:prev_end]
+            seen[normalized_key] = i
+
+    # ── 策略3：位置推断（40%-60%位置通常包含副歌） ──
+    n = len(lyrics)
+    start = int(n * 0.35)
+    end = min(start + max_lines, n)
+    if start < n and end - start >= 2:
+        return lyrics[start:end]
+
+    return []
+
+
+async def search_song_by_lyrics(snippet: str) -> Optional[SongInfo]:
+    """
+    通过歌词片段搜索歌曲。
+    先用片段作为关键词搜索，如果没结果则截取更短的关键词重试。
+    """
+    # 尝试用完整片段搜索
+    results = await search_song(snippet, limit=3)
+    if results:
+        return results[0]
+
+    # 如果片段太长，截取前面一部分重试
+    short = snippet[:15]
+    if short != snippet:
+        results = await search_song(short, limit=3)
+        if results:
+            return results[0]
+
+    return None

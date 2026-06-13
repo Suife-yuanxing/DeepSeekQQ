@@ -1,0 +1,42 @@
+[project]
+name = "deepseek-qq"
+version = "0.1.0"
+description = "DeepSeek QQ Bot"
+requires-python = ">=3.9"
+dependencies = [
+    "nonebot2[fastapi]>=2.0",
+    "nonebot-adapter-onebot>=2.0",
+    "aiohttp>=3.8",
+    "aiosqlite>=0.19",
+    "apscheduler>=3.10",
+    "aiofiles>=23.0",
+    "requests>=2.28",
+    "Pillow>=9.0",
+    "numpy>=1.20",
+    "tavily-python>=0.3",
+    "zhdate>=0.1",
+]
+
+[project.optional-dependencies]
+ocr = ["rapidocr-onnxruntime>=1.3"]
+all = ["rapidocr-onnxruntime>=1.3"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = ["-v", "--strict-markers", "--tb=short"]
+markers = [
+    "unit: 纯逻辑测试，无 I/O 依赖（mock 隔离）",
+    "integration: 需要真实服务或组件间交互（如 aiosqlite :memory:）",
+    "slow: 含 asyncio.sleep / time.sleep 的测试，执行较慢",
+    "needs_db: 涉及数据库接口（即使已 mock 也标记以便识别）",
+    "needs_llm: 需要调用 LLM API（真实或 mock 均可）",
+    "needs_network: 需要真实网络访问",
+]
+
+[tool.nonebot]
+adapters = [
+    { name = "OneBot V11", module_name = "nonebot.adapters.onebot.v11" }
+]
+plugins = []
+plugin_dirs = ["plugins"]
