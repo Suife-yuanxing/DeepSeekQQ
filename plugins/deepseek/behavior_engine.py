@@ -556,12 +556,21 @@ def update_hot_topic_cache(topics: list):
 
 
 def get_hot_topic_behavior(trigger_chance: float = 0.05) -> Optional[str]:
-    """偶尔引用热点话题（如"刚刷到XX"）。"""
+    """偶尔引用热点话题（如"刚刷到XX"）。优先使用 social_feed。"""
     if random.random() > trigger_chance:
         return None
 
+    # 优先从 social_feed 获取（有去重和衰减）
+    try:
+        from .social_feed import get_scroll_trigger_hint
+        hint = get_scroll_trigger_hint()
+        if hint:
+            return hint
+    except Exception:
+        pass
+
+    # fallback: 旧的热点缓存
     now = time.time()
-    # 清理过期缓存
     valid = [(t, ts) for t, ts in _hot_topic_cache if now - ts < _HOT_CACHE_TTL]
     if not valid:
         return None
@@ -574,6 +583,37 @@ def get_hot_topic_behavior(trigger_chance: float = 0.05) -> Optional[str]:
         f"诶你看到「{topic_title}」了吗",
     ]
     return random.choice(templates)
+
+
+# ============================================================
+# 刷手机行为模板（Social Feed Behavior）
+# ============================================================
+
+_SCROLL_BEHAVIORS = [
+    "刚刷到的...{content}",
+    "今天{source}上都在刷...{content}",
+    "刷到一条超好笑的...{content}",
+    "刚才在{source}看到{content}",
+    "诶你看到{content}了吗",
+    "{source}上好多人都在发{content}",
+    "笑死，刚刷到一个{content}",
+    "话说{content}...你关注了吗",
+]
+
+
+def get_scroll_behavior(trigger_chance: float = 0.12) -> Optional[str]:
+    """从 social_feed 获取自然引用（12%概率，仅次于天气25%和节日15%）。
+
+    优先级高于旧的热点话题引用（5%）。
+    """
+    if random.random() > trigger_chance:
+        return None
+
+    try:
+        from .social_feed import get_scroll_trigger_hint
+        return get_scroll_trigger_hint()
+    except Exception:
+        return None
 
 
 # ============================================================
@@ -637,8 +677,8 @@ def get_real_world_behavior(
 ) -> Optional[str]:
     """综合现实世界行为生成。
 
-    Priority: weather(25%) > holiday(15%) > hot_topic(5%)
-              > seasonal(8%) > micro_event(2%) > random(5%)
+    Priority: weather(25%) > holiday(15%) > scroll_feed(12%)
+              > hot_topic(5%) > seasonal(8%) > micro_event(2%) > random(5%)
     """
     # 1. 天气反应（25%概率）
     weather_hint = get_weather_behavior(weather_condition, weather_temp, trigger_chance=0.25, city=city)
@@ -651,22 +691,27 @@ def get_real_world_behavior(
     if holiday:
         return f"今天是特殊的日子：{holiday}。自然地提及，不要刻意。"
 
-    # 3. 热点话题（5%概率）
+    # 3. 刷手机Feed引用（12%概率）—— 新增
+    scroll_feed = get_scroll_behavior(trigger_chance=0.12)
+    if scroll_feed:
+        return scroll_feed
+
+    # 4. 热点话题（5%概率）—— 降级为旧缓存fallback
     hot_topic = get_hot_topic_behavior(trigger_chance=0.05)
     if hot_topic:
         return f"你刚看到：{hot_topic}。可以随口提一下。"
 
-    # 4. 季节愿望（8%概率）
+    # 5. 季节愿望（8%概率）
     seasonal = get_seasonal_wish(trigger_chance=0.08)
     if seasonal:
         return f"你突然想到：{seasonal}。自然地流露出来。"
 
-    # 5. 微事件（2%概率）
+    # 6. 微事件（2%概率）
     micro = get_micro_event_behavior(trigger_chance=0.02)
     if micro:
         return f"刚刚发生了一个小事：{micro}。随口提一句，不超过一句话。"
 
-    # 6. 随机行为（5%概率）
+    # 7. 随机行为（5%概率）
     random_behavior = get_random_behavior(schedule_period, bot_mood_dominant, trigger_chance=0.05, affection_score=affection_score)
     if random_behavior:
         return f"你突然{random_behavior['type']}：{random_behavior['text']}。"

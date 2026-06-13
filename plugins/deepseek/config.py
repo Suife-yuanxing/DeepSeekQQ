@@ -212,6 +212,22 @@ IMAGE_GEN_BASE_URL: str = getattr(cfg, "image_gen_base_url", "https://apihub.agn
 MAX_DAILY_PUSH: int = _safe_int(getattr(cfg, "max_daily_push", 3), 3, "max_daily_push")
 PUSH_COOLDOWN_HOURS: int = _safe_int(getattr(cfg, "push_cooldown_hours", 4), 4, "push_cooldown_hours")
 
+# === 社交信息流引擎（Social Feed Engine）===
+FEED_MAX_ITEMS: int = _safe_int(getattr(cfg, "feed_max_items", 100), 100, "feed_max_items")
+FEED_TTL_MINUTES: int = _safe_int(getattr(cfg, "feed_ttl_minutes", 360), 360, "feed_ttl_minutes")
+FEED_SCROLL_INTERVAL_MINUTES: int = _safe_int(getattr(cfg, "feed_scroll_interval_minutes", 45), 45, "feed_scroll_interval_minutes")
+FEED_INJECTION_CHANCE: float = _safe_float(getattr(cfg, "feed_injection_chance", 0.12), 0.12, "feed_injection_chance")
+
+# === 热梗自动检测 ===
+MEME_AUTO_UPDATE_ENABLED: bool = str(getattr(cfg, "meme_auto_update_enabled", "true")).lower() == "true"
+DYNAMIC_MEME_TTL_HOURS: int = _safe_int(getattr(cfg, "dynamic_meme_ttl_hours", 72), 72, "dynamic_meme_ttl_hours")
+DYNAMIC_MEME_MAX_COUNT: int = _safe_int(getattr(cfg, "dynamic_meme_max_count", 10), 10, "dynamic_meme_max_count")
+MEME_DETECTION_CONFIDENCE_THRESHOLD: float = _safe_float(getattr(cfg, "meme_detection_confidence_threshold", 0.7), 0.7, "meme_detection_confidence_threshold")
+
+# === 群聊热度状态机（Heat Engine）===
+HEAT_HALF_LIFE: int = _safe_int(getattr(cfg, "heat_half_life", 300), 300, "heat_half_life")
+HEAT_IDLE_TIMEOUT: int = _safe_int(getattr(cfg, "heat_idle_timeout", 30), 30, "heat_idle_timeout")
+
 # === Phase 6: 天气 (和风天气) ===
 WEATHER_ENABLED: bool = str(getattr(cfg, "weather_enabled", "true")).lower() == "true"
 WEATHER_API_KEY: str = str(getattr(cfg, "weather_api_key", "") or "").strip()

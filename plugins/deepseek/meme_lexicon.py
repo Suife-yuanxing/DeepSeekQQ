@@ -1,10 +1,12 @@
 """网络梗词典模块。
 
 功能：
-- 维护精选网络梗词典
+- 维护精选网络梗词典（静态词库 + 动态词库）
 - 根据情绪、好感度、话题匹配合适的梗
 - 低概率注入到 prompt 中，让 LLM 自然运用
+- 支持动态词库自动更新（由 meme_detector.py 驱动）
 """
+import time
 import random
 from typing import Any
 from typing import Dict
@@ -17,6 +19,7 @@ from nonebot import logger
 # 网络梗词典
 # ============================================================
 
+# === 静态词库（手动精选，长期有效）===
 MEMES = [
     {
         "word": "绝绝子",
@@ -165,6 +168,43 @@ MEMES = [
 ]
 
 
+# === 动态词库（自动检测，72h TTL）===
+DYNAMIC_MEMES: List[Dict[str, Any]] = []
+DYNAMIC_MEME_WEIGHT = 0.7  # 动态梗权重略低于静态梗（避免未经验证的梗过度使用）
+
+
+def get_all_memes() -> List[Dict[str, Any]]:
+    """获取所有可用梗（静态 + 动态）。"""
+    # 清理过期动态梗
+    global DYNAMIC_MEMES
+    now = time.time()
+    DYNAMIC_MEMES = [
+        m for m in DYNAMIC_MEMES
+        if not m.get("_dynamic") or (now - m.get("_added_at", 0)) < 72 * 3600
+    ]
+    return MEMES + DYNAMIC_MEMES
+
+
+def add_dynamic_memes(memes: List[Dict]) -> int:
+    """添加动态检测到的梗到词库。"""
+    global DYNAMIC_MEMES
+    added = 0
+    existing_words = {m["word"] for m in MEMES + DYNAMIC_MEMES}
+    for meme in memes:
+        word = meme.get("word", "").strip()
+        if word and word not in existing_words and len(DYNAMIC_MEMES) < 10:
+            meme["_dynamic"] = True
+            meme["_added_at"] = time.time()
+            if "affection_min" not in meme:
+                meme["affection_min"] = 0
+            DYNAMIC_MEMES.append(meme)
+            existing_words.add(word)
+            added += 1
+    if added:
+        logger.info(f"[梗] 动态词库新增 {added} 条，共 {len(DYNAMIC_MEMES)} 条")
+    return added
+
+
 # ============================================================
 # 梗选择逻辑
 # ============================================================
@@ -221,22 +261,27 @@ def pick_meme(
         if emotion_state.dominant:
             current_moods.append(emotion_state.dominant)
 
-    # 筛选候选梗
+    # 筛选候选梗（静态 + 动态）
+    all_memes = get_all_memes()
     candidates = []
-    for meme in MEMES:
+    for meme in all_memes:
         # 好感度过滤
-        if affection_score < meme["affection_min"]:
+        if affection_score < meme.get("affection_min", 0):
             continue
 
         score = 0
 
         # 情绪匹配（+3 分）
-        if current_moods and any(m in meme["mood"] for m in current_moods):
+        if current_moods and any(m in meme.get("mood", []) for m in current_moods):
             score += 3
 
         # 关键词匹配（+2 分）
         if any(kw in user_msg for kw in meme.get("keywords", [])):
             score += 2
+
+        # 动态梗权重折扣
+        if meme.get("_dynamic"):
+            score *= DYNAMIC_MEME_WEIGHT
 
         # 有匹配就加入候选
         if score > 0:
@@ -250,5 +295,6 @@ def pick_meme(
     top = candidates[:3]
     chosen = random.choice(top)[1]
 
-    logger.info(f"[梗] 触发: {chosen['word']} (情绪={current_moods}, 好感={affection_score:.0f})")
+    dynamic_tag = " [动态]" if chosen.get("_dynamic") else ""
+    logger.info(f"[梗] 触发: {chosen['word']}{dynamic_tag} (情绪={current_moods}, 好感={affection_score:.0f})")
     return chosen

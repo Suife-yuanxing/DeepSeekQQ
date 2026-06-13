@@ -53,6 +53,8 @@ class HotTopic:
 _DOUYIN_API = "https://www.iesdouyin.com/web/api/v2/hotsearch/billboard/word/"
 # B站热搜 API（不带 wbi 签名）
 _BILIBILI_API = "https://api.bilibili.com/x/web-interface/search/square?limit=20"
+# 微博热搜 API（公开接口，无需认证）
+_WEIBO_API = "https://weibo.com/ajax/side/hotSearch"
 
 # 敏感词过滤
 _SENSITIVE_KEYWORDS = [
@@ -151,16 +153,55 @@ async def _fetch_xiaoheihe() -> List[HotTopic]:
     return topics
 
 
+async def _fetch_weibo(session) -> List[HotTopic]:
+    """获取微博热搜（公开接口，无需认证）。"""
+    topics = []
+    try:
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                          "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Referer": "https://weibo.com/",
+        }
+        async with session.get(
+            _WEIBO_API, headers=headers,
+            timeout=aiohttp.ClientTimeout(total=10),
+        ) as resp:
+            if resp.status == 200:
+                import json
+                text = await resp.text()
+                data = json.loads(text)
+                # 格式: data["data"]["realtime"] 是实时热搜列表
+                realtime = data.get("data", {}).get("realtime", [])
+                for item in realtime[:15]:
+                    word = item.get("word", "").strip()
+                    if not word:
+                        # 有时是 "word_scheme" 格式
+                        word = item.get("note", "").strip()
+                    hot = item.get("num", 0)
+                    url = item.get("scheme", "")  # 微博跳转链接
+                    if word and len(word) > 2:
+                        topics.append(HotTopic(
+                            title=word, hot=f"{hot:,}" if hot else "",
+                            url=f"https://s.weibo.com/weibo?q={word}" if not url else url,
+                            category="微博",
+                        ))
+                logger.info(f"[热搜] 微博获取 {len(topics)} 条")
+    except Exception as e:
+        logger.warning(f"[热搜] 微博API失败: {e}")
+    return topics
+
+
 async def fetch_trending() -> List[HotTopic]:
-    """获取热搜话题列表 - 抖音/B站/小黑盒三源聚合。"""
+    """获取热搜话题列表 - 抖音/B站/微博/小黑盒四源聚合。"""
     topics = []
     session = await get_http_session()
 
-    # 三个源并行获取
+    # 四个源并行获取
     import asyncio
-    douyin, bilibili, xiaoheihe = await asyncio.gather(
+    douyin, bilibili, weibo, xiaoheihe = await asyncio.gather(
         _fetch_douyin(session),
         _fetch_bilibili(session),
+        _fetch_weibo(session),
         _fetch_xiaoheihe(),
         return_exceptions=True,
     )
@@ -169,14 +210,40 @@ async def fetch_trending() -> List[HotTopic]:
         topics.extend(douyin)
     if isinstance(bilibili, list):
         topics.extend(bilibili)
+    if isinstance(weibo, list):
+        topics.extend(weibo)
     if isinstance(xiaoheihe, list):
         topics.extend(xiaoheihe)
 
     random.shuffle(topics)
-    logger.info(f"[热搜] 共获取 {len(topics)} 条（抖音/B站/小黑盒）")
+    logger.info(f"[热搜] 共获取 {len(topics)} 条（抖音/B站/微博/小黑盒）")
 
-    # 更新行为引擎的热点缓存（供随机行为引用）
+    # === 存入社交信息流引擎 ===
     if topics:
+        try:
+            from .social_feed import FeedItem
+            from .social_feed import boost_interest_items
+            from .social_feed import mark_scrolled
+            from .social_feed import store_feed_items
+
+            feed_items = []
+            for t in topics:
+                item = FeedItem(
+                    content=t.title,
+                    source=t.category if t.category else "其他",
+                    url=t.url,
+                    category="",
+                )
+                feed_items.append(item)
+
+            # 兴趣加权
+            feed_items = boost_interest_items(feed_items)
+            store_feed_items(feed_items)
+            mark_scrolled()
+        except Exception:
+            pass
+
+        # 更新行为引擎的热点缓存（供随机行为引用）
         try:
             from .behavior_engine import update_hot_topic_cache
             update_hot_topic_cache(topics)
@@ -367,7 +434,13 @@ _last_push_date: str = ""
 
 
 async def check_and_push_topics(bot) -> None:
-    """检查并推送热点话题。由定时任务调用。"""
+    """检查并推送热点话题。由定时任务调用。
+
+    核心改造：不再从热搜列表直接推送，而是：
+    1. 获取热搜 → 存入 social_feed
+    2. 从 social_feed 选择新鲜内容推送
+    3. 触发热梗检测
+    """
     global _last_push_time, _today_push_count, _last_push_date
 
     from datetime import datetime
@@ -403,6 +476,17 @@ async def check_and_push_topics(bot) -> None:
     if not topics:
         return
 
+    # === 热梗自动检测 ===
+    try:
+        from .meme_detector import detect_new_memes_from_trending
+        from .meme_detector import merge_into_lexicon
+        import asyncio as _aio
+
+        # 异步检测但不阻塞主流程
+        _aio.ensure_future(_detect_and_merge_memes(topics))
+    except Exception:
+        pass
+
     # 注入热搜标题到行为引擎的微事件池（bot 闲聊时会自然提及）
     try:
         from .behavior_engine import register_micro_events
@@ -415,8 +499,32 @@ async def check_and_push_topics(bot) -> None:
     except Exception:
         pass
 
-    # 随机选一个
-    topic = random.choice(topics[:10])
+    # === 从 social_feed 选择新鲜内容 ===
+    try:
+        from .social_feed import get_recent_feed
+        from .social_feed import mark_as_mentioned
+        from .social_feed import was_mentioned
+
+        feed_items = get_recent_feed(limit=10, max_age_minutes=120)
+        # 选择未提过的
+        fresh = [
+            f for f in feed_items
+            if not was_mentioned(f.item_id) and f.relevance > 0.5
+        ]
+        if fresh:
+            # 选最相关的一条
+            item = fresh[0]
+            topic = HotTopic(
+                title=item.content,
+                url=item.url,
+                category=item.source,
+            )
+            mark_as_mentioned(item.item_id)
+        else:
+            # fallback: 从原始话题中随机选
+            topic = random.choice(topics[:10])
+    except Exception:
+        topic = random.choice(topics[:10])
 
     # 生成推送消息
     msg = await generate_push_message(topic)
@@ -465,3 +573,22 @@ async def check_and_push_topics(bot) -> None:
             logger.error(f"[热搜] 推送失败: {e}")
 
     logger.info(f"[热搜] 今日已推送 {_today_push_count}/{MAX_DAILY_PUSH}")
+
+
+async def _detect_and_merge_memes(topics: list):
+    """后台任务：检测新梗并合并到词库。"""
+    try:
+        from .meme_detector import detect_new_memes_from_trending
+        from .meme_detector import merge_into_lexicon
+        from . import meme_lexicon
+
+        new_memes = await detect_new_memes_from_trending(topics)
+        if new_memes:
+            current_dynamic = getattr(meme_lexicon, 'DYNAMIC_MEMES', [])
+            merged = merge_into_lexicon(new_memes, current_dynamic)
+            meme_lexicon.DYNAMIC_MEMES = merged
+            added_count = len(merged) - len(current_dynamic)
+            if added_count > 0:
+                logger.info(f"[热搜] 热梗词库已更新: +{added_count} 条，共 {len(merged)} 条动态梗")
+    except Exception as e:
+        logger.debug(f"[热搜] 热梗检测后台任务异常: {e}")

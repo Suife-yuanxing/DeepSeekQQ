@@ -580,12 +580,12 @@ _HOT_TOPIC_COOLDOWN_HOURS = 4
 async def _try_push_hot_topic(bot, user_id: str, ctx: dict = None) -> bool:
     """尝试用热搜话题作为沉默消息的破冰素材。
 
-    优先级：热搜 > 上下文 > 通用问候
-    Returns: True 表示已发送热搜消息，False 表示无可用热搜
+    优先级：social_feed新鲜内容 > 热搜匹配 > 上下文 > 通用问候
+    Returns: True 表示已发送消息，False 表示无可用内容
     """
     global _hot_topic_last_push, _hot_topic_today_count, _hot_topic_today_date
 
-    # 只在 10:00-22:00 推热搜
+    # 只在 10:00-22:00 推
     hour = datetime.now().hour
     if hour < 10 or hour >= 22:
         return False
@@ -601,20 +601,45 @@ async def _try_push_hot_topic(bot, user_id: str, ctx: dict = None) -> bool:
         return False
 
     try:
-        # 获取并过滤热搜
-        topics = await hot_topics.fetch_trending()
-        if not topics:
-            return False
-        topics = hot_topics.filter_topics(topics)
-        if not topics:
-            return False
+        # === 优先从 social_feed 获取新鲜内容 ===
+        topic = None
+        try:
+            from .social_feed import get_recent_feed
+            from .social_feed import mark_as_mentioned
+            from .social_feed import was_mentioned
 
-        # 尝试匹配用户兴趣（从 memory_tags）
-        topic = await _match_topic_to_user_async(topics, user_id)
+            feed_items = get_recent_feed(limit=5, max_age_minutes=240)
+            fresh = [
+                f for f in feed_items
+                if not was_mentioned(f.item_id) and f.relevance > 0.5
+            ]
+            if fresh:
+                item = fresh[0]
+                topic = hot_topics.HotTopic(
+                    title=item.content,
+                    url=item.url,
+                    category=item.source,
+                )
+                mark_as_mentioned(item.item_id)
+                logger.info(f"[热搜破冰] 使用Feed内容: {item.content[:30]}")
+        except Exception:
+            pass
+
+        # === Fallback: 原始热搜获取 ===
         if not topic:
-            topic = random.choice(topics[:10])
+            topics = await hot_topics.fetch_trending()
+            if not topics:
+                return False
+            topics = hot_topics.filter_topics(topics)
+            if not topics:
+                return False
 
-        # 生成推送消息
+            # 尝试匹配用户兴趣（从 memory_tags）
+            topic = await _match_topic_to_user_async(topics, user_id)
+            if not topic:
+                topic = random.choice(topics[:10])
+
+        # 生成推送消息（使用更自然的 prompt）
         msg = await hot_topics.generate_push_message(topic)
         if not msg or len(msg) < 5:
             return False

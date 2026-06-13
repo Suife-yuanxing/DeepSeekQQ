@@ -311,6 +311,12 @@ class ChatContext:
     group_role_hint: str = ""
     # 行为模式丰富
     behavior_hint: str = ""
+    # 社交信息流引擎
+    scroll_hint: str = ""         # feed引用提示（"刚刷到的..."）
+    should_inject_feed: bool = False  # 是否应该注入feed提示到prompt
+    feed_injected: bool = False   # 本轮是否已经注入过feed
+    # 群聊热度状态机
+    heat_state: str = ""          # 热度状态描述
     # 个性化深化
     nickname_hint: str = ""
     interest_hint: str = ""
@@ -908,6 +914,41 @@ def _run_sync_computations(ctx: ChatContext) -> str:
         affection_score=ctx.affection.get("score", 0),
     ) or ""
 
+    # === 群聊热度状态机 ===
+    if ctx.is_group:
+        try:
+            from .heat_engine import update_heat as _update_heat
+            from .heat_engine import get_group_heat_description as _get_heat_desc
+            _update_heat(ctx.session_id, is_group=True)
+            ctx.heat_state = _get_heat_desc(ctx.session_id)
+        except Exception:
+            pass
+
+    # === 社交Feed注入决策 ===
+    try:
+        from .social_feed import get_recent_feed
+        from .social_feed import get_scroll_memory_summary
+        from .heat_engine import should_interject
+        from .heat_engine import HeatState
+        from .heat_engine import get_heat_state as _get_heat_state
+
+        feed_items = get_recent_feed(limit=5, max_age_minutes=240)
+        has_fresh = len(feed_items) > 0
+
+        # 决策：是否注入feed到prompt
+        if ctx.is_group:
+            heat_state = _get_heat_state(ctx.session_id, is_group=True)
+            if heat_state in (HeatState.IDLE, HeatState.COLD, HeatState.WARM):
+                ctx.should_inject_feed = has_fresh
+        else:
+            # 私聊：总是注入（LLM自己决定用不用）
+            ctx.should_inject_feed = has_fresh
+
+        if ctx.should_inject_feed and has_fresh:
+            ctx.scroll_hint = get_scroll_memory_summary(limit=3) or ""
+    except Exception:
+        pass
+
     return bot_mood_dominant
 
 
@@ -1299,6 +1340,9 @@ async def _stage_llm(ctx: ChatContext) -> Optional[str]:
             personality_drift_hints=ctx.personality_drift_hints or None,
             value_hints=ctx.value_hints or None,
             past_opinions_hint=ctx.past_opinions_hint or None,
+            scroll_hint=ctx.scroll_hint or None,
+            should_inject_feed=ctx.should_inject_feed,
+            heat_state=ctx.heat_state or None,
         )
         sys_prompt += "\n回复风格：专业分析+个性点评。分析部分结构化、有深度，点评部分保持你念念的语气。绝对禁止括号动作描写。"
         if ctx.scratchpad:

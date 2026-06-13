@@ -185,6 +185,24 @@ async def on_start():
             logger.debug(f"[热搜] 推送检查异常: {e}")
     loop_manager.register("热搜推送", _hot_topic_push, 7200)
 
+    # 社交Feed衰减：每30分钟清理过期feed条目
+    async def _feed_decay():
+        try:
+            from .social_feed import decay_feed_memory
+            decay_feed_memory()
+        except Exception:
+            pass
+    loop_manager.register("Feed记忆衰减", _feed_decay, 1800)
+
+    # 热度追踪器清理：每小时清理过期追踪器
+    async def _heat_cleanup():
+        try:
+            from .heat_engine import cleanup_stale_trackers
+            cleanup_stale_trackers(max_age_seconds=3600)
+        except Exception:
+            pass
+    loop_manager.register("热度追踪清理", _heat_cleanup, 3600)
+
     # 追问系统：每2分钟检查超时未回复的会话
     async def _follow_up_check():
         try:

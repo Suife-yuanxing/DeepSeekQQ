@@ -274,6 +274,9 @@ def build_system_prompt(
     personality_drift_hints: list = None,  # 人设演化提示
     value_hints: list = None,  # 价值体系提示（来自 values.py）
     past_opinions_hint: str = None,  # 历史立场提示（来自 opinion_tracker.py）
+    scroll_hint: str = None,  # 社交Feed提示（"刚刷到的..."）
+    should_inject_feed: bool = False,  # 是否应注入feed段落
+    heat_state: str = None,  # 群聊热度描述
 ) -> str:
     time_context = _get_time_context()
 
@@ -477,6 +480,14 @@ def build_system_prompt(
     # === 行为模式（天气/季节/随机行为）===
     if behavior_hint:
         parts.append(f"【行为模式】{behavior_hint}")
+
+    # === 群聊热度（Heat State）===
+    if heat_state:
+        parts.append(f"【群聊氛围】{heat_state}")
+
+    # === 社交Feed感知（"刚刷到的"）—— 按需注入 ===
+    if should_inject_feed and scroll_hint:
+        parts.append(f"【刚刷到的】{scroll_hint}")
 
     # === 个性化：专属昵称 ===
     if nickname_hint:
