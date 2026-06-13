@@ -38,27 +38,27 @@ from .config import VOICE_DIR
 # 火山引擎 TTS API 端点
 VOLCANO_TTS_URL = "https://openspeech.bytedance.com/api/v1/tts"
 
-# 情绪 → 音色映射（念念人设联动 — 娇喘女声大模型音色为主调）
+# 情绪 → 音色映射（念念人设联动 — 多音色情绪表达）
 EMOTION_VOICE_MAP = {
-    "开心": "zh_female_jiaochuannv_uranus_bigtts",
-    "兴奋": "zh_female_jiaochuannv_uranus_bigtts",
-    "害羞": "zh_female_jiaochuannv_uranus_bigtts",
-    "傲娇": "zh_female_jiaochuannv_uranus_bigtts",
-    "平静": "zh_female_jiaochuannv_uranus_bigtts",
-    "无聊": "zh_female_jiaochuannv_uranus_bigtts",
-    "难过": "zh_female_jiaochuannv_uranus_bigtts",
-    "生气": "zh_female_jiaochuannv_uranus_bigtts",
-    "担心": "zh_female_jiaochuannv_uranus_bigtts",
-    "害怕": "zh_female_jiaochuannv_uranus_bigtts",
-    "期待": "zh_female_jiaochuannv_uranus_bigtts",
-    "感动": "zh_female_jiaochuannv_uranus_bigtts",
-    "嫌弃": "zh_female_jiaochuannv_uranus_bigtts",
-    "撒娇": "zh_female_jiaochuannv_uranus_bigtts",
-    "爱": "zh_female_jiaochuannv_uranus_bigtts",
-    "温柔": "zh_female_jiaochuannv_uranus_bigtts",
-    "singing": "zh_female_jiaochuannv_uranus_bigtts",  # 唱歌模式（TTS 念歌词 + voice.py 降速升调）
+    "开心": "BV001_streaming",
+    "兴奋": "BV700_streaming",
+    "害羞": "BV406_streaming",
+    "傲娇": "BV407_streaming",
+    "平静": "BV001_streaming",
+    "无聊": "BV002_streaming",
+    "难过": "BV405_streaming",
+    "生气": "BV410_streaming",
+    "担心": "BV009_streaming",
+    "害怕": "BV010_streaming",
+    "期待": "BV501_streaming",
+    "感动": "BV503_streaming",
+    "嫌弃": "BV408_streaming",
+    "撒娇": "BV407_streaming",
+    "爱": "BV504_streaming",
+    "温柔": "BV401_streaming",
+    "singing": "zh_female_jiaochuannv_uranus_bigtts",  # 唱歌模式用娇喘女声大模型
 }
-DEFAULT_VOICE = "zh_female_jiaochuannv_uranus_bigtts"  # 娇喘女声-大模型
+DEFAULT_VOICE = "BV001_streaming"  # 默认通用女声
 
 
 async def generate_volcano_voice(

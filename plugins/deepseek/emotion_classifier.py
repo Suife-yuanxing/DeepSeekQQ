@@ -74,15 +74,8 @@ def classify_text_emotion(text: str, use_llm: bool = True) -> Dict[str, Any]:
             'source': 'keyword'
         }
 
-    # 第二级：LLM细判（只在需要时调用）
-    if use_llm and len(text) > 5:  # 太短的消息不值得调LLM
-        try:
-            from .emotion_deep import get_emotion_expression_hint
-            # 这里可以调用LLM进行细判，但为了性能先用规则结果
-            # 实际项目中可以接入轻量级BERT模型
-            pass
-        except Exception:
-            pass
+    # 第二级：LLM细判（未来可接入BERT轻量模型，当前回退到规则结果）
+    # TODO: 接入轻量级情感分类模型替代规则匹配
 
     # 回退到规则结果
     return {

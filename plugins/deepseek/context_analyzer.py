@@ -552,7 +552,7 @@ async def update_bot_emotion(user_msg: str, user_emotion: EmotionState, user_id:
         logger.info(f"[Bot情绪] 自然消退: {old_mood['dominant']} -> 平静 (过了{int(dt)}秒)")
         result = {"dominant": "平静", "reason": "自然消退"}
         # 情绪传染：平静后也可能被用户情绪影响
-        _try_apply_contagion(result, user_emotion, old_mood, user_id)
+        await _try_apply_contagion(result, user_emotion, old_mood, user_id)
         return result
 
     # 检查用户是否在安抚
@@ -604,7 +604,7 @@ async def update_bot_emotion(user_msg: str, user_emotion: EmotionState, user_id:
                 "recovery_progress": recovery["progress"],
             }
             logger.info(f"[Bot情绪] 恢复中: {old_mood['dominant']} -> {recovery['stage_label']} ({recovery['progress']:.0%})")
-            _try_apply_contagion(result, user_emotion, old_mood, user_id)
+            await _try_apply_contagion(result, user_emotion, old_mood, user_id)
             return result
 
         # 衰减旧情绪
@@ -614,10 +614,10 @@ async def update_bot_emotion(user_msg: str, user_emotion: EmotionState, user_id:
         if abs(decayed_v) < 0.1:
             await update_bot_mood(0.0, 0.2, "平静", "自然消退")
             result = {"dominant": "平静", "reason": "自然消退"}
-            _try_apply_contagion(result, user_emotion, old_mood, user_id)
+            await _try_apply_contagion(result, user_emotion, old_mood, user_id)
             return result
         result = {"dominant": old_mood["dominant"], "reason": old_mood.get("trigger_reason", ""), "decaying": True}
-        _try_apply_contagion(result, user_emotion, old_mood, user_id)
+        await _try_apply_contagion(result, user_emotion, old_mood, user_id)
         return result
 
     # 平静状态：检查随机波动 + 情绪传染
@@ -626,8 +626,9 @@ async def update_bot_emotion(user_msg: str, user_emotion: EmotionState, user_id:
     real_affection = 0
     if user_id:
         try:
-            from .db_affection import get_affection_score
-            real_affection = await get_affection_score(user_id)
+            from .db_affection import get_affection
+            aff_data = await get_affection(str(user_id))
+            real_affection = aff_data.get("score", 0)
         except Exception:
             pass
     swing = maybe_trigger_mood_swing(old_mood["dominant"], real_affection)
@@ -636,11 +637,11 @@ async def update_bot_emotion(user_msg: str, user_emotion: EmotionState, user_id:
         return {"dominant": swing["dominant"], "reason": swing["reason"], "swing_hint": swing.get("hint", "")}
 
     result = {"dominant": "平静", "reason": ""}
-    _try_apply_contagion(result, user_emotion, old_mood, user_id)
+    await _try_apply_contagion(result, user_emotion, old_mood, user_id)
     return result
 
 
-def _try_apply_contagion(result: dict, user_emotion: EmotionState, old_mood: dict, user_id: str = ""):
+async def _try_apply_contagion(result: dict, user_emotion: EmotionState, old_mood: dict, user_id: str = ""):
     """尝试应用情绪传染到结果中（修改 result 字典）。
 
     使用 EmotionBuffer 防止单条消息误触发传染。
@@ -658,9 +659,17 @@ def _try_apply_contagion(result: dict, user_emotion: EmotionState, old_mood: dic
                 "arousal": old_mood.get("arousal", 0.2),
                 "dominant": old_mood.get("dominant", "平静"),
             }
+            # 查询真实好感度（而非从 bot_mood 取不存在的 affection 键）
+            real_affection = 0
+            try:
+                from .db_affection import get_affection
+                aff_data = await get_affection(str(user_id))
+                real_affection = aff_data.get("score", 0)
+            except Exception:
+                pass
             buffered = apply_emotional_contagion_with_buffer(
                 user_id, user_label, bot_mood_dict,
-                old_mood.get("affection", 0),
+                real_affection,
             )
             if buffered:
                 result["contagion"] = buffered

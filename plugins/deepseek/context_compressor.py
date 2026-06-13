@@ -110,8 +110,8 @@ class ContextCompressor:
         self._last_message_counts[session_id] = msg_count
         # B10+B22: 异步持久化到 memory_summaries 表
         try:
-            import asyncio
-            asyncio.ensure_future(self._persist_summary(session_id, summary))
+            from .utils import safe_task
+            safe_task(self._persist_summary(session_id, summary))
         except Exception as e:
             logger.warning(f"[压缩] 摘要持久化调度失败: {e}")
 

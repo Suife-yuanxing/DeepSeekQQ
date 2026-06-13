@@ -336,7 +336,7 @@ async def list_reminders(user_id: str) -> str:
     """列出用户的所有待提醒。"""
     reminders = await get_user_reminders(user_id)
     if not reminders:
-        return await generate_reminder_reply("list", items=[])
+        return "你现在没有待处理的提醒哦~"
 
     return await generate_reminder_reply("list", items=reminders)
 

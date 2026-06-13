@@ -179,14 +179,17 @@ async def semantic_search_memories(
     if not query_emb:
         return []
 
-    # 获取该用户所有有 embedding 的记忆标签
-    from .db_memories import _execute, _fetch_all
-    rows = _fetch_all(
+    # 获取该用户所有有 embedding 的记忆标签（使用异步数据库 API）
+    from .db_core import get_db
+    db = await get_db()
+    rows = []
+    async with db.execute(
         "SELECT id, embedding FROM memory_tags "
         "WHERE user_id = ? AND embedding IS NOT NULL "
         "ORDER BY confidence DESC LIMIT 200",
         (user_id,),
-    )
+    ) as cursor:
+        rows = await cursor.fetchall()
 
     if not rows:
         return []

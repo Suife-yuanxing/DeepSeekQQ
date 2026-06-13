@@ -234,7 +234,7 @@ async def get_recall_candidates(user_id: str, current_msg: str, limit: int = 3) 
 
     # 获取所有回忆
     async with db.execute(
-        """SELECT id, event_type, event_desc, emotion_tag, importance, recall_count, created_at
+        """SELECT id, event_type, event_desc, emotion_tag, importance, recall_count, last_recalled, created_at
            FROM shared_memories WHERE user_id = ? AND importance >= 0.2
            ORDER BY importance DESC LIMIT 30""",
         (str(user_id),)

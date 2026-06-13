@@ -237,7 +237,8 @@ async def init_db():
             session_id TEXT NOT NULL,
             role TEXT NOT NULL,
             content TEXT NOT NULL,
-            timestamp REAL NOT NULL
+            timestamp REAL NOT NULL,
+            archived INTEGER DEFAULT 0
         )
     """)
     await db.execute("""
@@ -319,6 +320,8 @@ async def init_db():
     await db.execute("CREATE INDEX IF NOT EXISTS idx_memories_role ON memories(role, timestamp)")
     # BUGFIX: 复合索引覆盖按 role 过滤的常用查询
     await db.execute("CREATE INDEX IF NOT EXISTS idx_memories_session_role_ts ON memories(session_id, role, timestamp)")
+    # BUGFIX: 覆盖 decay_affection 子查询 (session_id LIKE 'private_%' + timestamp + archived)
+    await db.execute("CREATE INDEX IF NOT EXISTS idx_memories_session_ts_archived ON memories(session_id, timestamp, archived)")
     await db.execute("""
         CREATE TABLE IF NOT EXISTS article_cache (
             url_hash TEXT PRIMARY KEY,
@@ -341,6 +344,9 @@ async def init_db():
     """)
     await db.execute(
         "CREATE INDEX IF NOT EXISTS idx_proactive_user_scene ON proactive_log(user_id, scene, timestamp)"
+    )
+    await db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_proactive_user_type_ts ON proactive_log(user_id, type, timestamp)"
     )
     await db.execute("""
         CREATE TABLE IF NOT EXISTS user_mood (
@@ -462,9 +468,11 @@ async def init_db():
             last_emotion TEXT DEFAULT '',
             last_interaction REAL DEFAULT 0,
             context_summary TEXT DEFAULT '',
-            bot_mood_snapshot TEXT DEFAULT '{}'
+            bot_mood_snapshot TEXT DEFAULT '{}',
+            scratchpad TEXT DEFAULT NULL
         )
     """)
+    await db.execute("CREATE INDEX IF NOT EXISTS idx_session_state_interaction ON session_state(last_interaction)")
     await db.execute("""
         CREATE TABLE IF NOT EXISTS emotion_log (
             id INTEGER PRIMARY KEY AUTOINCREMENT,

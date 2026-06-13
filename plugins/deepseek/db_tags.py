@@ -47,17 +47,25 @@ async def decay_memory_tags(user_id: str = None, decay_rate: float = 0.02, tier:
     """对记忆标签做时间衰减。"""
     db = await get_db()
     now = datetime.now().timestamp()
-    tier_clause = "AND tier = ?" if tier else ""
     params: list = [decay_rate, now]
-    if tier:
-        params.append(tier)
+
     if user_id:
-        query = f"""UPDATE memory_tags SET confidence = MAX(0.0, confidence - ?)
-               WHERE user_id = ? AND last_used < ? - 86400 {tier_clause}"""
-        params.insert(1, str(user_id))
+        if tier:
+            query = """UPDATE memory_tags SET confidence = MAX(0.0, confidence - ?)
+                   WHERE user_id = ? AND last_used < ? - 86400 AND tier = ?"""
+            params.extend([str(user_id), tier])
+        else:
+            query = """UPDATE memory_tags SET confidence = MAX(0.0, confidence - ?)
+                   WHERE user_id = ? AND last_used < ? - 86400"""
+            params.append(str(user_id))
     else:
-        query = f"""UPDATE memory_tags SET confidence = MAX(0.0, confidence - ?)
-               WHERE last_used < ? - 86400 {tier_clause}"""
+        if tier:
+            query = """UPDATE memory_tags SET confidence = MAX(0.0, confidence - ?)
+                   WHERE last_used < ? - 86400 AND tier = ?"""
+            params.append(tier)
+        else:
+            query = """UPDATE memory_tags SET confidence = MAX(0.0, confidence - ?)
+                   WHERE last_used < ? - 86400"""
     await db.execute(query, params)
     await db.commit()
 

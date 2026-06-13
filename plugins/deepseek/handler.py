@@ -1932,67 +1932,6 @@ async def _stage_post(ctx: ChatContext) -> Optional[str]:
     return None
 
 
-# ============================================================
-# 辅助函数（分享快速回复）
-# ============================================================
-
-async def _handle_emoji_share(ctx: ChatContext, last_share: dict):
-    emoji_text = last_share.get("summary", "")
-    emoji_match = re.search(r'用户发送了(?:QQ表情|QQ商城表情|QQ内置表情|表情)[：:]?\s*(.+?)]', emoji_text)
-    emoji_name = emoji_match.group(1).strip() if emoji_match else "表情"
-    sticker_emotion = last_share.get("sticker_emotion", "")
-    # P1: 上下文感知 — 判断表情在对话语境中是否合适
-    context_hint = ""
-    recent_msgs = getattr(ctx, 'recent_memories', []) or []
-    if recent_msgs:
-        user_msgs = [m["content"] for m in recent_msgs[-6:] if m.get("role") == "user"][-3:]
-        if user_msgs:
-            context_hint = f"\n你们最近的聊天上下文：{' | '.join(user_msgs)}"
-            context_hint += "\n请根据上下文判断这个表情在当前话题下是否合适。"
-            context_hint += "\n如果表情和话题冲突（比如刚才在说严肃/难过的事，现在发了个开心表情），"
-            context_hint += "可以调侃一句'你这表情发得真是时候...'之类的话，而不是忽略之前的语境。"
-    emotion_match_hint = ""
-    if sticker_emotion:
-        emotion_match_hint = f"\n这个表情的情绪是「{sticker_emotion}」。你可以用类似的情绪回应。"
-
-    safe_emoji = emoji_name.replace("{", "").replace("}", "").replace("system", "").replace("assistant", "").replace("user", "")[:20]
-
-    emotion_prompt = f"用户给你发了一个QQ表情「{safe_emoji}」，没有说其他话。{context_hint}{emotion_match_hint}"
-    from .prompt import get_minimal_persona
-    emoji_sys = get_minimal_persona(
-        "用户只给你发了一个表情，没有文字。根据表情的含义和聊天上下文回复1-2句。"
-        "如果适合发表情包，在末尾加 [sticker:情绪]（英文情绪标签），大约20%概率加。"
-    )
-    messages = [
-        {"role": "system", "content": emoji_sys},
-        {"role": "user", "content": emotion_prompt}
-    ]
-    reply_text = await call_deepseek_api(messages, temperature=1.0)
-    reply_text = filter_novel_actions(reply_text)
-    clean_reply, sticker_kept = filter_sticker_tag(reply_text, ctx.session_id)
-    emoji_scene = ""
-    if sticker_kept:
-        send_text, sticker_emotion, emoji_scene = parse_sticker_tag(clean_reply)
-    else:
-        send_text = clean_reply
-        sticker_emotion = should_send_sticker_fallback(reply_text)
-    if send_text.strip():
-        parts = split_long_reply(send_text)
-        for i, part in enumerate(parts):
-            if i > 0:
-                await asyncio.sleep(random.uniform(2.0, 5.0))
-            if i == 0:
-                await ctx.bot.send(ctx.event, make_reply(ctx.event, Message(part)))
-            else:
-                await ctx.bot.send(ctx.event, Message(part))
-    if sticker_emotion:
-        sticker_path = await select_sticker_with_search(sticker_emotion, emoji_scene)
-        if sticker_path:
-            await asyncio.sleep(random.uniform(1.0, 2.0))
-            await ctx.bot.send(ctx.event, MessageSegment.image(file=Path(sticker_path)))
-            logger.info(f"[表情包] 回应表情: {sticker_emotion} -> {os.path.basename(sticker_path)}")
-    await save_reply(ctx.session_id, ctx.user_id, f"[表情:{emoji_name}]", send_text, ctx.bot_mood_result)
-
 
 async def _handle_link_share(ctx: ChatContext):
     # 获取分享内容

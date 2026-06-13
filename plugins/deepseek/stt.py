@@ -179,12 +179,12 @@ async def recognize_voice(event: MessageEvent) -> Optional[str]:
                 return text
             logger.warning("[MiMo STT] 识别失败，降级到百度 STT")
 
-        # 引擎 2: 百度 STT（兜底）
+        # 引擎 2: 百度 STT（兜底 — mimo 降级 或 直接指定 baidu）
         if pcm_path:
             text = await _call_baidu_stt(pcm_path)
             return text
         else:
-            logger.warning("[百度 STT] 无 PCM 文件，跳过")
+            logger.warning("[STT] 无 PCM 文件且非 mimo 引擎，无法识别")
             return None
 
     finally:

@@ -29,10 +29,12 @@ async def get_db() -> aiosqlite.Connection:
     async with _db_lock:
         if _db is not None:
             return _db
-        _db = await aiosqlite.connect(DB_PATH)
+        _db = await aiosqlite.connect(DB_PATH, timeout=10.0)
         _db.row_factory = aiosqlite.Row
         await _db.execute("PRAGMA journal_mode=WAL")
         await _db.execute("PRAGMA synchronous=NORMAL")
+        await _db.execute("PRAGMA busy_timeout=5000")
+        await _db.execute("PRAGMA foreign_keys=ON")
     return _db
 
 
