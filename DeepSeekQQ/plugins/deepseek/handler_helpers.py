@@ -1,4 +1,4 @@
-"""handler 辅助函数 — 引用决策、问候检测、消息分析。"""
+"""handler 辅助函数 — 引用决策、问候检测、消息分析、情绪参数、消息分级、已读不回感知。"""
 import random
 import re
 import time
@@ -220,3 +220,136 @@ def parse_target_lines(expr: str) -> int:
         return int(expr)
     except ValueError:
         return 3
+
+
+# ============================================================
+# 情绪参数映射（温度/长度/表情包概率）
+# ============================================================
+
+def get_emotion_params(emotion) -> dict:
+    """根据 EmotionState 的 VA 值返回行为参数。"""
+    if emotion is None or emotion.confidence < 0.4:
+        return {"max_tokens": 1500, "temperature": 0.9, "sticker_chance": 0.25, "target_lines": "2-4"}
+
+    v, a = emotion.valence, emotion.arousal
+
+    if v > 0.5 and a > 0.7:    # 兴奋
+        return {"max_tokens": 1800, "temperature": 1.1, "sticker_chance": 0.50, "target_lines": "4-5"}
+    elif v > 0.3 and a > 0.5:  # 开心
+        return {"max_tokens": 1500, "temperature": 1.0, "sticker_chance": 0.40, "target_lines": "3-4"}
+    elif v < -0.5 and a > 0.5: # 生气
+        return {"max_tokens": 600, "temperature": 0.6, "sticker_chance": 0.05, "target_lines": "1"}
+    elif v < -0.3:             # 难过
+        return {"max_tokens": 800, "temperature": 0.7, "sticker_chance": 0.10, "target_lines": "1-2"}
+    elif a < 0.3:              # 平静
+        return {"max_tokens": 1200, "temperature": 0.8, "sticker_chance": 0.20, "target_lines": "2-3"}
+    elif v > 0 and a > 0.5:    # 害羞
+        return {"max_tokens": 1000, "temperature": 0.9, "sticker_chance": 0.30, "target_lines": "2"}
+    else:                      # 默认
+        return {"max_tokens": 1500, "temperature": 0.9, "sticker_chance": 0.25, "target_lines": "2-4"}
+
+
+# ============================================================
+# 消息分级（真人化：简单消息快速响应）
+# ============================================================
+
+def classify_message_complexity(raw_msg: str, has_image: bool, has_voice: bool) -> str:
+    """判断消息复杂度：simple / normal / complex。
+
+    simple: 短文本（"嗯"、"哈哈"、"好的"）→ 跳过深度分析，快速回复
+    normal: 一般消息 → 完整 pipeline
+    complex: 图片/长文/明确提问 → 完整 pipeline + 可能搜索
+    """
+    msg = raw_msg.strip()
+    if len(msg) <= 5 and not has_image and not has_voice:
+        return "simple"
+    if has_image or len(msg) > 50 or any(kw in msg for kw in [
+        "详细", "分析", "解释", "为什么", "怎么弄", "帮我", "教我",
+        "介绍", "具体", "怎么说", "什么意思",
+    ]):
+        return "complex"
+    return "normal"
+
+
+# ============================================================
+# 已读不回感知
+# ============================================================
+
+def build_reply_gap_hint(gap_seconds: float, affection: dict, schedule, bot_mood: str, current_hour: int = -1) -> str:
+    """根据 bot 最后回复到用户当前消息的时间间隔，生成已读不回提示。"""
+    import random
+
+    gap_min = gap_seconds / 60
+    gap_hour = gap_min / 60
+    affection_score = affection.get("score", 0) if affection else 0
+
+    # 判断当前时段
+    if current_hour < 0:
+        from datetime import datetime
+        current_hour = datetime.now().hour
+    hour = current_hour
+    is_late_night = 0 <= hour < 7  # 深夜到清晨，用户可能在睡觉
+
+    # 深夜回来不算"已读不回"，走另一条路
+    if is_late_night and gap_hour >= 3:
+        if gap_hour >= 8:
+            return random.choice([
+                "用户可能刚睡醒，不要提间隔太久，自然地打招呼就好",
+                "隔了很久才来消息，可能是刚起床，语气自然一些",
+            ])
+        return ""
+
+    # 短间隔不触发
+    if gap_min < 15:
+        return ""
+
+    # 根据好感度调整语气
+    if affection_score >= 200:
+        # 高好感度：撒娇式
+        if 15 <= gap_min < 60:
+            return random.choice([
+                f"用户过了{int(gap_min)}分钟才回复，可以带点撒娇地说等了很久",
+                f"过了{int(gap_min)}分钟才回我，稍微表达一下等待的小委屈",
+            ])
+        elif 1 <= gap_hour < 3:
+            return random.choice([
+                f"用户{int(gap_hour)}个多小时没回消息了，可以撒娇说\"终于回我了~\"",
+                f"等了{int(gap_hour)}个多小时，语气有点委屈但不生气",
+                "好久没回消息了，可以假装生气一下但不要太认真",
+            ])
+        elif 3 <= gap_hour < 8:
+            return random.choice([
+                "用户好几个小时没理我了，可以小声抱怨一下",
+                "等了好几个小时，语气有点小委屈",
+            ])
+    elif affection_score >= 50:
+        # 中好感度：关心式
+        if 15 <= gap_min < 60:
+            return random.choice([
+                f"用户过了{int(gap_min)}分钟才回复，可以自然地接上话题",
+                "隔了一会儿才回，语气自然不要刻意提",
+            ])
+        elif 1 <= gap_hour < 3:
+            return random.choice([
+                "用户1个多小时没回，可以问一下是不是在忙",
+                "隔了挺久才回，自然地聊回来就好",
+            ])
+        elif 3 <= gap_hour < 8:
+            return random.choice([
+                "用户好几个小时没回，可以问问去干嘛了",
+                "好几个小时没消息了，可以自然地说\"好久不见~\"",
+            ])
+    else:
+        # 低好感度：平淡式
+        if 1 <= gap_hour < 3:
+            return random.choice([
+                "用户隔了比较久才回复，正常接话就好",
+                "过了一段时间才回，不用刻意提",
+            ])
+        elif gap_hour >= 3:
+            return random.choice([
+                "用户好几个小时没回，简单接话即可",
+                "隔了很久，正常回复不要刻意提间隔",
+            ])
+
+    return ""

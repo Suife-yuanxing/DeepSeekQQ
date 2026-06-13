@@ -2,7 +2,7 @@
 import time
 import pytest
 from unittest.mock import patch, AsyncMock, MagicMock
-from plugins.deepseek.handler import build_reply_gap_hint
+from plugins.deepseek.handler_helpers import build_reply_gap_hint
 pytestmark = [pytest.mark.unit, pytest.mark.needs_db]
 
 

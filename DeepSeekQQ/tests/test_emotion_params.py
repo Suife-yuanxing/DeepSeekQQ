@@ -9,7 +9,7 @@ class TestGetEmotionParams:
     """测试情绪参数映射函数。"""
 
     def setup_method(self):
-        from plugins.deepseek.handler import get_emotion_params
+        from plugins.deepseek.handler_helpers import get_emotion_params
         self.get_params = get_emotion_params
 
     def test_none_emotion_returns_defaults(self):
@@ -91,7 +91,7 @@ class TestParseTargetLines:
     """测试 target_lines 范围解析。"""
 
     def setup_method(self):
-        from plugins.deepseek.handler import _parse_target_lines
+        from plugins.deepseek.handler_helpers import parse_target_lines as _parse_target_lines
         self.parse = _parse_target_lines
 
     def test_single_number(self):
