@@ -93,7 +93,7 @@ fi
 
 # 2. 拉取最新代码
 echo "📥 拉取最新代码..."
-if ! git pull origin main; then
+if ! git pull origin master; then
     echo "❌ git pull 失败，中止部署"
     exit 1
 fi
