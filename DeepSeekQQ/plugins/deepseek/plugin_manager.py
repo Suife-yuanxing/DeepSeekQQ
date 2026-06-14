@@ -48,6 +48,8 @@ class PluginMeta:
     enabled: bool = True                # 是否启用
     priority: int = 50                  # 执行优先级（越小越先执行）
     stage_name: str = ""                # 插入到哪个 stage 之后（空字符串=末尾）
+    # 注：stage_name 当前未在 pipeline 中实际使用，插件统一在固定位置执行
+    # 后续 P2-2 将实现按 stage_name 动态插入
 
 
 class BasePlugin:

@@ -48,8 +48,15 @@ async def _stage_group_filter(ctx: ChatContext) -> Optional[str]:
 
     # 气氛感知（替代简单的随机回复）
     from ..group_atmosphere import should_join_conversation
-    # 构造最近消息列表（简化版，从 session 获取）
-    recent = [{"user_id": ctx.user_id, "timestamp": time.time()}]
+    from ..db_group import get_recent_group_messages
+    # 获取最近真实群聊消息（Bug 4 修复：之前传入的是单条假数据）
+    group_id = getattr(ctx.event, 'group_id', None)
+    if group_id:
+        recent = await get_recent_group_messages(str(group_id), limit=30)
+    else:
+        recent = []
+    # 注：memories 表不存储群成员真实 user_id，多用户检测暂时受限
+    # 但使用真实消息时间戳已能正确判断冷场/节奏空隙
     decision = should_join_conversation(recent, ctx.bot.self_id)
 
     if decision["should_reply"]:

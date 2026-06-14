@@ -442,3 +442,26 @@ async def migrate_v16_add_performance_indexes(db: aiosqlite.Connection):
         except Exception as e:
             logger.warning(f"[迁移 v16] 索引创建跳过: {e}")
     await db.commit()
+
+
+@migration(17)
+async def migrate_v17_proactive_opt_out(db: aiosqlite.Connection):
+    """HF-1+HF-2: 主动消息退订持久化 + 优雅退避表。"""
+    await db.execute("""
+        CREATE TABLE IF NOT EXISTS proactive_opt_out (
+            user_id TEXT PRIMARY KEY,
+            opted_out_at REAL NOT NULL,
+            reason TEXT DEFAULT '',
+            created_at REAL DEFAULT (unixepoch())
+        )
+    """)
+    await db.execute("""
+        CREATE TABLE IF NOT EXISTS proactive_backoff (
+            user_id TEXT PRIMARY KEY,
+            ignore_count INTEGER DEFAULT 0,
+            backoff_until REAL DEFAULT 0,
+            last_ignored_at REAL DEFAULT 0,
+            updated_at REAL DEFAULT (unixepoch())
+        )
+    """)
+    await db.commit()

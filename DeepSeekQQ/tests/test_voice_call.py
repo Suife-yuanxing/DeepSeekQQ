@@ -20,8 +20,14 @@ class TestDetectVoiceIntent:
 
     def test_exit_keywords(self):
         from plugins.deepseek.voice_call import detect_voice_intent
-        for kw in ["挂断", "不打了", "挂了", "挂了吧", "结束通话"]:
+        # Bug 8 修复：移除了 "挂了"（太容易误触发），测试新词表
+        for kw in ["挂断", "不打了", "挂电话了", "挂了吧", "结束通话", "挂电话"]:
             assert detect_voice_intent(kw) == "exit", f"关键词 '{kw}' 应返回 'exit'"
+
+    def test_guale_no_longer_triggers_exit(self):
+        """Bug 8 回归：单字组合 '挂了' 不再触发退出（防止误触发）。"""
+        from plugins.deepseek.voice_call import detect_voice_intent
+        assert detect_voice_intent("挂了") is None, "'挂了' 不应再单独触发退出"
 
     def test_normal_message_returns_none(self):
         from plugins.deepseek.voice_call import detect_voice_intent

@@ -20,7 +20,8 @@ async def get_catgirl_mood() -> Dict[str, Any]:
 
 async def update_catgirl_mood(user_msg: str) -> Dict[str, Any]:
     happy = ["开心", "喜欢", "爱", "棒", "可爱", "喵", "亲", "抱", "摸摸", "乖", "嘿嘿", "哈哈"]
-    sad = ["累", "难过", "伤心", "哭", "烦", "滚", "讨厌", "傻", "笨", "坏", "丑"]
+    sad = ["累", "难过", "伤心", "哭", "好烦", "烦死了", "滚", "讨厌", "傻", "笨", "坏", "丑"]
+    # Bug 10 修复：移除单字 '烦'，避免"麻烦你"等礼貌请求误判为负面
     delta = 5 if any(w in user_msg for w in happy) else -3 if any(w in user_msg for w in sad) else 0
     db = await get_db()
     async with db.execute("SELECT score FROM catgirl_mood WHERE id = 1") as cursor:

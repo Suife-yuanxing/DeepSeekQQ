@@ -85,7 +85,7 @@ _HOUR_TO_SLOT.update({h: "night" for h in range(0, 9)})
 
 _current_activity: Optional[Activity] = None
 _current_slot: str = ""
-_activity_updated: float = 0
+_activity_updated: float = 0  # 预留：活动最后更新时间（当前仅赋值未读取，后续可做稳定性判断）
 
 
 def get_current_activity() -> Activity:

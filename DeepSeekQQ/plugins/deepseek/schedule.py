@@ -112,7 +112,12 @@ def get_schedule_state(hour: int = None, weekday: int = None) -> ScheduleState:
         elif hour >= 0 and hour < min(sleep_start_int, 8):
             in_sleep = True
     else:
-        if 1 <= hour < 8:
+        # Bug 6 修复：工作日也使用偏移后的 sleep_start（原为硬编码 1<=hour<8）
+        # 使用浮点比较（非 int），使 ±0.75h 偏移真正生效：
+        #   -0.75h → sleep_start=0.25 → 0:15 开始睡
+        #   +0.75h → sleep_start=1.75 → 1:45 开始睡
+        # 午夜 (hour=0) 不会被 catch：0.25<=0 和 1.75<=0 均为 False
+        if sleep_start <= hour < sleep_end:
             in_sleep = True
 
     if in_sleep:

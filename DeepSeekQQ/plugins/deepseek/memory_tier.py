@@ -168,8 +168,20 @@ async def get_tiered_memory(
         items_text = "\n".join(f"- {e.content}" for e in long_term_items[:cfg["max_items"]])
         result["prompt_parts"].append(f"{cfg['inject_prefix']}\n{items_text}")
 
-    # ---- Pinned Memory: 待实现（需要用户标记机制） ----
-    # 预留接口：当用户明确说"记住xxx"时，存入 pinned_memories 表
+    # ---- Pinned Memory: 固定记忆 ----
+    try:
+        pinned = await get_pinned_memories(user_id)
+        if pinned:
+            cfg = TIER_CONFIG["pinned"]
+            entries = [
+                MemoryEntry(content=p, confidence=0.9, tier="pinned")
+                for p in pinned
+            ]
+            result["pinned"] = entries
+            pinned_text = "\n".join(f"- {p}" for p in pinned[:cfg["max_items"]])
+            result["prompt_parts"].append(f"{cfg['inject_prefix']}\n{pinned_text}")
+    except Exception as e:
+        logger.debug(f"[记忆层级] 固定记忆获取失败: {e}")
 
     logger.debug(
         f"[记忆层级] {user_id[:8]}: "

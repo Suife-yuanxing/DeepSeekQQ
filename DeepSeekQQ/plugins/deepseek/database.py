@@ -599,6 +599,25 @@ async def init_db():
     await db.execute("CREATE INDEX IF NOT EXISTS idx_opinion_user ON opinion_memory(user_id)")
     await db.execute("CREATE INDEX IF NOT EXISTS idx_opinion_topic ON opinion_memory(topic)")
 
+    # 主动消息退订与退避表（HF-1 + HF-2）
+    await db.execute("""
+        CREATE TABLE IF NOT EXISTS proactive_opt_out (
+            user_id TEXT PRIMARY KEY,
+            opted_out_at REAL NOT NULL,
+            reason TEXT DEFAULT '',
+            created_at REAL DEFAULT (unixepoch())
+        )
+    """)
+    await db.execute("""
+        CREATE TABLE IF NOT EXISTS proactive_backoff (
+            user_id TEXT PRIMARY KEY,
+            ignore_count INTEGER DEFAULT 0,
+            backoff_until REAL DEFAULT 0,
+            last_ignored_at REAL DEFAULT 0,
+            updated_at REAL DEFAULT (unixepoch())
+        )
+    """)
+
     await db.execute("""
         CREATE TABLE IF NOT EXISTS social_references (
             id INTEGER PRIMARY KEY AUTOINCREMENT,

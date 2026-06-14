@@ -167,6 +167,16 @@ def has_time_gap(recent_memories: list, threshold: int = 300) -> bool:
 # 引用决策
 # ============================================================
 
+def is_bot_at(event: MessageEvent, bot_id: str) -> bool:
+    """检查消息是否 @ 了机器人。"""
+    if not isinstance(event, GroupMessageEvent):
+        return False
+    for seg in event.message:
+        if seg.type == "at" and str(seg.data.get("qq", "")) == str(bot_id):
+            return True
+    return False
+
+
 def should_quote(event: MessageEvent, bot_id: str, raw_msg: str,
                  is_group: bool, is_explicit_search: bool,
                  recent_memories: list) -> bool:

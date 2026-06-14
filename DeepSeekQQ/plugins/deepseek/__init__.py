@@ -8,6 +8,7 @@ from nonebot.adapters.onebot.v11 import MessageEvent
 
 from . import startup
 from . import web_admin  # 管理后台 Web UI
+from . import handler     # 触发 stage 注册（填充 _PIPELINE）
 from .pipeline import handle_chat
 from .message_debounce import debouncer
 

@@ -174,17 +174,59 @@ async def prune_memory_tags(min_confidence: float = 0.15, tier: str = None):
 
 
 async def get_relevant_memory_tags(user_id: str, limit: int = 5) -> List[aiosqlite.Row]:
-    """获取相关记忆标签，按 置信度×权重 综合排序。"""
+    """获取相关记忆标签，按 置信度×权重 综合排序。
+
+    HF-3: 将 'pinned' 类型加入查询，确保固定记忆可见。
+    """
     db = await get_db()
     async with db.execute(
         """SELECT tag_type, content, weight, confidence, hit_count, last_used
            FROM memory_tags
            WHERE user_id = ? AND confidence >= 0.15
-             AND (tag_type IN ('preference', 'fact', 'taboo') OR weight > 1.2)
+             AND (tag_type IN ('preference', 'fact', 'taboo', 'pinned') OR weight > 1.2)
            ORDER BY (confidence * weight) DESC, last_used DESC LIMIT ?""",
         (str(user_id), limit)
     ) as cursor:
         return await cursor.fetchall()
+
+
+async def ensure_tag(user_id: str, tag_type: str, content: str, confidence: float = 0.5):
+    """确保指定标签存在，若已存在则更新置信度。
+
+    HF-3: 新增函数，用于 pin_memory（memory_tier.py）等场景。
+    替代之前不存在的 import，修复 ImportError。
+
+    Args:
+        user_id: 用户 ID
+        tag_type: 标签类型（如 'pinned', 'fact', 'preference'）
+        content: 标签内容
+        confidence: 置信度（默认 0.5，pinned 场景建议 0.9）
+    """
+    db = await get_db()
+    now = datetime.now().timestamp()
+
+    async with db.execute(
+        "SELECT id, confidence FROM memory_tags WHERE user_id = ? AND tag_type = ? AND content = ?",
+        (str(user_id), tag_type, content)
+    ) as cursor:
+        existing = await cursor.fetchone()
+
+    if existing:
+        new_conf = max(existing["confidence"], confidence)
+        await db.execute(
+            "UPDATE memory_tags SET confidence = ?, last_used = ? WHERE id = ?",
+            (new_conf, now, existing["id"])
+        )
+        logger.debug(f"[db_tags] ensure_tag 更新: {tag_type}/{content[:30]} → conf={new_conf}")
+    else:
+        await db.execute(
+            """INSERT INTO memory_tags (user_id, tag_type, content, weight, confidence, hit_count, tier, created_at, last_used)
+               VALUES (?, ?, ?, 1.0, ?, 0, 'short_term', ?, ?)""",
+            (str(user_id), tag_type, content, confidence, now, now)
+        )
+        logger.info(f"[db_tags] ensure_tag 新建: {tag_type}/{content[:30]} → conf={confidence}")
+
+    await db.commit()
 
 
 async def boost_memory_tag(user_id: str, content: str, boost: float = 0.1):

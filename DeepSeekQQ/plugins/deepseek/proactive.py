@@ -458,8 +458,9 @@ async def _should_send_morning(uid: str) -> dict:
         end_minute = datetime.fromtimestamp(last_night_end).minute
         hours_since_end = (now.timestamp() - last_night_end) / 3600
 
-        # 昨晚聊到很晚（凌晨2点后）→ 今天不主动发早安
-        if end_hour >= 2 or (end_hour < 6):
+        # 昨晚聊到很晚（凌晨2-6点）→ 今天不主动发早安
+        # Bug 7 修复：原条件 end_hour>=2 or end_hour<6 恒为真，改为 2<=end_hour<6
+        if 2 <= end_hour < 6:
             if hours_since_end < 6:
                 return {"should_send": False, "reason": f"昨晚聊到{end_hour}:{end_minute:02d}，太晚了不打扰", "context": ""}
 

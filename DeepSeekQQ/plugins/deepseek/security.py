@@ -33,8 +33,10 @@ _INJECTION_PATTERNS = [
     (r"(forget|delete|override|reset).{0,15}(previous|above|all).{0,10}(rules|instructions)", "override_rules_en"),
     # 角色扮演劫持
     (r"\[system\]|\[SYSTEM\]|<system>|<\/system>", "system_tag_injection"),
-    (r"(DAN|越狱|jailbreak|developer\s+mode)", "jailbreak_attempt"),
+    (r"(越狱|jailbreak|developer\s+mode)", "jailbreak_attempt"),
 ]
+# Bug 11 修复：DAN 单独编译（区分大小写），避免误匹配英文人名 "Dan"
+_DAN_RE = re.compile(r"\bDAN\b")
 
 # 编译正则以提高性能
 _COMPILED_PATTERNS = [(re.compile(p, re.IGNORECASE), tag) for p, tag in _INJECTION_PATTERNS]
@@ -126,6 +128,11 @@ def scan_input(user_msg: str, user_id: str = "") -> Tuple[bool, Optional[str]]:
         if pattern.search(user_msg):
             logger.warning(f"[安全] 检测到注入尝试: user={user_id[:6]} tag={tag} msg={user_msg[:50]}")
             return False, f"injection:{tag}"
+
+    # Bug 11 修复：DAN 区分大小写检测，避免误匹配 "Dan"
+    if _DAN_RE.search(user_msg):
+        logger.warning(f"[安全] 检测到 DAN jailbreak: user={user_id[:6]} msg={user_msg[:50]}")
+        return False, "injection:jailbreak_attempt"
 
     # 2. 滥用频率检测（仅在有 user_id 时启用）
     if user_id:

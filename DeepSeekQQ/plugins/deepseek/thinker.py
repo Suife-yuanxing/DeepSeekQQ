@@ -11,6 +11,7 @@
 - 可配置开关 THINK_THEN_SPEAK_ENABLED
 """
 import logging
+from typing import Dict
 from typing import List
 from typing import Optional
 
