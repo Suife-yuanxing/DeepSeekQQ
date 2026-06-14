@@ -125,6 +125,18 @@ async def api_status(request: Request) -> Response:
         return _json_response({"error": str(e)}, 500)
 
 
+async def api_health(request: Request) -> Response:
+    """GET /health — 健康检查端点，验证服务和数据库连接。"""
+    try:
+        from .db_core import get_db
+        db = await get_db()
+        async with db.execute("SELECT 1") as cur:
+            await cur.fetchone()
+        return _json_response({"status": "ok", "db": "connected"})
+    except Exception as e:
+        return _json_response({"status": "degraded", "db": str(e)}, 503)
+
+
 async def api_messages(request: Request) -> Response:
     """GET /admin/api/messages?limit=50&session_id=xxx — 最近消息。"""
     try:
@@ -614,6 +626,9 @@ if _HAS_NONEBOT:
                 app.add_api_route("/admin/api/search", api_search_messages, methods=["GET"])
                 app.add_api_route("/admin/api/emotion", api_emotion_history, methods=["GET"])
                 app.add_api_route("/admin/api/memory-viz", api_memory_viz, methods=["GET"])
+
+                # 健康检查端点
+                app.add_api_route("/health", api_health, methods=["GET"])
 
                 # HTML 仪表盘
                 app.add_api_route("/admin", admin_dashboard, methods=["GET"])

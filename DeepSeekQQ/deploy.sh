@@ -10,7 +10,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$SCRIPT_DIR"
 
 SERVICE_NAME="deepseek-bot"
-BACKUP_BASE="/tmp/deepseek_backups"
+BACKUP_BASE="$HOME/backups/deepseek"
 NO_RESTART=false
 SKIP_SYNTAX=false
 PORTS=(8082 8765)
