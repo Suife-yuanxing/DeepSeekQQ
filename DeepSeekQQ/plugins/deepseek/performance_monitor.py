@@ -21,6 +21,11 @@ from nonebot import logger
 # 阶段耗时记录：stage_name -> deque of (timestamp, duration_ms)
 _stage_timings: Dict[str, deque] = defaultdict(lambda: deque(maxlen=100))
 
+# 按阶段自定义告警阈值（ms），未列出的阶段默认 5000ms
+_STAGE_WARN_THRESHOLDS: Dict[str, int] = {
+    "post_process": 35000,  # post_process 包含有意的人工延迟
+}
+
 # API 调用记录
 _api_calls: deque = deque(maxlen=200)
 
@@ -42,8 +47,9 @@ class StageTimer:
     def __exit__(self, exc_type, exc_val, exc_tb):
         duration_ms = (time.time() - self.start_time) * 1000
         _stage_timings[self.stage_name].append((time.time(), duration_ms))
-        if duration_ms > 5000:  # 超过 5 秒告警
-            logger.warning(f"[性能] {self.stage_name} 耗时 {duration_ms:.0f}ms")
+        threshold = _STAGE_WARN_THRESHOLDS.get(self.stage_name, 5000)
+        if duration_ms > threshold:
+            logger.warning(f"[性能] {self.stage_name} 耗时 {duration_ms:.0f}ms (阈值 {threshold}ms)")
         return False
 
 

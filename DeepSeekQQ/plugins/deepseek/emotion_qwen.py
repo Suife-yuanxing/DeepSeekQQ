@@ -67,6 +67,11 @@ async def classify_emotion_qwen(user_msg: str) -> Optional[dict]:
     if not user_msg or len(user_msg.strip()) < 2:
         return None
 
+    # Ollama 未启用时直接返回 None，级联自动回退到 keyword + DeepSeek
+    from .config import OLLAMA_ENABLED
+    if not OLLAMA_ENABLED:
+        return None
+
     msg_key = user_msg.strip()[:100]
     if msg_key in _classify_cache:
         return _classify_cache[msg_key]

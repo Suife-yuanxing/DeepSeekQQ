@@ -7,4 +7,9 @@ driver.register_adapter(Adapter)
 nonebot.load_plugins("plugins")
 
 if __name__ == "__main__":
-    nonebot.run()
+    try:
+        nonebot.run()
+    except Exception as e:
+        import logging
+        logging.getLogger("deepseek").critical(f"FATAL: {type(e).__name__}: {e}", exc_info=True)
+        raise

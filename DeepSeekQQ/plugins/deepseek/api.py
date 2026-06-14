@@ -143,6 +143,11 @@ async def _call_local_llm(messages: List[Dict[str, str]], temperature: float = 0
 
     P0-9: 使用缓存检查 Ollama 可用性（60s TTL）+ CircuitBreaker 保护。
     """
+    # Ollama 未启用时直接返回 None，上游 call_deepseek_api 会返回友好错误提示
+    from .config import OLLAMA_ENABLED
+    if not OLLAMA_ENABLED:
+        return None
+
     try:
         # P0-9: 使用缓存检查 Ollama 可用性
         from .circuit_breaker import is_ollama_available_cached

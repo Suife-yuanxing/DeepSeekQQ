@@ -31,7 +31,7 @@ OLLAMA_BASE_URL: str = _OLLAMA_BASE_URL
 OLLAMA_MODEL: str = _OLLAMA_MODEL
 
 OLLAMA_TIMEOUT: int = 60
-OLLAMA_MAX_RETRIES: int = 2
+OLLAMA_MAX_RETRIES: int = 1  # 本地 IPC 不需要重试；通过 OLLAMA_ENABLED 守卫可完全跳过
 
 
 async def check_ollama_available() -> bool:
@@ -129,16 +129,16 @@ async def call_ollama_chat(
                         return None
 
         except asyncio.TimeoutError:
-            logger.warning(f"[Ollama] 超时 (attempt {attempt + 1})")
+            logger.debug(f"[Ollama] 超时 (attempt {attempt + 1})")
             last_error = "timeout"
             await asyncio.sleep(2 ** attempt)
         except aiohttp.ClientError as e:
-            logger.warning(f"[Ollama] 连接错误: {e}")
+            logger.debug(f"[Ollama] 连接错误: {e}")
             last_error = str(e)
             await asyncio.sleep(2 ** attempt)
         except Exception as e:
-            logger.error(f"[Ollama] 未知错误: {e}")
+            logger.warning(f"[Ollama] 未知错误: {e}")
             return None
 
-    logger.warning(f"[Ollama] 全部 {OLLAMA_MAX_RETRIES} 次重试失败: {last_error}")
+    logger.debug(f"[Ollama] 全部 {OLLAMA_MAX_RETRIES} 次重试失败: {last_error}")
     return None

@@ -289,3 +289,11 @@ COMPRESS_MESSAGE_THRESHOLD: int = _safe_int(getattr(cfg, "compress_message_thres
 THINK_THEN_SPEAK_ENABLED: bool = str(getattr(cfg, "think_then_speak_enabled", "true")).lower() == "true"
 THINK_MAX_TOKENS: int = _safe_int(getattr(cfg, "think_max_tokens", 200), 200, "think_max_tokens")
 THINK_TEMPERATURE: float = _safe_float(getattr(cfg, "think_temperature", 0.3), 0.3, "think_temperature")
+
+# === Ollama 本地模型 ===
+# 默认关闭。服务器不跑本地模型（内存仅 2GB 可用），开发机可设为 true
+OLLAMA_ENABLED: bool = str(getattr(cfg, "ollama_enabled", "false")).lower() == "true"
+
+# === 打字延迟系数 ===
+# 全局乘数：1.0=默认，0=即时回复（调试用），0.5=一半延迟
+TYPING_DELAY_FACTOR: float = _safe_float(getattr(cfg, "typing_delay_factor", 1.0), 1.0, "typing_delay_factor")

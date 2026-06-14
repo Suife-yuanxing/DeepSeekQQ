@@ -174,9 +174,9 @@ async def _stage_post(ctx: ChatContext) -> Optional[str]:
                     # 首条：完整延迟（阅读+思考+打字）
                     await asyncio.sleep(calc_message_delay(part, typing_ctx))
                 else:
-                    # 追加：burst 延迟（2.5~6秒，模拟打完又想到要补）
+                    # 追加：burst 延迟（1.5~3.5秒，模拟打完又想到要补）
                     typing_ctx["is_first_reply"] = False
-                    await asyncio.sleep(random.uniform(2.5, 6.0))
+                    await asyncio.sleep(random.uniform(1.5, 3.5))
                 if not first_sent and use_quote:
                     await ctx.bot.send(ctx.event, make_quote_reply(ctx.event, Message(part)))
                     first_sent = True

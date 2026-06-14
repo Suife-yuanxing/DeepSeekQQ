@@ -170,13 +170,13 @@ def calc_message_delay(text: str, context: dict = None) -> float:
     # === 1. 阅读时间：取决于对方消息长度 ===
     user_msg_len = len(ctx.get("user_msg", ""))
     if user_msg_len <= 3:
-        read_time = random.uniform(0.5, 1.5)     # "嗯" → 快速扫一眼
+        read_time = random.uniform(0.3, 1.0)     # "嗯" → 快速扫一眼
     elif user_msg_len <= 15:
-        read_time = random.uniform(1.0, 3.0)     # 一句话 → 正常看
+        read_time = random.uniform(0.8, 2.0)     # 一句话 → 正常看
     elif user_msg_len <= 50:
-        read_time = random.uniform(2.0, 4.5)     # 一段话 → 仔细看
+        read_time = random.uniform(1.5, 3.5)     # 一段话 → 仔细看
     else:
-        read_time = random.uniform(3.0, 6.0)     # 长消息 → 认真看，最多6秒
+        read_time = random.uniform(2.0, 4.0)     # 长消息 → 认真看，最多4秒
 
     # 首条回复需要阅读，非首条（连发的后续）跳过阅读
     if not ctx.get("is_first_reply", True):
@@ -189,14 +189,14 @@ def calc_message_delay(text: str, context: dict = None) -> float:
         think_time = random.uniform(0.3, 1.5)
     elif complexity == "complex":
         # 提问、分析、需要搜索 → 要想一下
-        think_time = random.uniform(2.0, 6.0)
+        think_time = random.uniform(1.0, 4.0)
     else:
         # 一般消息 → 正常想
-        think_time = random.uniform(1.0, 3.0)
+        think_time = random.uniform(0.8, 2.5)
 
     # 问题需要额外思考
     if ctx.get("is_question"):
-        think_time += random.uniform(1.0, 3.0)
+        think_time += random.uniform(0.5, 2.0)
 
     # === 3. 打字时间：基于自己回复长度 ===
     if reply_len <= 5:
@@ -206,8 +206,8 @@ def calc_message_delay(text: str, context: dict = None) -> float:
     elif reply_len <= 40:
         type_time = random.uniform(1.5, 3.0)
     else:
-        type_time = random.uniform(2.5, 4.0) + (reply_len - 40) * random.uniform(0.03, 0.08)
-        type_time = min(type_time, 8.0)
+        type_time = random.uniform(2.0, 3.0) + (reply_len - 40) * random.uniform(0.02, 0.05)
+        type_time = min(type_time, 5.0)
 
     # === 4. 合并 + 修正 ===
     total = read_time + think_time + type_time
@@ -235,12 +235,12 @@ def calc_message_delay(text: str, context: dict = None) -> float:
     jitter = random.gauss(0, total * 0.15)
     total += jitter
 
-    # 首条消息整体略减15%（异步架构已吸收部分延迟，防止用户等太久）
+    # 首条消息整体略减20%（异步架构已吸收部分延迟，防止用户等太久）
     if ctx.get("is_first_reply", True):
-        total *= 0.85
+        total *= 0.80
 
-    # 边界：最少1.5秒（不可能比这更快），最多30秒
-    return max(1.5, min(total, 30.0))
+    # 边界：最少1.5秒（不可能比这更快），最多20秒
+    return max(1.5, min(total, 20.0))
 
 
 

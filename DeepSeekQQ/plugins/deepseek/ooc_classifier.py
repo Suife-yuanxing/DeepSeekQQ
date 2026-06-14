@@ -109,6 +109,11 @@ async def classify_ooc(user_id: str, reply_text: str, bot_name: str = "林念念
     if not reply_text or len(reply_text) < 5:
         return None
 
+    # Ollama 未启用时静默跳过（fire-and-forget，非关键功能）
+    from .config import OLLAMA_ENABLED
+    if not OLLAMA_ENABLED:
+        return None
+
     try:
         from .local_llm import call_ollama_chat
 
