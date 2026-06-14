@@ -195,6 +195,15 @@ async def handle_chat(bot: Bot, event: MessageEvent):
             complexity=classify_message_complexity(_raw_msg, _has_image, _has_voice),
         )
 
+        # A3: AgentRouter 前置过滤（3 agent: security/music/phone_direct）
+        # 异常时自动回退到完整 Pipeline
+        try:
+            from .agents import router as _agent_router
+            if await _agent_router.dispatch(ctx):
+                return
+        except Exception:
+            logger.exception("[AgentRouter] dispatch 异常，回退到完整 Pipeline")
+
         for stage_name, stage_func in _PIPELINE:
             with StageTimer(stage_name):
                 result = await stage_func(ctx)

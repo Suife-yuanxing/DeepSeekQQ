@@ -19,7 +19,7 @@ _parse_target_lines = parse_target_lines
 
 # --- 第1+2批: stages/ 目录中的阶段 ---
 from .stages import stage_private_whitelist  # 1:  private_whitelist
-from .stages import stage_security           # 2:  security
+# stage_security → AgentRouter (agent_security, p=10)
 from .stages import stage_session_recovery   # 3:  session_recovery
 from .stages import stage_voice              # 4:  voice_recognition
 from .stages import stage_voice_call         # 5:  voice_call
@@ -32,8 +32,8 @@ from .stages import stage_affection          # 11: affection
 from .stages import stage_context            # 12: context_analysis
 from .stages import stage_schedule_interrupt # 13: schedule_interrupt
 from .stages import stage_reminder           # 14: reminder
-from .stages import stage_music              # 15: music
-from .stages import stage_phone_direct       # 16: phone_direct
+# stage_music → AgentRouter (agent_music, p=35)
+# stage_phone_direct → AgentRouter (agent_phone_direct, p=40)
 from .stages import stage_llm                # 17: llm_call
 from .stages import stage_mcp_execute        # 18: mcp_execute
 from .stages import stage_image_gen          # 19: image_gen

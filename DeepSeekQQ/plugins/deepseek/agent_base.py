@@ -15,7 +15,10 @@ import asyncio
 from dataclasses import dataclass, field
 from typing import Any, Callable, Coroutine, Optional
 
-_SKIP = object()  # 短路哨兵，复用 pipeline.py 的语义
+def _get_SKIP():
+    """惰性导入 _SKIP 哨兵，避免 agent_base ↔ pipeline 循环导入。"""
+    from .pipeline import _SKIP
+    return _SKIP
 
 
 @dataclass
@@ -126,6 +129,7 @@ class AgentRouter:
                             f"[AgentRouter] {agent.name} 执行异常: {result}"
                         )
                         continue
+                    _SKIP = _get_SKIP()
                     if result is _SKIP:
                         return True
                     self._merge(ctx, output)
@@ -134,6 +138,7 @@ class AgentRouter:
             for agent in serial_agents:
                 output = AgentOutput(agent.name)
                 result = await agent.execute(ctx, output)
+                _SKIP = _get_SKIP()
                 if result is _SKIP:
                     return True
                 self._merge(ctx, output)
@@ -141,7 +146,15 @@ class AgentRouter:
             # 过渡期：全部串行
             for agent in triggered:
                 output = AgentOutput(agent.name)
-                result = await agent.execute(ctx, output)
+                try:
+                    result = await agent.execute(ctx, output)
+                except Exception:
+                    import logging
+                    logging.getLogger(__name__).error(
+                        f"[AgentRouter] {agent.name} 执行异常，跳过", exc_info=True
+                    )
+                    continue
+                _SKIP = _get_SKIP()
                 if result is _SKIP:
                     return True
                 self._merge(ctx, output)
