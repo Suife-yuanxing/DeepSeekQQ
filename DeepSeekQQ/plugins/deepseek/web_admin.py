@@ -627,9 +627,6 @@ if _HAS_NONEBOT:
                 app.add_api_route("/admin/api/emotion", api_emotion_history, methods=["GET"])
                 app.add_api_route("/admin/api/memory-viz", api_memory_viz, methods=["GET"])
 
-                # 健康检查端点
-                app.add_api_route("/health", api_health, methods=["GET"])
-
                 # HTML 仪表盘
                 app.add_api_route("/admin", admin_dashboard, methods=["GET"])
                 app.add_api_route("/admin/", admin_dashboard, methods=["GET"])
@@ -639,6 +636,18 @@ if _HAS_NONEBOT:
                 _admin_logger.warning("[Admin] FastAPI app 不可用，管理后台未注册")
         except Exception as e:
             _admin_logger.warning(f"[Admin] 注册失败（非关键错误）: {e}")
+
+    @driver.on_startup
+    async def _register_health():
+        """在 driver 启动后独立注册健康检查端点（不受 admin 注册失败影响）。"""
+        try:
+            from fastapi import FastAPI
+            app = driver.server_app
+            if app and isinstance(app, FastAPI):
+                app.add_api_route("/health", api_health, methods=["GET"], response_model=None)
+                _admin_logger.info("[Health] 健康检查已注册: http://0.0.0.0:8082/health")
+        except Exception as e:
+            _admin_logger.warning(f"[Health] 注册失败: {e}")
 else:
     # 测试环境：注册空回调，避免模块导入失败
     _admin_logger = None
