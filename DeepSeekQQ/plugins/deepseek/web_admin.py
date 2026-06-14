@@ -125,7 +125,7 @@ async def api_status(request: Request) -> Response:
         return _json_response({"error": str(e)}, 500)
 
 
-async def api_health(request):
+async def api_health():
     """GET /health — 健康检查端点，验证服务和数据库连接。"""
     try:
         from .db_core import get_db
@@ -642,6 +642,7 @@ if _HAS_NONEBOT:
         """在 driver 启动后独立注册健康检查端点（不受 admin 注册失败影响）。"""
         try:
             from fastapi import FastAPI
+            from fastapi import Request as FastAPIRequest
             app = driver.server_app
             if app and isinstance(app, FastAPI):
                 app.add_api_route("/health", api_health, methods=["GET"], response_model=None)
