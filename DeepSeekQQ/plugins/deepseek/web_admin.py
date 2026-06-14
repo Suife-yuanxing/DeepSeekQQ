@@ -125,7 +125,7 @@ async def api_status(request: Request) -> Response:
         return _json_response({"error": str(e)}, 500)
 
 
-async def api_health(request: Request) -> Response:
+async def api_health(request):
     """GET /health — 健康检查端点，验证服务和数据库连接。"""
     try:
         from .db_core import get_db
