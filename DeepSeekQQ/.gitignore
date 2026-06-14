@@ -22,6 +22,8 @@ data/
 
 # 日志
 *.log
+*.bak.*
+tmp_*.log
 logs/
 
 # 编辑器
@@ -43,6 +45,8 @@ logs/
 
 # 截图（临时文件）
 screenshot.png
+# 测试残留
+MagicMock/
 # 系统文件
 .DS_Store
 Thumbs.db

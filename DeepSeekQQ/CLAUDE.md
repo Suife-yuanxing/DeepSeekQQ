@@ -23,7 +23,7 @@ nohup python bot.py &
 ## 测试
 
 ```bash
-python -m pytest tests/ -v    # 55 个测试，应全部通过
+python -m pytest tests/ -v    # 739 个测试，应全部通过
 ```
 
 ## 架构要点

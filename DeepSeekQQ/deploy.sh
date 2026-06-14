@@ -134,9 +134,9 @@ fi
 # 4. 安装所有依赖
 echo "📦 安装依赖..."
 if [ -f pyproject.toml ]; then
-    $PYTHON -m pip install -e . -q 2>/dev/null || true
+    $PYTHON -m pip install -e . || { echo "❌ 依赖安装失败，中止部署"; exit 1; }
 elif [ -f requirements.txt ]; then
-    $PYTHON -m pip install -r requirements.txt -q 2>/dev/null || true
+    $PYTHON -m pip install -r requirements.txt || { echo "❌ 依赖安装失败，中止部署"; exit 1; }
 else
     echo "⚠️ 未找到依赖文件，跳过"
 fi
@@ -144,7 +144,7 @@ fi
 # 5. 数据库迁移（如果有）
 if [ -f plugins/deepseek/migrations.py ]; then
     echo "🗃️ 检查数据库迁移..."
-    $PYTHON -c "from plugins.deepseek.migrations import run_migrations; import asyncio; asyncio.run(run_migrations())" 2>/dev/null || echo "⚠️ 迁移检查跳过"
+    $PYTHON -c "from plugins.deepseek.migrations import run_migrations; import asyncio; asyncio.run(run_migrations())" || { echo "❌ 数据库迁移失败，中止部署"; exit 1; }
 fi
 
 # 6. 重启服务（安全模式：stop → 等端口释放 → start）

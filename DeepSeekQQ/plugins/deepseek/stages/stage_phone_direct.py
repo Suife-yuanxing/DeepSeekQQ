@@ -31,7 +31,7 @@ async def _stage_phone_direct(ctx: ChatContext) -> Optional[str]:
 
         # ── 截图 / 截屏 ──
         # 使用包含匹配（不用 ^），适配中文口语多变语序
-        if re.search(r'(截[图屏]|截个图|截一下|屏幕截图|看看.?屏幕|.*截图.*|给.*截图|把.*截图|.*截.*图.*)', msg):
+        if re.search(r'(截[图屏]|截个图|截一下|屏幕截图|看看.?屏幕|给.*截图|把.*截图)', msg):
             logger.info(f"[phone_direct] 截图命令: {msg}")
             img_b64 = await bridge.screenshot()
             if img_b64:
