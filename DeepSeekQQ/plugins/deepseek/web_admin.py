@@ -78,7 +78,7 @@ def _html_response(html: str, status: int = 200) -> Response:
 # API 端点
 # ============================================================
 
-async def api_status(request: Request) -> Response:
+async def api_status(request):  # type: ignore
     """GET /admin/api/status — Bot 运行状态。"""
     try:
         from .db_core import get_db
@@ -147,7 +147,7 @@ async def api_health(request: Request = None):
         return _json_response({"status": "degraded", "db": str(e)}, 503)
 
 
-async def api_messages(request: Request) -> Response:
+async def api_messages(request):  # type: ignore
     """GET /admin/api/messages?limit=50&session_id=xxx — 最近消息。"""
     try:
         limit = min(int(request.query.get("limit", 50)), 200)
@@ -189,7 +189,7 @@ async def api_messages(request: Request) -> Response:
         return _json_response({"error": str(e)}, 500)
 
 
-async def api_config(request: Request) -> Response:
+async def api_config(request):  # type: ignore
     """GET /admin/api/config — 当前配置摘要（脱敏）。"""
     return _json_response({
         "model": MODEL,
@@ -212,7 +212,7 @@ async def api_config(request: Request) -> Response:
     })
 
 
-async def api_templates(request: Request) -> Response:
+async def api_templates(request):  # type: ignore
     """GET /admin/api/templates — 列出所有提示词模板。"""
     try:
         from .prompt_templates import get_template
@@ -231,7 +231,7 @@ async def api_templates(request: Request) -> Response:
         return _json_response({"error": str(e)}, 500)
 
 
-async def api_heat(request: Request) -> Response:
+async def api_heat(request):  # type: ignore
     """GET /admin/api/heat — 群聊热度状态。"""
     try:
         from .group_heat import heat_manager
@@ -248,7 +248,7 @@ async def api_heat(request: Request) -> Response:
         return _json_response({"error": str(e)}, 500)
 
 
-async def api_compression(request: Request) -> Response:
+async def api_compression(request):  # type: ignore
     """GET /admin/api/compression — 上下文压缩统计。"""
     try:
         from .context_compressor import get_compression_stats
@@ -257,7 +257,7 @@ async def api_compression(request: Request) -> Response:
         return _json_response({"error": str(e)}, 500)
 
 
-async def api_tokens(request: Request) -> Response:
+async def api_tokens(request):  # type: ignore
     """GET /admin/api/tokens — Token 使用量与成本统计。"""
     try:
         from .token_tracker import get_tracker
@@ -276,7 +276,7 @@ def _sanitize_search_query(query: str) -> str:
     return query
 
 
-async def api_search_messages(request: Request) -> Response:
+async def api_search_messages(request):  # type: ignore
     """GET /admin/api/search?q=关键词&limit=50 — 对话搜索。"""
     try:
         raw_query = request.query.get("q", "").strip()
@@ -312,7 +312,7 @@ async def api_search_messages(request: Request) -> Response:
         return _json_response({"error": str(e)}, 500)
 
 
-async def api_emotion_history(request: Request) -> Response:
+async def api_emotion_history(request):  # type: ignore
     """GET /admin/api/emotion?user_id=xxx&limit=50 — 情绪历史。"""
     try:
         user_id = request.query.get("user_id", "").strip()
@@ -369,7 +369,7 @@ async def api_emotion_history(request: Request) -> Response:
         return _json_response({"error": str(e)}, 500)
 
 
-async def api_memory_viz(request: Request) -> Response:
+async def api_memory_viz(request):  # type: ignore
     """GET /admin/api/memory-viz?user_id=xxx — 记忆可视化数据。"""
     try:
         user_id = request.query.get("user_id", "").strip()
@@ -650,7 +650,7 @@ document.getElementById('auth-status').textContent = authToken ? '🔒 已认证
 </html>"""
 
 
-async def admin_dashboard(request: Request) -> Response:
+async def admin_dashboard(request):  # type: ignore
     """GET /admin — 管理后台仪表盘。"""
     return _html_response(_DASHBOARD_HTML)
 
