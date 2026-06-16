@@ -33,6 +33,16 @@ API_KEY: str = str(getattr(cfg, "deepseek_api_key", "") or "").strip()
 MODEL: str = getattr(cfg, "deepseek_model", "deepseek-chat")
 BASE_URL: str = getattr(cfg, "deepseek_base_url", "https://api.deepseek.com")
 
+# === Kimi (Moonshot) ===
+KIMI_API_KEY: str = str(getattr(cfg, "kimi_api_key", "") or "").strip()
+KIMI_BASE_URL: str = getattr(cfg, "kimi_base_url", "https://api.moonshot.cn/v1")
+KIMI_MODEL: str = getattr(cfg, "kimi_model", "kimi-k2.6")
+
+# === MiniMax (Council 交叉验证) ===
+MINIMAX_API_KEY: str = str(getattr(cfg, "minimax_api_key", "") or "").strip()
+MINIMAX_BASE_URL: str = getattr(cfg, "minimax_base_url", "https://api.minimaxi.com/v1")
+MINIMAX_MODEL: str = getattr(cfg, "minimax_model", "MiniMax-M3")
+
 # === 百度 TTS ===
 BAIDU_TTS_AK: str = str(getattr(cfg, "baidu_tts_ak", "") or "").strip()
 BAIDU_TTS_SK: str = str(getattr(cfg, "baidu_tts_sk", "") or "").strip()
@@ -254,6 +264,11 @@ TTS_ENGINE: str = getattr(cfg, "tts_engine", "baidu")  # "baidu" / "mimo" / "vol
 MIMO_API_KEY: str = str(getattr(cfg, "mimo_api_key", "") or "").strip()
 MIMO_API_BASE_URL: str = getattr(cfg, "mimo_api_base_url", "https://api.xiaomimimo.com/v1")
 MIMO_TTS_VOICE: str = getattr(cfg, "mimo_tts_voice", "冰糖")  # 冰糖/茉莉/苏打/白桦
+
+# === Mimo Chat (Council 交叉验证用) ===
+MIMO_CHAT_API_KEY: str = str(getattr(cfg, "mimo_chat_api_key", "") or "").strip()
+MIMO_CHAT_BASE_URL: str = getattr(cfg, "mimo_chat_base_url", "https://api.xiaomimimo.com/v1")
+MIMO_CHAT_MODEL: str = getattr(cfg, "mimo_chat_model", "mimo-v2.5-pro")
 
 # === 火山引擎 TTS ===
 VOLCANO_APP_ID: str = str(getattr(cfg, "volcano_app_id", "") or "").strip()

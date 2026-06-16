@@ -1,0 +1,70 @@
+{
+  "_comment": "Council Skill 模型配置 — 新增模型只需编辑此文件，无需改 Python 代码",
+  "_version": "1.1",
+
+  "supported_models": ["deepseek", "kimi", "mimo", "minimax"],
+
+  "model_registry": {
+    "deepseek": {
+      "persona": "The Architect",
+      "prefix": "DS",
+      "api_key_env": "DEEPSEEK_API_KEY",
+      "base_url_env": "DEEPSEEK_BASE_URL",
+      "default_base_url": "https://api.deepseek.com/v1",
+      "default_model": "deepseek-v4-flash",
+      "auth_header": "Bearer",
+      "cost_per_1m": { "input": 1.0, "output": 4.0 },
+      "overrides": { "max_tokens": 4096 }
+    },
+    "kimi": {
+      "persona": "The Skeptic",
+      "prefix": "K",
+      "api_key_env": "KIMI_API_KEY",
+      "base_url_env": "KIMI_BASE_URL",
+      "default_base_url": "https://api.moonshot.cn/v1",
+      "default_model": "kimi-k2.6",
+      "auth_header": "Bearer",
+      "cost_per_1m": { "input": 2.0, "output": 8.0 },
+      "overrides": {"temperature": 1.0}
+    },
+    "mimo": {
+      "persona": "The Pragmatist",
+      "prefix": "M",
+      "api_key_env": "MIMO_CHAT_API_KEY",
+      "base_url_env": "MIMO_CHAT_BASE_URL",
+      "default_base_url": "https://api.xiaomimimo.com/v1",
+      "default_model": "mimo-v2.5-pro",
+      "auth_header": "api-key",
+      "cost_per_1m": { "input": 1.0, "output": 4.0 },
+      "overrides": { "max_tokens": 4096 }
+    },
+    "minimax": {
+      "persona": "The Auditor",
+      "prefix": "MM",
+      "api_key_env": "MINIMAX_API_KEY",
+      "base_url_env": "MINIMAX_BASE_URL",
+      "default_base_url": "https://api.minimaxi.com/v1",
+      "default_model": "MiniMax-M3",
+      "auth_header": "Bearer",
+      "cost_per_1m": { "input": 2.1, "output": 8.4 },
+      "overrides": {"thinking": {"type": "disabled"}}
+    }
+  },
+
+  "judge_fallback_chain": [
+    {
+      "model": "deepseek-v4-pro",
+      "api_key_env": "COUNCIL_JUDGE_API_KEY",
+      "base_url_env": "COUNCIL_JUDGE_BASE_URL",
+      "auth_header": "Bearer",
+      "default_base_url": "https://api.deepseek.com/v1"
+    },
+    {
+      "model": "deepseek-v4-flash",
+      "api_key_env": "DEEPSEEK_API_KEY",
+      "base_url_env": "DEEPSEEK_BASE_URL",
+      "auth_header": "Bearer",
+      "default_base_url": "https://api.deepseek.com/v1"
+    }
+  ]
+}

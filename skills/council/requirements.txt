@@ -1,0 +1,10 @@
+# Council Skill 依赖
+# 核心依赖（必须）
+httpx>=0.27.0          # HTTP 客户端（API 调用），urllib 回退可用但性能较差
+
+# 测试依赖
+pytest>=8.0.0           # 测试框架
+
+# 可选依赖
+# python-dotenv>=1.0.0  # .env 文件加载（当前使用内置简易解析器，无需安装）
+# tiktoken>=0.7.0       # 精确 token 计数（当前使用 char/2 估算）

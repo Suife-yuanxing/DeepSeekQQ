@@ -1,0 +1,17 @@
+# API Keys - NEVER commit
+.env
+.env.bak
+
+# Python cache
+__pycache__/
+.pytest_cache/
+*.pyc
+
+# Test outputs
+council-verified-*.md
+council-test-output-*.md
+council-test-output-*.json
+
+# Diagnostic scripts (temporary)
+diagnose_*.py
+test_kimi_k26.py
