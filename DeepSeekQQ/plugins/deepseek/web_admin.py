@@ -715,21 +715,21 @@ if _HAS_NONEBOT:
 
             app = driver.server_app
             if app and isinstance(app, FastAPI):
-                # API 端点
-                app.add_api_route("/admin/api/status", api_status, methods=["GET"])
-                app.add_api_route("/admin/api/messages", api_messages, methods=["GET"])
-                app.add_api_route("/admin/api/config", api_config, methods=["GET"])
-                app.add_api_route("/admin/api/templates", api_templates, methods=["GET"])
-                app.add_api_route("/admin/api/heat", api_heat, methods=["GET"])
-                app.add_api_route("/admin/api/compression", api_compression, methods=["GET"])
-                app.add_api_route("/admin/api/tokens", api_tokens, methods=["GET"])
-                app.add_api_route("/admin/api/search", api_search_messages, methods=["GET"])
-                app.add_api_route("/admin/api/emotion", api_emotion_history, methods=["GET"])
-                app.add_api_route("/admin/api/memory-viz", api_memory_viz, methods=["GET"])
+                # API 端点（response_model=None 避免 FastAPI 对 NoneBot Response 类型报错）
+                app.add_api_route("/admin/api/status", api_status, methods=["GET"], response_model=None)
+                app.add_api_route("/admin/api/messages", api_messages, methods=["GET"], response_model=None)
+                app.add_api_route("/admin/api/config", api_config, methods=["GET"], response_model=None)
+                app.add_api_route("/admin/api/templates", api_templates, methods=["GET"], response_model=None)
+                app.add_api_route("/admin/api/heat", api_heat, methods=["GET"], response_model=None)
+                app.add_api_route("/admin/api/compression", api_compression, methods=["GET"], response_model=None)
+                app.add_api_route("/admin/api/tokens", api_tokens, methods=["GET"], response_model=None)
+                app.add_api_route("/admin/api/search", api_search_messages, methods=["GET"], response_model=None)
+                app.add_api_route("/admin/api/emotion", api_emotion_history, methods=["GET"], response_model=None)
+                app.add_api_route("/admin/api/memory-viz", api_memory_viz, methods=["GET"], response_model=None)
 
                 # HTML 仪表盘
-                app.add_api_route("/admin", admin_dashboard, methods=["GET"])
-                app.add_api_route("/admin/", admin_dashboard, methods=["GET"])
+                app.add_api_route("/admin", admin_dashboard, methods=["GET"], response_model=None)
+                app.add_api_route("/admin/", admin_dashboard, methods=["GET"], response_model=None)
 
                 from .middleware.auth import ADMIN_API_KEY as _AK
                 _admin_logger.info(f"[Admin] 管理后台已注册: http://{SERVER_HOST}:8082/admin (认证: {'启用' if _AK else '未配置'})")
