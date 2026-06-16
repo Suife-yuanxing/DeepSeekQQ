@@ -1,15 +1,10 @@
 {
   "mcpServers": {
-    "ollama-vision": {
-      "command": "npx",
-      "args": ["-y", "ollama-mcp-server@1.1.0"],
-      "env": {
-        "OLLAMA_HOST": "http://localhost:11434"
-      }
-    },
     "glm-mcp": {
       "command": "uvx",
-      "args": ["glm-mcp"],
+      "args": [
+        "glm-mcp"
+      ],
       "env": {
         "GLM_API_KEY": "${GLM_API_KEY}",
         "GLM_MODEL": "glm-4-flash"
