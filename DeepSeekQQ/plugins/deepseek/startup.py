@@ -43,6 +43,38 @@ from .sticker_search import cleanup_old_downloads
 
 driver = get_driver()
 
+# ── M-11: CORS 中间件（白名单 origin）──
+# 必须在应用启动前添加，不能在 on_start 生命周期中
+def _setup_cors():
+    """在模块加载时配置 CORS 中间件（应用启动前）。"""
+    try:
+        from .config import CORS_ALLOW_ORIGINS
+        from fastapi.middleware.cors import CORSMiddleware
+        app = driver.server_app
+        if CORS_ALLOW_ORIGINS:
+            origins = [o.strip() for o in CORS_ALLOW_ORIGINS.split(",") if o.strip()]
+            app.add_middleware(
+                CORSMiddleware,
+                allow_origins=origins,
+                allow_credentials=True,
+                allow_methods=["GET", "POST"],
+                allow_headers=["Authorization", "Content-Type"],
+            )
+            logger.info(f"[安全] CORS 中间件已启用: {origins}")
+        else:
+            app.add_middleware(
+                CORSMiddleware,
+                allow_origins=["http://localhost:*", "http://127.0.0.1:*"],
+                allow_credentials=True,
+                allow_methods=["GET", "POST"],
+                allow_headers=["Authorization", "Content-Type"],
+            )
+            logger.info("[安全] CORS 中间件已启用（默认：仅允许本地）")
+    except (ImportError, ValueError, TypeError) as e:
+        logger.warning(f"[安全] CORS 中间件添加失败: {e}")
+
+_setup_cors()
+
 
 @driver.on_startup
 async def on_start():
@@ -84,32 +116,6 @@ async def on_start():
     from .config import RANDOM_REPLY_CHANCE
     from .config import VOICE_ENABLED_GROUP
     from .config import VOICE_ENABLED_PRIVATE
-    # M-11: CORS 中间件（白名单 origin）
-    try:
-        from .config import CORS_ALLOW_ORIGINS
-        from fastapi.middleware.cors import CORSMiddleware
-        if CORS_ALLOW_ORIGINS:
-            origins = [o.strip() for o in CORS_ALLOW_ORIGINS.split(",") if o.strip()]
-            app.add_middleware(
-                CORSMiddleware,
-                allow_origins=origins,
-                allow_credentials=True,
-                allow_methods=["GET", "POST"],
-                allow_headers=["Authorization", "Content-Type"],
-            )
-            logger.info(f"[安全] CORS 中间件已启用: {origins}")
-        else:
-            # 未配置时默认仅允许本地
-            app.add_middleware(
-                CORSMiddleware,
-                allow_origins=["http://localhost:*", "http://127.0.0.1:*"],
-                allow_credentials=True,
-                allow_methods=["GET", "POST"],
-                allow_headers=["Authorization", "Content-Type"],
-            )
-            logger.info("[安全] CORS 中间件已启用（默认：仅允许本地）")
-    except (ImportError, ValueError, TypeError) as e:
-        logger.warning(f"[安全] CORS 中间件添加失败: {e}")
 
     logger.info("✅ 林念念已启动~ 诶嘿！")
     logger.info(f"ffmpeg 检测: {'已安装 ✅' if has_ff else '未安装 ❌ 语音可能无法发送'}")
