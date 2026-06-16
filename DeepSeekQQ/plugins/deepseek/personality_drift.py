@@ -88,9 +88,10 @@ async def get_personality_drift_hints(user_id: str) -> List[str]:
 async def maybe_learn_catchphrase(user_id: str, affection_score: float) -> Optional[str]:
     """从对方高频词学习新的口头禅。
 
-    条件：好感度 >= 600，每天最多学1个。
+    条件：好感度 >= CATCHPHRASE_LEARN_AFFECTION_MIN（默认300），每天最多学1个。
     """
-    if affection_score < 600:
+    from .config import CATCHPHRASE_LEARN_AFFECTION_MIN
+    if affection_score < CATCHPHRASE_LEARN_AFFECTION_MIN:
         return None
 
     try:
@@ -165,7 +166,15 @@ async def maybe_learn_catchphrase(user_id: str, affection_score: float) -> Optio
 # ============================================================
 
 async def weekly_interest_evaluation(user_id: str):
-    """每周一次用 LLM 评估兴趣变化趋势，写入 user_preferences。"""
+    """每周一次用 LLM 评估兴趣变化趋势，写入 user_preferences。
+
+    由 PERSONALITY_WEEKLY_EVAL_ENABLED 控制开关（默认关闭——目前无人读取结果）。
+    """
+    from .config import PERSONALITY_WEEKLY_EVAL_ENABLED
+    if not PERSONALITY_WEEKLY_EVAL_ENABLED:
+        logger.debug("[人设演化] 周评估已关闭 (PERSONALITY_WEEKLY_EVAL_ENABLED=false)")
+        return
+
     try:
         from .database import get_db
         db = await get_db()

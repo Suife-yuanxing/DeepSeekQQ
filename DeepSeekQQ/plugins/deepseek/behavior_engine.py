@@ -19,6 +19,7 @@ except ImportError:
     _HAS_ZHDATE = False
 
 from nonebot import logger
+from . import config
 
 # ============================================================
 # 天气驱动行为 — 根据天气自然反应
@@ -576,6 +577,7 @@ def get_hot_topic_behavior(trigger_chance: float = 0.05) -> Optional[str]:
         return None
 
     topic_title, _ = random.choice(valid)
+    logger.debug(f"[行为] 热点缓存回退触发: {topic_title[:30]} (social_feed 无数据)")
     templates = [
         f"刚刷到「{topic_title}」，你看到了吗",
         f"话说你看到那个「{topic_title}」了吗",
@@ -674,49 +676,70 @@ def get_real_world_behavior(
     bot_mood_dominant: str = "平静",
     city: str = "",
     affection_score: float = 0.0,
+    is_lightweight: bool = False,
 ) -> Optional[str]:
-    """综合现实世界行为生成。
+    """综合现实世界行为生成（累积模式——收集所有命中行为，随机选最多2个）。
 
-    Priority: weather(25%) > holiday(15%) > scroll_feed(12%)
-              > hot_topic(5%) > seasonal(8%) > micro_event(2%) > random(5%)
+    各行为独立判断，不短路。最多随机选出 BEHAVIOR_MAX_COMBINED 个，
+    用"；"分隔。轻量模式下使用更高的微事件概率。
     """
-    # 1. 天气反应（25%概率）
-    weather_hint = get_weather_behavior(weather_condition, weather_temp, trigger_chance=0.25, city=city)
+    candidates: list = []
+
+    # 1. 天气反应
+    weather_hint = get_weather_behavior(
+        weather_condition, weather_temp,
+        trigger_chance=config.BEHAVIOR_WEATHER_CHANCE, city=city
+    )
     if weather_hint:
         city_prefix = f"（用户在{city}）" if city else ""
-        return f"你对天气的自然反应{city_prefix}：{weather_hint}。可以自然地表达出来。"
+        candidates.append(f"你对天气的自然反应{city_prefix}：{weather_hint}。可以自然地表达出来。")
 
-    # 2. 节假日/特殊日期（15%概率）
-    holiday = get_holiday_behavior(trigger_chance=0.15)
+    # 2. 节假日/特殊日期
+    holiday = get_holiday_behavior(trigger_chance=config.BEHAVIOR_HOLIDAY_CHANCE)
     if holiday:
-        return f"今天是特殊的日子：{holiday}。自然地提及，不要刻意。"
+        candidates.append(f"今天是特殊的日子：{holiday}。自然地提及，不要刻意。")
 
-    # 3. 刷手机Feed引用（12%概率）—— 新增
-    scroll_feed = get_scroll_behavior(trigger_chance=0.12)
+    # 3. 刷手机Feed引用
+    scroll_feed = get_scroll_behavior(trigger_chance=config.BEHAVIOR_SCROLL_CHANCE)
     if scroll_feed:
-        return scroll_feed
+        candidates.append(scroll_feed)
 
-    # 4. 热点话题（5%概率）—— 降级为旧缓存fallback
-    hot_topic = get_hot_topic_behavior(trigger_chance=0.05)
+    # 4. 热点话题
+    hot_topic = get_hot_topic_behavior(trigger_chance=config.BEHAVIOR_HOT_TOPIC_CHANCE)
     if hot_topic:
-        return f"你刚看到：{hot_topic}。可以随口提一下。"
+        candidates.append(f"你刚看到：{hot_topic}。可以随口提一下。")
 
-    # 5. 季节愿望（8%概率）
-    seasonal = get_seasonal_wish(trigger_chance=0.08)
+    # 5. 季节愿望
+    seasonal = get_seasonal_wish(trigger_chance=config.BEHAVIOR_SEASONAL_CHANCE)
     if seasonal:
-        return f"你突然想到：{seasonal}。自然地流露出来。"
+        candidates.append(f"你突然想到：{seasonal}。自然地流露出来。")
 
-    # 6. 微事件（2%概率）
-    micro = get_micro_event_behavior(trigger_chance=0.02)
+    # 6. 微事件
+    micro_chance = config.BEHAVIOR_LIGHT_MICRO_EVENT_CHANCE if is_lightweight else config.BEHAVIOR_MICRO_EVENT_CHANCE
+    micro = get_micro_event_behavior(trigger_chance=micro_chance)
     if micro:
-        return f"刚刚发生了一个小事：{micro}。随口提一句，不超过一句话。"
+        candidates.append(f"刚刚发生了一个小事：{micro}。随口提一句，不超过一句话。")
 
-    # 7. 随机行为（5%概率）
-    random_behavior = get_random_behavior(schedule_period, bot_mood_dominant, trigger_chance=0.05, affection_score=affection_score)
+    # 7. 随机行为
+    random_behavior = get_random_behavior(
+        schedule_period, bot_mood_dominant,
+        trigger_chance=config.BEHAVIOR_RANDOM_CHANCE, affection_score=affection_score
+    )
     if random_behavior:
-        return f"你突然{random_behavior['type']}：{random_behavior['text']}。"
+        candidates.append(f"你突然{random_behavior['type']}：{random_behavior['text']}。")
 
-    return None
+    if not candidates:
+        return None
+
+    # 随机选最多 BEHAVIOR_MAX_COMBINED 个
+    if len(candidates) > config.BEHAVIOR_MAX_COMBINED:
+        candidates = random.sample(candidates, config.BEHAVIOR_MAX_COMBINED)
+
+    if len(candidates) == 1:
+        return candidates[0]
+
+    logger.debug(f"[行为] 累积模式命中 {len(candidates)} 个行为: {[c[:30] for c in candidates]}")
+    return "；".join(candidates)
 
 
 # ============================================================
@@ -733,10 +756,60 @@ def get_behavior_hint(
 ) -> Optional[str]:
     """综合生成行为模式提示，供 prompt 注入。
 
-    委托给 get_real_world_behavior() 提供多层级优先级。
+    委托给 get_real_world_behavior() 提供多层级优先级（累积模式）。
     """
     return get_real_world_behavior(
         weather_condition, weather_temp,
         schedule_period, bot_mood_dominant, city,
         affection_score=affection_score,
+        is_lightweight=False,
     )
+
+
+# ============================================================
+# 轻量行为注入（短消息用）
+# ============================================================
+
+def get_lightweight_behavior_hint(
+    weather_condition: str = "",
+    weather_temp: str = "",
+    schedule_period: str = "active",
+    affection_score: float = 0.0,
+    city: str = "",
+) -> Optional[str]:
+    """短消息轻量行为注入——不跑全量分析但给一点生活感。
+
+    三层独立判断：
+    - 微事件 15%（短消息随口提一句最自然）
+    - 天气反应 10%（用 WEATHER_CITY 兜底）
+    - 季节愿望 5%
+    - 约 60% 累积命中率
+
+    返回最多 1 个行为提示（短消息不宜信息过载）。
+    """
+    candidates: list = []
+
+    # 微事件（短消息最合适的自然流露）
+    micro = get_micro_event_behavior(trigger_chance=config.BEHAVIOR_LIGHT_MICRO_EVENT_CHANCE)
+    if micro:
+        candidates.append(f"随口一提：{micro}")
+
+    # 天气反应（有数据才触发）
+    weather = get_weather_behavior(
+        weather_condition, weather_temp,
+        trigger_chance=config.BEHAVIOR_LIGHT_WEATHER_CHANCE, city=city
+    )
+    if weather:
+        candidates.append(f"天气感受：{weather}")
+
+    # 季节愿望
+    seasonal = get_seasonal_wish(trigger_chance=config.BEHAVIOR_LIGHT_SEASONAL_CHANCE)
+    if seasonal:
+        candidates.append(f"突然想到：{seasonal}")
+
+    if not candidates:
+        return None
+
+    hint = random.choice(candidates)
+    logger.debug(f"[行为] 轻量行为触发: {hint[:50]}")
+    return hint

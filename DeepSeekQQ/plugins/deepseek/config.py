@@ -316,3 +316,74 @@ OLLAMA_ENABLED: bool = str(getattr(cfg, "ollama_enabled", "false")).lower() == "
 # === 打字延迟系数 ===
 # 全局乘数：1.0=默认，0=即时回复（调试用），0.5=一半延迟
 TYPING_DELAY_FACTOR: float = _safe_float(getattr(cfg, "typing_delay_factor", 1.0), 1.0, "typing_delay_factor")
+
+# ============================================================
+# === 真人化概率配置（HUMANIZE_）===
+# ============================================================
+
+# 错别字（分好感度三档，高好感最随意）
+HUMANIZE_TYPO_CHANCE_HIGH: float = _safe_float(getattr(cfg, "humanize_typo_chance_high", 0.08), 0.08, "humanize_typo_chance_high")
+HUMANIZE_TYPO_CHANCE_MID: float = _safe_float(getattr(cfg, "humanize_typo_chance_mid", 0.10), 0.10, "humanize_typo_chance_mid")
+HUMANIZE_TYPO_CHANCE_LOW: float = _safe_float(getattr(cfg, "humanize_typo_chance_low", 0.05), 0.05, "humanize_typo_chance_low")
+
+# 结巴
+HUMANIZE_STUTTER_CHANCE_BASE: float = _safe_float(getattr(cfg, "humanize_stutter_chance_base", 0.05), 0.05, "humanize_stutter_chance_base")
+HUMANIZE_STUTTER_CHANCE_AROUSED: float = _safe_float(getattr(cfg, "humanize_stutter_chance_aroused", 0.08), 0.08, "humanize_stutter_chance_aroused")
+HUMANIZE_STUTTER_AFFECTION_MULTIPLIER: float = _safe_float(getattr(cfg, "humanize_stutter_affection_multiplier", 1.3), 1.3, "humanize_stutter_affection_multiplier")
+HUMANIZE_STUTTER_NOOP_CHANCE: float = _safe_float(getattr(cfg, "humanize_stutter_noop_chance", 0.0), 0.0, "humanize_stutter_noop_chance")
+
+# 改口
+HUMANIZE_MIND_CHANGE_CHANCE_HIGH: float = _safe_float(getattr(cfg, "humanize_mind_change_chance_high", 0.06), 0.06, "humanize_mind_change_chance_high")
+HUMANIZE_MIND_CHANGE_CHANCE_MID: float = _safe_float(getattr(cfg, "humanize_mind_change_chance_mid", 0.05), 0.05, "humanize_mind_change_chance_mid")
+HUMANIZE_MIND_CHANGE_CHANCE_LOW: float = _safe_float(getattr(cfg, "humanize_mind_change_chance_low", 0.03), 0.03, "humanize_mind_change_chance_low")
+
+# 不确定
+HUMANIZE_UNCERTAINTY_CHANCE: float = _safe_float(getattr(cfg, "humanize_uncertainty_chance", 0.03), 0.03, "humanize_uncertainty_chance")
+
+# 语气前缀
+HUMANIZE_REACTION_PREFIX_HIGH: float = _safe_float(getattr(cfg, "humanize_reaction_prefix_high", 0.20), 0.20, "humanize_reaction_prefix_high")
+HUMANIZE_REACTION_PREFIX_MID: float = _safe_float(getattr(cfg, "humanize_reaction_prefix_mid", 0.15), 0.15, "humanize_reaction_prefix_mid")
+HUMANIZE_REACTION_PREFIX_LOW: float = _safe_float(getattr(cfg, "humanize_reaction_prefix_low", 0.08), 0.08, "humanize_reaction_prefix_low")
+
+# 颜文字（按情绪分档）
+HUMANIZE_KAOMOJI_EXCITED: float = _safe_float(getattr(cfg, "humanize_kaomoji_excited", 0.25), 0.25, "humanize_kaomoji_excited")
+HUMANIZE_KAOMOJI_HAPPY: float = _safe_float(getattr(cfg, "humanize_kaomoji_happy", 0.20), 0.20, "humanize_kaomoji_happy")
+HUMANIZE_KAOMOJI_SHY: float = _safe_float(getattr(cfg, "humanize_kaomoji_shy", 0.18), 0.18, "humanize_kaomoji_shy")
+HUMANIZE_KAOMOJI_ANGRY: float = _safe_float(getattr(cfg, "humanize_kaomoji_angry", 0.15), 0.15, "humanize_kaomoji_angry")
+HUMANIZE_KAOMOJI_SAD: float = _safe_float(getattr(cfg, "humanize_kaomoji_sad", 0.15), 0.15, "humanize_kaomoji_sad")
+HUMANIZE_KAOMOJI_TSUNDERE: float = _safe_float(getattr(cfg, "humanize_kaomoji_tsundere", 0.15), 0.15, "humanize_kaomoji_tsundere")
+HUMANIZE_KAOMOJI_TEASE: float = _safe_float(getattr(cfg, "humanize_kaomoji_tease", 0.20), 0.20, "humanize_kaomoji_tease")
+HUMANIZE_KAOMOJI_DEFAULT: float = _safe_float(getattr(cfg, "humanize_kaomoji_default", 0.15), 0.15, "humanize_kaomoji_default")
+
+# 活动提及
+HUMANIZE_ACTIVITY_MENTION_CHANCE: float = _safe_float(getattr(cfg, "humanize_activity_mention_chance", 0.08), 0.08, "humanize_activity_mention_chance")
+
+# ============================================================
+# === 行为引擎概率配置（BEHAVIOR_）===
+# ============================================================
+
+BEHAVIOR_WEATHER_CHANCE: float = _safe_float(getattr(cfg, "behavior_weather_chance", 0.25), 0.25, "behavior_weather_chance")
+BEHAVIOR_HOLIDAY_CHANCE: float = _safe_float(getattr(cfg, "behavior_holiday_chance", 0.15), 0.15, "behavior_holiday_chance")
+BEHAVIOR_SCROLL_CHANCE: float = _safe_float(getattr(cfg, "behavior_scroll_chance", 0.12), 0.12, "behavior_scroll_chance")
+BEHAVIOR_HOT_TOPIC_CHANCE: float = _safe_float(getattr(cfg, "behavior_hot_topic_chance", 0.05), 0.05, "behavior_hot_topic_chance")
+BEHAVIOR_SEASONAL_CHANCE: float = _safe_float(getattr(cfg, "behavior_seasonal_chance", 0.08), 0.08, "behavior_seasonal_chance")
+BEHAVIOR_MICRO_EVENT_CHANCE: float = _safe_float(getattr(cfg, "behavior_micro_event_chance", 0.02), 0.02, "behavior_micro_event_chance")
+BEHAVIOR_RANDOM_CHANCE: float = _safe_float(getattr(cfg, "behavior_random_chance", 0.05), 0.05, "behavior_random_chance")
+
+# 轻量行为（短消息用）
+BEHAVIOR_LIGHT_MICRO_EVENT_CHANCE: float = _safe_float(getattr(cfg, "behavior_light_micro_event_chance", 0.15), 0.15, "behavior_light_micro_event_chance")
+BEHAVIOR_LIGHT_WEATHER_CHANCE: float = _safe_float(getattr(cfg, "behavior_light_weather_chance", 0.10), 0.10, "behavior_light_weather_chance")
+BEHAVIOR_LIGHT_SEASONAL_CHANCE: float = _safe_float(getattr(cfg, "behavior_light_seasonal_chance", 0.05), 0.05, "behavior_light_seasonal_chance")
+
+# 最多合并几个行为
+BEHAVIOR_MAX_COMBINED: int = _safe_int(getattr(cfg, "behavior_max_combined", 2), 2, "behavior_max_combined")
+
+# ============================================================
+# === 其他行为/人设配置 ===
+# ============================================================
+
+# 口头禅学习门槛（从硬编码 600 降至 300，可配置）
+CATCHPHRASE_LEARN_AFFECTION_MIN: int = _safe_int(getattr(cfg, "catchphrase_learn_affection_min", 300), 300, "catchphrase_learn_affection_min")
+
+# 周兴趣评估开关（默认关闭——目前无人读取结果）
+PERSONALITY_WEEKLY_EVAL_ENABLED: bool = str(getattr(cfg, "personality_weekly_eval_enabled", "false")).lower() == "true"

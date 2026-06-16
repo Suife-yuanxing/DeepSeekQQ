@@ -370,9 +370,10 @@ async def _run_personality_drift(ctx: ChatContext):
         if drift_hints:
             ctx.personality_drift_hints = drift_hints
 
-        # 尝试学习口头禅（仅在好感度600+时）
+        # 尝试学习口头禅（好感度门槛由 config 控制，默认 300）
         aff_score = ctx.affection.get("score", 0)
-        if aff_score >= 600:
+        from ..config import CATCHPHRASE_LEARN_AFFECTION_MIN
+        if aff_score >= CATCHPHRASE_LEARN_AFFECTION_MIN:
             from ..utils import safe_task
             safe_task(maybe_learn_catchphrase(ctx.user_id, aff_score))
     except Exception as e:
@@ -456,8 +457,48 @@ async def _stage_context(ctx: ChatContext) -> Optional[str]:
         ctx.bot_mood_result = {"dominant": "平静", "reason": ""}
         ctx.emotion_params = get_emotion_params(None)
         ctx.schedule = get_schedule_state()
+
+        # ★ 轻量行为注入：不跑全量分析但给一点生活感
+        # 天气信息：simple 分支不跑 _do_weather，用 WEATHER_CITY 兜底获取
+        try:
+            from ..world_context import get_weather
+            from ..config import WEATHER_CITY
+            weather_info = await get_weather(None)  # None → 用 WEATHER_CITY 兜底
+            if weather_info:
+                ctx._weather_info = weather_info
+                weather_cond = weather_info.condition or ""
+                weather_temp = weather_info.temp or ""
+            else:
+                weather_cond = ""
+                weather_temp = ""
+        except Exception:
+            weather_cond = ""
+            weather_temp = ""
+
+        schedule_period = ctx.schedule.period if ctx.schedule else "active"
+        aff_score = ctx.affection.get("score", 0)
+
+        from ..behavior_engine import get_lightweight_behavior_hint
+        ctx.behavior_hint = get_lightweight_behavior_hint(
+            weather_condition=weather_cond,
+            weather_temp=weather_temp,
+            schedule_period=schedule_period,
+            affection_score=aff_score,
+            city=WEATHER_CITY,
+        ) or ""
+
         logger.info(f"[快速通道] 简单消息，跳过深度分析: {ctx.raw_msg[:20]}")
     else:
         await _run_full_analysis(ctx, history_for_analysis)
+        # ★ 将 WEATHER_CITY 也存入 _weather_info，确保天气行为兜底
+        if not getattr(ctx, '_weather_info', None):
+            try:
+                from ..world_context import get_weather
+                from ..config import WEATHER_CITY
+                weather_info = await get_weather(None)
+                if weather_info:
+                    ctx._weather_info = weather_info
+            except Exception:
+                pass
 
     return None

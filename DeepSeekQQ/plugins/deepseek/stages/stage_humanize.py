@@ -6,6 +6,15 @@ from typing import Optional
 from nonebot import logger
 
 from ..activity_sim import get_natural_activity_mention
+from ..config import (
+    HUMANIZE_TYPO_CHANCE_HIGH, HUMANIZE_TYPO_CHANCE_MID, HUMANIZE_TYPO_CHANCE_LOW,
+    HUMANIZE_STUTTER_CHANCE_BASE, HUMANIZE_STUTTER_CHANCE_AROUSED,
+    HUMANIZE_STUTTER_AFFECTION_MULTIPLIER,
+    HUMANIZE_MIND_CHANGE_CHANCE_HIGH, HUMANIZE_MIND_CHANGE_CHANCE_MID,
+    HUMANIZE_MIND_CHANGE_CHANCE_LOW,
+    HUMANIZE_UNCERTAINTY_CHANCE,
+    HUMANIZE_ACTIVITY_MENTION_CHANCE,
+)
 from ..handler_humanize import introduce_mind_change
 from ..handler_humanize import introduce_stutter
 from ..handler_humanize import introduce_typo
@@ -63,31 +72,55 @@ async def _stage_humanize(ctx: ChatContext) -> Optional[str]:
         affection_score=aff_score,
     )
 
-    # 自然带出当前活动（5%概率，在typo/stutter之前）
+    # 自然带出当前活动
     activity_mention = get_natural_activity_mention()
     if activity_mention:
         text = activity_mention + text
+        logger.debug(f"[真人化] activity mention: {activity_mention[:20]}")
 
-    # 原有人性化处理 + 好感度修正：越熟越随意
-    typo_applied = False
-    typo_chance = 0.025 if aff_score >= 200 else (0.005 if aff_score < 20 else 0.03)
-    if random.random() < typo_chance:
-        text = introduce_typo(text)
-        typo_applied = True
-    mind_change_chance = 0.025 if aff_score >= 200 else (0.005 if aff_score < 20 else 0.02)
-    if random.random() < mind_change_chance:
-        text = introduce_mind_change(text)
-    if random.random() < 0.01 and len(text) > 10:
-        text = introduce_uncertainty(text)
-
-    # 口吃效果：与 typo 互斥（同一条消息只触发一种文字效果）
-    stutter_chance = 0.06 if emotion_a > 0.7 else 0.03
+    # === 错别字（不再与结巴互斥）===
     if aff_score >= 200:
-        stutter_chance *= 1.3  # 熟人更随意
-    if not typo_applied and random.random() < stutter_chance:
+        typo_chance = HUMANIZE_TYPO_CHANCE_HIGH
+    elif aff_score < 20:
+        typo_chance = HUMANIZE_TYPO_CHANCE_LOW
+    else:
+        typo_chance = HUMANIZE_TYPO_CHANCE_MID
+
+    if random.random() < typo_chance:
+        original = text
+        text = introduce_typo(text)
+        if text != original:
+            logger.debug(f"[真人化] typo applied: {original[:20]}... -> {text[:30]}...")
+
+    # === 改口 ===
+    if aff_score >= 200:
+        mc_chance = HUMANIZE_MIND_CHANGE_CHANCE_HIGH
+    elif aff_score < 20:
+        mc_chance = HUMANIZE_MIND_CHANGE_CHANCE_LOW
+    else:
+        mc_chance = HUMANIZE_MIND_CHANGE_CHANCE_MID
+
+    if random.random() < mc_chance:
+        text = introduce_mind_change(text)
+        logger.debug(f"[真人化] mind_change applied: ...{text[-30:]}")
+
+    # === 不确定 ===
+    if random.random() < HUMANIZE_UNCERTAINTY_CHANCE and len(text) > 10:
+        text = introduce_uncertainty(text)
+        logger.debug(f"[真人化] uncertainty applied: {text[:30]}...")
+
+    # === 口吃（不再与错字互斥，两者可叠加）===
+    stutter_chance = HUMANIZE_STUTTER_CHANCE_AROUSED if emotion_a > 0.7 else HUMANIZE_STUTTER_CHANCE_BASE
+    if aff_score >= 200:
+        stutter_chance *= HUMANIZE_STUTTER_AFFECTION_MULTIPLIER
+    if random.random() < stutter_chance:
+        original = text
         text = introduce_stutter(text, emotion_a)
+        if text != original:
+            logger.debug(f"[真人化] stutter applied: {original[:20]}... -> {text[:20]}...")
 
     # 颜文字：根据情绪在句尾加表情符号
+    original = text
     text = maybe_add_kaomoji(
         text,
         emotion_dominant=emotion_dom,
@@ -95,6 +128,8 @@ async def _stage_humanize(ctx: ChatContext) -> Optional[str]:
         emotion_arousal=emotion_a,
         affection_score=ctx.affection.get("score", 0),
     )
+    if text != original:
+        logger.debug(f"[真人化] kaomoji added: {original[-20:]}... -> {text[-30:]}...")
 
     # 节奏增强：连发拆分
     from ..handler_humanize import maybe_split_to_bursts

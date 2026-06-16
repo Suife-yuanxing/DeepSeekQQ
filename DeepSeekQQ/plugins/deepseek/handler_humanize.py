@@ -8,7 +8,8 @@ from typing import Optional
 _TYPO_PAIRS = [
     ("的", "地"), ("怎么", "这么"), ("觉得", "决得"),
     ("好像", "号像"), ("不是", "不四"), ("真的", "真地"),
-    ("可以", "可一"), ("有点", "有点电"),
+    ("可以", "可一"), ("有点", "有点点"),  # 修复："有点电"不是合理中文
+    ("知道", "知到"), ("突然", "突燃"),  # 新增合理错字对
 ]
 
 
@@ -79,7 +80,20 @@ def introduce_stutter(text: str, arousal: float = 0.5) -> str:
                 elif neg == "没" and text[idx:idx+2] in ("没有", "没想", "没关"):
                     return text[:idx] + "没" * random.randint(3, 4) + text[idx+1:]
 
-    # 20%: fallthrough — 不做变换，降低侵入性
+    # fallthrough: 如果前三类都不匹配，随机选一个重分布（不再空操作）
+    subtarget = random.random()
+    if subtarget < 0.5:
+        # 句首重复
+        if text[0] in _STUTTER_STARTERS:
+            repeat_count = random.randint(2, 3)
+            return text[0] * repeat_count + text[1:]
+    else:
+        # 语气词重复
+        for interj in _STUTTER_INTERJECTIONS:
+            if interj in text[:8]:
+                count = random.randint(3, 6)
+                return text.replace(interj, interj * count, 1)
+
     return text
 
 
@@ -184,13 +198,14 @@ def maybe_add_reaction_prefix(text: str, emotion_valence: float = 0.0,
 
     好感度影响反应词频率：高好感更随意，低好感更克制。
     """
+    from .config import HUMANIZE_REACTION_PREFIX_HIGH, HUMANIZE_REACTION_PREFIX_MID, HUMANIZE_REACTION_PREFIX_LOW
     # 好感度修正触发概率
     if affection_score >= 200:
-        trigger_chance = 0.14  # 熟人更随意
+        trigger_chance = HUMANIZE_REACTION_PREFIX_HIGH  # 熟人更随意
     elif affection_score < 20:
-        trigger_chance = 0.05  # 生人保持礼貌
+        trigger_chance = HUMANIZE_REACTION_PREFIX_LOW  # 生人保持礼貌
     else:
-        trigger_chance = 0.10
+        trigger_chance = HUMANIZE_REACTION_PREFIX_MID
 
     if random.random() > trigger_chance:
         return text
@@ -255,32 +270,37 @@ def maybe_add_kaomoji(text: str, emotion_dominant: str = "平静",
     if re.search(r'[><_╱╲╯︵┻━♡qwQWOPop]{2,}', text):
         return text
 
+    from .config import (
+        HUMANIZE_KAOMOJI_EXCITED, HUMANIZE_KAOMOJI_HAPPY, HUMANIZE_KAOMOJI_SHY,
+        HUMANIZE_KAOMOJI_ANGRY, HUMANIZE_KAOMOJI_SAD, HUMANIZE_KAOMOJI_TSUNDERE,
+        HUMANIZE_KAOMOJI_TEASE, HUMANIZE_KAOMOJI_DEFAULT,
+    )
     # 根据情绪选词库
     if emotion_dominant in ("开心", "得意"):
         pool = _KAOMOJI_HAPPY
-        chance = 0.12
+        chance = HUMANIZE_KAOMOJI_HAPPY
     elif emotion_dominant == "兴奋":
         pool = _KAOMOJI_EXCITED
-        chance = 0.15
+        chance = HUMANIZE_KAOMOJI_EXCITED
     elif emotion_dominant in ("害羞", "撒娇"):
         pool = _KAOMOJI_SHY
-        chance = 0.12
+        chance = HUMANIZE_KAOMOJI_SHY
     elif emotion_dominant == "生气":
         pool = _KAOMOJI_ANGRY
-        chance = 0.10
+        chance = HUMANIZE_KAOMOJI_ANGRY
     elif emotion_dominant in ("难过", "担心"):
         pool = _KAOMOJI_SAD
-        chance = 0.10
+        chance = HUMANIZE_KAOMOJI_SAD
     elif emotion_dominant in ("傲娇", "冷淡"):
         pool = _KAOMOJI_TSUNDERE
-        chance = 0.10
+        chance = HUMANIZE_KAOMOJI_TSUNDERE
     elif affection_score >= 200 and emotion_valence > 0:
         # 高好感度 + 正面情绪 → 撩人/可爱
         pool = _KAOMOJI_TEASE + _KAOMOJI_CUTE
-        chance = 0.12
+        chance = HUMANIZE_KAOMOJI_TEASE
     else:
         pool = _KAOMOJI_HAPPY
-        chance = 0.08
+        chance = HUMANIZE_KAOMOJI_DEFAULT
 
     if random.random() > chance:
         return text

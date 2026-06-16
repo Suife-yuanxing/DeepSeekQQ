@@ -330,6 +330,10 @@ def build_system_prompt(
     if schedule and schedule.period in ("sleeping", "waking", "meal", "lazy", "night_owl"):
         parts.append(f"【作息状态】{schedule.description}")
 
+    # === 行为模式（天气/季节/随机行为）—— 紧跟作息，位置前移 ===
+    if behavior_hint:
+        parts.append(f"【行为模式】{behavior_hint}")
+
     # === 当前活动状态 ===
     if activity_hint:
         parts.append(f"【当前状态】{activity_hint}")
@@ -476,10 +480,6 @@ def build_system_prompt(
     # === 场景路由提示（来自 prompt_templates）===
     if scene_hint:
         parts.append(f"【场景指引】{scene_hint}")
-
-    # === 行为模式（天气/季节/随机行为）===
-    if behavior_hint:
-        parts.append(f"【行为模式】{behavior_hint}")
 
     # === 群聊热度（Heat State）===
     if heat_state:
