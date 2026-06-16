@@ -126,7 +126,7 @@ async def api_status(request):  # type: ignore
         return _json_response({"error": str(e)}, 500)
 
 
-async def api_health(request: Request = None):
+async def api_health(request=None):  # type: ignore
     """GET /health — 健康检查端点，验证服务和数据库连接。
 
     轻量级访问控制：可选的 health_token 查询参数限制访问。
