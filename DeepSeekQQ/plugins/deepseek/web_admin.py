@@ -663,52 +663,58 @@ async def admin_dashboard(request: Request) -> Response:
 if _HAS_NONEBOT:
     driver = get_driver()
 
+    # ── C-1: Admin 认证中间件（模块级别 — 必须在应用启动前注册）──
+    try:
+        from fastapi import FastAPI
+        from fastapi.responses import JSONResponse
+        from .middleware.auth import ADMIN_API_KEY, is_admin_path, check_admin_key_configured
+
+        app = driver.server_app
+        if app and isinstance(app, FastAPI):
+            _admin_config_done = check_admin_key_configured()
+
+            @app.middleware("http")
+            async def admin_auth_middleware(request, call_next):
+                """Admin 端点 Bearer Token 认证中间件 + 访问审计日志。"""
+                from .middleware.auth import ADMIN_API_KEY as _ADMIN_KEY, is_admin_path as _is_admin
+
+                if not _ADMIN_KEY:
+                    if _is_admin(request.url.path):
+                        return JSONResponse(
+                            {"error": "管理后台未启用，请设置 ADMIN_API_KEY 环境变量"},
+                            status_code=503,
+                        )
+                elif _is_admin(request.url.path):
+                    peer = request.client.host if request.client else "unknown"
+                    path = request.url.path
+                    auth_header = request.headers.get("Authorization", "")
+                    if not auth_header.startswith("Bearer "):
+                        _admin_logger.warning(f"[审计] Admin 访问拒绝（无Token）: {peer} → {path}")
+                        return JSONResponse(
+                            {"error": "需要 Bearer Token 认证"},
+                            status_code=401,
+                            headers={"WWW-Authenticate": "Bearer"},
+                        )
+                    token = auth_header[7:]
+                    if token != _ADMIN_KEY:
+                        _admin_logger.warning(f"[审计] Admin 访问拒绝（Token无效）: {peer} → {path}")
+                        return JSONResponse(
+                            {"error": "Token 无效"},
+                            status_code=403,
+                        )
+                    _admin_logger.info(f"[审计] Admin 访问: {peer} → {path}")
+                return await call_next(request)
+    except (ImportError, ValueError, TypeError) as e:
+        _admin_logger.warning(f"[Admin] 认证中间件注册失败: {e}")
+
     @driver.on_startup
     async def _register_admin_routes():
-        """在 driver 启动后注册管理后台路由。"""
+        """在 driver 启动后注册管理后台路由（仅 API 路由，中间件已在模块级别注册）。"""
         try:
             from fastapi import FastAPI, HTTPException
-            from fastapi.responses import JSONResponse
-            from .middleware.auth import ADMIN_API_KEY, is_admin_path, check_admin_key_configured
 
             app = driver.server_app
             if app and isinstance(app, FastAPI):
-                # C-1: Admin 认证中间件
-                admin_enabled = check_admin_key_configured()
-
-                @app.middleware("http")
-                async def admin_auth_middleware(request, call_next):
-                    """Admin 端点 Bearer Token 认证中间件 + 访问审计日志。"""
-                    if not admin_enabled:
-                        if is_admin_path(request.url.path):
-                            return JSONResponse(
-                                {"error": "管理后台未启用，请设置 ADMIN_API_KEY 环境变量"},
-                                status_code=503,
-                            )
-                    elif is_admin_path(request.url.path):
-                        peer = request.client.host if request.client else "unknown"
-                        path = request.url.path
-                        auth_header = request.headers.get("Authorization", "")
-                        if not auth_header.startswith("Bearer "):
-                            # M-16: 记录未授权访问
-                            _admin_logger.warning(f"[审计] Admin 访问拒绝（无Token）: {peer} → {path}")
-                            return JSONResponse(
-                                {"error": "需要 Bearer Token 认证"},
-                                status_code=401,
-                                headers={"WWW-Authenticate": "Bearer"},
-                            )
-                        token = auth_header[7:]
-                        if token != ADMIN_API_KEY:
-                            # M-16: 记录无效Token访问
-                            _admin_logger.warning(f"[审计] Admin 访问拒绝（Token无效）: {peer} → {path}")
-                            return JSONResponse(
-                                {"error": "Token 无效"},
-                                status_code=403,
-                            )
-                        # M-16: 记录合法访问
-                        _admin_logger.info(f"[审计] Admin 访问: {peer} → {path}")
-                    return await call_next(request)
-
                 # API 端点
                 app.add_api_route("/admin/api/status", api_status, methods=["GET"])
                 app.add_api_route("/admin/api/messages", api_messages, methods=["GET"])
@@ -725,7 +731,8 @@ if _HAS_NONEBOT:
                 app.add_api_route("/admin", admin_dashboard, methods=["GET"])
                 app.add_api_route("/admin/", admin_dashboard, methods=["GET"])
 
-                _admin_logger.info(f"[Admin] 管理后台已注册: http://{SERVER_HOST}:8082/admin (认证: {'启用' if admin_enabled else '未配置'})")
+                from .middleware.auth import ADMIN_API_KEY as _AK
+                _admin_logger.info(f"[Admin] 管理后台已注册: http://{SERVER_HOST}:8082/admin (认证: {'启用' if _AK else '未配置'})")
             else:
                 _admin_logger.warning("[Admin] FastAPI app 不可用，管理后台未注册")
         except (ImportError, ValueError, TypeError) as e:
