@@ -321,11 +321,11 @@ class TestDispatchSerial:
     @pytest.mark.asyncio
     async def test_security_short_circuits_before_music_and_phone(self):
         """security 拦截后，music 和 phone 不执行。"""
-        from plugins.deepseek.agent_base import AgentMeta, AgentRouter, _get_SKIP
+        from plugins.deepseek.agent_base import AgentMeta, AgentRouter
+        from plugins.deepseek.constants import _SKIP
 
         router = AgentRouter()
         exec_order = []
-        _SKIP = _get_SKIP()
 
         async def sec_exec(ctx, out):
             exec_order.append("security")
@@ -407,10 +407,10 @@ class TestDispatchErrorHandling:
     @pytest.mark.asyncio
     async def test_second_agent_can_still_skip_after_first_crashes(self):
         """第一个 agent 崩溃，第二个 agent 仍可返回 _SKIP 短路。"""
-        from plugins.deepseek.agent_base import AgentMeta, AgentRouter, _get_SKIP
+        from plugins.deepseek.agent_base import AgentMeta, AgentRouter
+        from plugins.deepseek.constants import _SKIP
 
         router = AgentRouter()
-        _SKIP = _get_SKIP()
 
         async def crash_exec(ctx, out):
             raise RuntimeError("boom")
@@ -485,10 +485,11 @@ class TestAgentOutputMerge:
 # ============================================================
 
 class TestSkipSentinel:
-    """_SKIP 哨兵在 agent_base._get_SKIP() 和 pipeline 中是同一个对象。"""
+    """_SKIP 哨兵在 constants / agent_base / pipeline 中是同一个对象。"""
 
     def test_skip_is_same_object(self):
-        from plugins.deepseek.agent_base import _get_SKIP
+        from plugins.deepseek.constants import _SKIP as const_skip
         from plugins.deepseek.pipeline import _SKIP as pipeline_skip
+        from plugins.deepseek.agent_base import _SKIP as agent_skip
 
-        assert _get_SKIP() is pipeline_skip
+        assert const_skip is pipeline_skip is agent_skip

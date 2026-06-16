@@ -75,8 +75,8 @@ def classify_text_emotion(text: str, use_llm: bool = True) -> Dict[str, Any]:
             'source': 'keyword'
         }
 
-    # 第二级：LLM细判（未来可接入BERT轻量模型，当前回退到规则结果）
-    # TODO: 接入轻量级情感分类模型替代规则匹配
+    # 第二级：细判（规则置信度 <0.8 时触发，当前使用规则结果作为回退）
+    # 未来可接入轻量级情感分类模型替代规则匹配
 
     # 回退到规则结果
     return {

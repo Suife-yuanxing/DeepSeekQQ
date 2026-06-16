@@ -6,7 +6,7 @@
     ".venv",
     ".mypy_cache"
   ],
-  "typeCheckingMode": "basic",
+  "typeCheckingMode": "standard",
   "reportMissingImports": false,
   "reportMissingTypeStubs": false,
   "reportGeneralTypeIssues": "warning",

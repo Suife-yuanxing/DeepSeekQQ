@@ -74,16 +74,43 @@ async def on_start():
                     if file_path.exists():
                         return FileResponse(str(file_path), media_type="audio/mpeg")
                     return {"error": "not found"}
-                except Exception:
+                except OSError:
                     return {"error": "invalid path"}
             logger.info(f"语音文件服务已挂载: http://{SERVER_HOST}:{SERVER_PORT}/voice/")
-    except Exception as e:
+    except (OSError, ImportError, ValueError) as e:
         logger.warning(f"语音文件服务挂载失败: {e}")
 
     has_ff = shutil.which("ffmpeg") is not None
     from .config import RANDOM_REPLY_CHANCE
     from .config import VOICE_ENABLED_GROUP
     from .config import VOICE_ENABLED_PRIVATE
+    # M-11: CORS 中间件（白名单 origin）
+    try:
+        from .config import CORS_ALLOW_ORIGINS
+        from fastapi.middleware.cors import CORSMiddleware
+        if CORS_ALLOW_ORIGINS:
+            origins = [o.strip() for o in CORS_ALLOW_ORIGINS.split(",") if o.strip()]
+            app.add_middleware(
+                CORSMiddleware,
+                allow_origins=origins,
+                allow_credentials=True,
+                allow_methods=["GET", "POST"],
+                allow_headers=["Authorization", "Content-Type"],
+            )
+            logger.info(f"[安全] CORS 中间件已启用: {origins}")
+        else:
+            # 未配置时默认仅允许本地
+            app.add_middleware(
+                CORSMiddleware,
+                allow_origins=["http://localhost:*", "http://127.0.0.1:*"],
+                allow_credentials=True,
+                allow_methods=["GET", "POST"],
+                allow_headers=["Authorization", "Content-Type"],
+            )
+            logger.info("[安全] CORS 中间件已启用（默认：仅允许本地）")
+    except (ImportError, ValueError, TypeError) as e:
+        logger.warning(f"[安全] CORS 中间件添加失败: {e}")
+
     logger.info("✅ 林念念已启动~ 诶嘿！")
     logger.info(f"ffmpeg 检测: {'已安装 ✅' if has_ff else '未安装 ❌ 语音可能无法发送'}")
     logger.info(f"语音开关: 私聊={VOICE_ENABLED_PRIVATE}, 群聊={VOICE_ENABLED_GROUP}")
@@ -166,7 +193,7 @@ async def on_start():
         try:
             from .token_tracker import get_tracker
             get_tracker().persist()
-        except Exception:
+        except (ImportError, AttributeError, OSError):
             pass
     loop_manager.register("Token统计持久化", _token_persist, 1800)
 
@@ -190,7 +217,7 @@ async def on_start():
         try:
             from .social_feed import decay_feed_memory
             decay_feed_memory()
-        except Exception:
+        except (ImportError, AttributeError):
             pass
     loop_manager.register("Feed记忆衰减", _feed_decay, 1800)
 
@@ -199,7 +226,7 @@ async def on_start():
         try:
             from .heat_engine import cleanup_stale_trackers
             cleanup_stale_trackers(max_age_seconds=3600)
-        except Exception:
+        except (ImportError, AttributeError):
             pass
     loop_manager.register("热度追踪清理", _heat_cleanup, 3600)
 
@@ -222,25 +249,36 @@ async def on_start():
         from .mcp_client import set_phone_user
         set_phone_user(MY_QQ)  # 仅主人可用手机工具
         if PHONE_WS_KEY:
-            from .phone_bridge import get_relay
-            relay = get_relay()
-            # 端口重试：防止旧进程还未释放端口时直接失败
-            max_retries = 5
-            for attempt in range(1, max_retries + 1):
-                try:
-                    await relay.start(port=PHONE_RELAY_PORT, api_key=PHONE_WS_KEY)
-                    break
-                except OSError as e:
-                    if "address already in use" in str(e).lower() and attempt < max_retries:
-                        wait = attempt * 3
-                        logger.warning(
-                            f"[手机] 端口 {PHONE_RELAY_PORT} 被占用，第{attempt}次重试（等待{wait}s）..."
-                        )
-                        await asyncio.sleep(wait)
-                    else:
-                        raise
-            logger.info(f"[手机] MobileRun Portal 中继已启动 ws://0.0.0.0:{PHONE_RELAY_PORT}")
-            logger.info(f"[手机] 手机端请用 MobileRun Portal 连接 wss://<服务器IP>:8443/?token=<PHONE_WS_KEY>")
+            # C-8: 启动校验 — WS_KEY 长度不足时拒绝启动
+            if len(PHONE_WS_KEY) < 16:
+                logger.error(
+                    "[手机] PHONE_WS_KEY 长度不足（需 >= 16 字符），"
+                    "手机中继拒绝启动。请设置足够强度的密钥后重启。"
+                )
+            else:
+                from .phone_bridge import get_relay
+                relay = get_relay()
+                # 端口重试：防止旧进程还未释放端口时直接失败
+                max_retries = 5
+                for attempt in range(1, max_retries + 1):
+                    try:
+                        await relay.start(port=PHONE_RELAY_PORT, api_key=PHONE_WS_KEY)
+                        break
+                    except OSError as e:
+                        if "address already in use" in str(e).lower() and attempt < max_retries:
+                            wait = attempt * 3
+                            logger.warning(
+                                f"[手机] 端口 {PHONE_RELAY_PORT} 被占用，第{attempt}次重试（等待{wait}s）..."
+                            )
+                            await asyncio.sleep(wait)
+                        else:
+                            raise
+                logger.info(f"[手机] MobileRun Portal 中继已启动 ws://0.0.0.0:{PHONE_RELAY_PORT}")
+                # H-8: 建议使用 WebSocket 子协议头传递 token，而非 query string
+                logger.info(
+                    "[手机] 手机端请用 MobileRun Portal 连接 wss://<服务器IP>:8443\n"
+                    "      建议通过 Sec-WebSocket-Protocol 子协议头传递 token（避免被 nginx access log 记录）"
+                )
         else:
             logger.info("[手机] 未配置 PHONE_WS_KEY，手机工具不可用")
     except Exception as e:
@@ -258,7 +296,7 @@ async def on_start():
             async def plugin_status():
                 from .plugin_manager import list_plugins
                 return {"plugins": list_plugins()}
-    except Exception:
+    except (ImportError, ValueError):
         pass
 
 
@@ -271,7 +309,7 @@ async def _on_shutdown():
             await save_session_state(sid, context_summary="[Bot 关闭前保存]")
         if active:
             logger.info(f"[记忆] 已保存 {len(active)} 个活跃会话状态")
-    except Exception as e:
+    except (OSError, ValueError, TypeError) as e:
         logger.warning(f"[记忆] 会话状态保存失败: {e}")
 
     # 持久化 Token 统计数据
@@ -279,7 +317,7 @@ async def _on_shutdown():
         from .token_tracker import get_tracker
         get_tracker().persist()
         logger.info("[Token] 统计数据已持久化")
-    except Exception as e:
+    except (ImportError, AttributeError, OSError) as e:
         logger.warning(f"[Token] 统计数据持久化失败: {e}")
 
     await shutdown_all_plugins()

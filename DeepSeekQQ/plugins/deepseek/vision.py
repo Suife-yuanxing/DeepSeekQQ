@@ -161,7 +161,7 @@ async def _try_qwen_vl(img_b64: str, prompt: str) -> Optional[str]:
     except asyncio.TimeoutError:
         logger.warning("[Vision] Qwen-VL 超时 (30s)")
         return None
-    except Exception as e:
+    except (aiohttp.ClientError, asyncio.TimeoutError, KeyError, json.JSONDecodeError) as e:
         logger.warning(f"[Vision] Qwen-VL 异常: {e}")
         return None
 
@@ -218,7 +218,7 @@ async def _try_glm_vision(img_b64: str, prompt: str) -> Optional[str]:
     except asyncio.TimeoutError:
         logger.warning("[Vision] GLM Vision 超时 (30s)")
         return None
-    except Exception as e:
+    except (aiohttp.ClientError, asyncio.TimeoutError, KeyError, json.JSONDecodeError) as e:
         logger.warning(f"[Vision] GLM Vision 异常: {e}")
         return None
 
@@ -270,7 +270,7 @@ async def _try_ollama_vision(img_b64: str, prompt: str) -> Optional[str]:
         _ollama_available = False
         _ollama_last_check = now
         return None
-    except Exception as e:
+    except (aiohttp.ClientConnectorError, aiohttp.ClientError, asyncio.TimeoutError) as e:
         logger.warning(f"[Vision] Ollama 异常: {type(e).__name__}: {e}")
         _ollama_available = False
         _ollama_last_check = now
@@ -325,7 +325,7 @@ def _fallback_ocr(source: str) -> str:
         from .ocr import extract_text_from_image
         text = extract_text_from_image(source)
         return text
-    except Exception as e:
+    except (ImportError, OSError, ValueError) as e:
         logger.warning(f"[Vision] OCR 降级也失败: {e}")
         return ""
 
@@ -341,7 +341,7 @@ def _read_file_as_b64(path: str) -> Optional[str]:
         return None
     try:
         return base64.b64encode(p.read_bytes()).decode("utf-8")
-    except Exception:
+    except (OSError, UnicodeDecodeError):
         return None
 
 
@@ -370,7 +370,7 @@ async def _download_and_encode(url: str) -> Optional[str]:
     except asyncio.TimeoutError:
         logger.warning(f"[Vision] 图片下载超时 (20s): {url[:80]}")
         return None
-    except Exception as e:
+    except (aiohttp.ClientError, asyncio.TimeoutError, OSError) as e:
         logger.warning(f"[Vision] 图片下载异常: {type(e).__name__}: {url[:80]}")
         return None
 

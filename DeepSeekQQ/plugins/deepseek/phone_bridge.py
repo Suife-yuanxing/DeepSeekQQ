@@ -129,10 +129,21 @@ class PhoneRelay:
 
         peer = request.remote
 
+        # C-2: IP 白名单检查
+        from .config import PHONE_ALLOW_IPS
+        allowed_ips = [ip.strip() for ip in PHONE_ALLOW_IPS.split(",") if ip.strip()]
+        if peer not in allowed_ips:
+            logger.warning(f"[PhoneRelay] IP 白名单拒绝: {peer}（允许: {PHONE_ALLOW_IPS}）")
+            await ws.send_json({"type": "auth_fail", "error": "IP 不在白名单中"})
+            await ws.close()
+            return ws
+
         # MobileRun Portal 认证：通过 URL query param ?token=xxx
         token = request.query.get("token", "")
         if token != self._api_key:
-            logger.warning(f"[PhoneRelay] 认证失败: {peer} token 不匹配")
+            # H-8: 认证失败日志脱敏，只输出 token 前3位
+            masked = token[:3] + "***" if len(token) > 3 else "***"
+            logger.warning(f"[PhoneRelay] 认证失败: {peer} token={masked} 不匹配")
             await ws.send_json({"type": "auth_fail", "error": "token 错误"})
             await ws.close()
             return ws

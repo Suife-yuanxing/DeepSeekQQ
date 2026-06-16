@@ -84,7 +84,7 @@ async def process_video(
 
         logger.info(f"[视频处理] 下载完成: {file_size_mb:.1f}MB -> {video_path}")
 
-    except Exception as e:
+    except (aiohttp.ClientError, asyncio.TimeoutError, OSError) as e:
         logger.warning(f"[视频处理] 下载异常: {type(e).__name__}: {e}")
         return None
 
@@ -100,7 +100,7 @@ async def process_video(
                 duration = await _get_video_duration(video_path)
 
         logger.info(f"[视频处理] 提取了 {len(frames)} 帧 (时长 {duration:.1f}s)")
-    except Exception as e:
+    except (OSError, asyncio.TimeoutError, FileNotFoundError) as e:
         logger.warning(f"[视频处理] 帧提取异常: {type(e).__name__}: {e}")
 
     # ===== 第3步：逐帧分析 =====
@@ -114,7 +114,7 @@ async def process_video(
                 desc = extract_vision_text(result)
                 if desc:
                     frame_descriptions.append(f"[帧{i+1}] {desc}")
-        except Exception as e:
+        except (ValueError, OSError, asyncio.TimeoutError) as e:
             logger.warning(f"[视频处理] 帧{i+1} 分析失败: {e}")
 
     # ===== 第4步：清理临时文件 =====
@@ -186,7 +186,7 @@ async def _download_video(url: str) -> Optional[str]:
     except asyncio.TimeoutError:
         logger.warning(f"[视频处理] 视频下载超时 ({DOWNLOAD_TIMEOUT}s): {url[:80]}")
         return None
-    except Exception as e:
+    except (aiohttp.ClientError, OSError) as e:
         logger.warning(f"[视频处理] 视频下载异常: {type(e).__name__}: {e}")
         return None
 
@@ -305,7 +305,7 @@ async def _extract_frame_at(video_path: str, time_sec: float, idx: int) -> Optio
         if os.path.exists(out_path):
             os.unlink(out_path)
         return None
-    except Exception as e:
+    except (OSError, asyncio.TimeoutError, FileNotFoundError) as e:
         logger.warning(f"[视频处理] ffmpeg 帧{idx} 异常: {type(e).__name__}: {e}")
         if os.path.exists(out_path):
             os.unlink(out_path)
@@ -331,7 +331,7 @@ async def _get_video_duration(video_path: str) -> float:
         await proc.wait()
         duration_str = stdout.decode().strip()
         return float(duration_str) if duration_str else 0.0
-    except Exception as e:
+    except (OSError, asyncio.TimeoutError, ValueError) as e:
         logger.debug(f"[视频处理] 获取时长失败: {e}")
         return 0.0
 

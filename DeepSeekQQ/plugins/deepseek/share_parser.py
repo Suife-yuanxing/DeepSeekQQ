@@ -1,6 +1,6 @@
 """分享内容抓取与缓存。
 
-支持平台：B站、小红书、抖音、通用链接
+支持平台：B站、小红书、微博、抖音、通用链接
 功能：分享卡片去重、按平台解析、内存缓存 TTL 清理、全局 URL 抓取冷却
 """
 import asyncio
@@ -186,174 +186,11 @@ def _strip_html(match: Optional[re.Match], fallback: str = "") -> str:
     return re.sub(r'<[^>]+>', '', match.group(1)).strip()
 
 
-def _extract_douyin_render_data(html: str) -> Optional[Dict[str, Any]]:
-    """从抖音页面的 RENDER_DATA / __NEXT_DATA__ 中提取视频信息。
-
-    抖音是 SPA 页面，视频数据不在 meta 标签中，而在 <script> 标签的 JSON 里：
-    - <script id="RENDER_DATA" type="application/json">URL_ENCODED_JSON</script>
-    - <script id="__NEXT_DATA__" type="application/json">JSON</script>
-
-    返回 {desc, nickname, duration, cover_url, comment_count, digg_count, music_title} 或 None。
-    """
-    render_data = None
-
-    # 方式1: RENDER_DATA（URL编码的JSON）
-    match = re.search(
-        r'<script[^>]*id="RENDER_DATA"[^>]*type="application/json"[^>]*>(.*?)</script>',
-        html, re.DOTALL,
-    )
-    if match:
-        try:
-            decoded = unquote(match.group(1).strip())
-            render_data = json.loads(decoded)
-        except Exception:
-            pass
-
-    # 方式2: __NEXT_DATA__（Next.js SSR）
-    if not render_data:
-        match = re.search(
-            r'<script[^>]*id="__NEXT_DATA__"[^>]*type="application/json"[^>]*>(.*?)</script>',
-            html, re.DOTALL,
-        )
-        if match:
-            try:
-                render_data = json.loads(match.group(1))
-            except Exception:
-                pass
-
-    if not render_data:
-        return None
-
-    # 尝试从多种已知 JSON 路径定位 aweme 对象
-    aweme = None
-    for path in [
-        ["aweme", "detail", "aweme"],                      # 经典结构
-        ["common", "aweme", "detail", "aweme"],             # 新版通用结构
-        ["app", "videoInfoRes", "item_list"],               # 另一变体 (取数组首项)
-    ]:
-        node = render_data
-        for key in path:
-            if isinstance(node, dict) and key in node:
-                node = node[key]
-            else:
-                node = None
-                break
-        if isinstance(node, dict):
-            aweme = node
-            break
-        elif isinstance(node, list) and node and isinstance(node[0], dict):
-            aweme = node[0]
-            break
-
-    if not aweme:
-        return None
-
-    info: Dict[str, Any] = {}
-
-    if aweme.get("desc"):
-        info["desc"] = str(aweme["desc"])
-
-    author = aweme.get("author", {})
-    if isinstance(author, dict):
-        info["nickname"] = author.get("nickname", "")
-        avatar = author.get("avatar_thumb", {})
-        if isinstance(avatar, dict):
-            urls = avatar.get("url_list", [])
-            if urls:
-                info["avatar_url"] = str(urls[0])
-
-    video = aweme.get("video", {})
-    if isinstance(video, dict):
-        info["duration"] = int(video.get("duration", 0) or 0)
-        cover = video.get("cover", {}) or video.get("origin_cover", {})
-        if isinstance(cover, dict):
-            urls = cover.get("url_list", [])
-            if urls:
-                info["cover_url"] = str(urls[0])
-
-    stats = aweme.get("statistics", {})
-    if isinstance(stats, dict):
-        info["comment_count"] = int(stats.get("comment_count", 0) or 0)
-        info["digg_count"] = int(stats.get("digg_count", 0) or 0)
-
-    music = aweme.get("music", {})
-    if isinstance(music, dict) and music.get("title"):
-        info["music_title"] = str(music["title"])
-
-    return info if info else None
-
-
-def _extract_bilibili_video_data(html: str, url: str = "") -> Optional[Dict[str, Any]]:
-    """从B站视频页面提取结构化数据。
-
-    优先解析 window.__INITIAL_STATE__ 中的 videoData，
-    回退到 og meta 标签。
-    """
-    info: Dict[str, Any] = {}
-
-    # ── Path 1: window.__INITIAL_STATE__ ──
-    pos = html.find("window.__INITIAL_STATE__")
-    if pos >= 0:
-        eq_pos = html.find("=", pos)
-        if eq_pos >= 0:
-            brace_pos = html.find("{", eq_pos)
-            if brace_pos >= 0:
-                depth = 0
-                i = brace_pos
-                while i < len(html):
-                    ch = html[i]
-                    if ch == "{":
-                        depth += 1
-                    elif ch == "}":
-                        depth -= 1
-                        if depth == 0:
-                            break
-                    i += 1
-                if depth == 0:
-                    try:
-                        data = json.loads(html[brace_pos : i + 1])
-                    except (json.JSONDecodeError, TypeError):
-                        data = {}
-                    vd = data.get("videoData") if isinstance(data, dict) else None
-                    if isinstance(vd, dict):
-                        info["desc"] = str(vd.get("title", "") or "")
-                        info["desc_long"] = str(vd.get("desc", "") or "")
-                        owner = vd.get("owner", {})
-                        if isinstance(owner, dict):
-                            info["nickname"] = str(owner.get("name", "") or "")
-                        info["duration"] = int(vd.get("duration", 0) or 0)
-                        info["cover_url"] = str(vd.get("pic", "") or "")
-                        stat = vd.get("stat", {})
-                        if isinstance(stat, dict):
-                            info["view_count"] = int(stat.get("view", 0) or 0)
-                            info["digg_count"] = int(stat.get("like", 0) or 0)
-                            info["comment_count"] = int(stat.get("reply", 0) or 0)
-                            info["danmaku_count"] = int(stat.get("danmaku", 0) or 0)
-                            info["favorite_count"] = int(stat.get("favorite", 0) or 0)
-                        info["pubdate"] = vd.get("pubdate", 0)
-                        if info.get("desc"):
-                            return info
-
-    # ── Path 2: meta 标签回退 ──
-    title_m = re.search(
-        r'<meta[^>]*property="og:title"[^>]*content="([^"]*)"', html
-    )
-    desc_m = re.search(
-        r'<meta[^>]*property="og:description"[^>]*content="([^"]*)"', html
-    )
-    image_m = re.search(
-        r'<meta[^>]*property="og:image"[^>]*content="([^"]*)"', html
-    )
-
-    if title_m:
-        info["desc"] = title_m.group(1).strip()
-        if desc_m:
-            info["desc_long"] = desc_m.group(1).strip()
-        if image_m:
-            info["cover_url"] = image_m.group(1).strip()
-        return info if info else None
-
-    return None
+# 向后兼容：重新导出平台解析器函数（测试直接引用这些符号）
+from .bilibili_parser import extract_bilibili_video_data as _extract_bilibili_video_data
+from .douyin_parser import extract_douyin_render_data as _extract_douyin_render_data
+from .weibo_parser import extract_weibo_render_data as _extract_weibo_render_data
+from .xiaohongshu_parser import extract_xiaohongshu_initial_state as _extract_xiaohongshu_initial_state
 
 
 def _parse_by_platform(html: str, url: str) -> Optional[Dict[str, str]]:
@@ -367,108 +204,16 @@ def _parse_by_platform(html: str, url: str) -> Optional[Dict[str, str]]:
     }
 
     if "douyin.com" in url or "v.douyin.com" in url:
-        # ── 首选：从 RENDER_DATA / __NEXT_DATA__ 中提取结构化数据 ──
-        render_info = _extract_douyin_render_data(html)
+        from .douyin_parser import parse_douyin
+        return parse_douyin(html, url)
 
-        if render_info and render_info.get("desc"):
-            desc_text = render_info.get("desc", "")
-            nickname = render_info.get("nickname", "抖音用户")
-            duration = render_info.get("duration", 0)
-            cover_url = render_info.get("cover_url", "")
-            digg = render_info.get("digg_count", 0)
-            comment_cnt = render_info.get("comment_count", 0)
-            music_title = render_info.get("music_title", "")
+    if "xiaohongshu.com" in url or "xhslink.com" in url:
+        from .xiaohongshu_parser import parse_xiaohongshu
+        return parse_xiaohongshu(html, url)
 
-            # 时长格式化
-            duration_text = ""
-            if duration:
-                if duration >= 60:
-                    duration_text = f"({duration // 60}分{duration % 60}秒)"
-                else:
-                    duration_text = f"({duration}秒)"
-
-            # 互动数据
-            stats_parts = []
-            if digg:
-                stats_parts.append(f"{digg}点赞")
-            if comment_cnt:
-                stats_parts.append(f"{comment_cnt}评论")
-            stats_text = f" [{', '.join(stats_parts)}]" if stats_parts else ""
-
-            summary = f"[抖音视频{duration_text}{stats_text}] {desc_text[:400]}"
-            if music_title:
-                summary += f" | 🎵{music_title}"
-
-            return {
-                **base_fields,
-                "title": desc_text[:100] if desc_text else "抖音视频",
-                "author": nickname,
-                "summary": summary[:800],
-                "platform": "douyin",
-                "image_url": cover_url,
-                "restricted": True,
-            }
-
-        # ── 回退：从 meta 标签中提取 ──
-        title = re.search(r'<meta[^>]*property="og:title"[^>]*content="([^"]*)"', html)
-        if not title:
-            # 仅在 script 标签内搜索 JSON 字段，避免匹配到无关内容
-            scripts = re.findall(r'<script[^>]*>(.*?)</script>', html, re.DOTALL)
-            for script in scripts:
-                m = re.search(r'"desc"\s*:\s*"([^"]{4,})"', script)
-                if m:
-                    title = m
-                    break
-        if not title:
-            title = re.search(r'<title[^>]*>(.*?)</title>', html, re.DOTALL)
-        title_text = _strip_html(title, "")
-
-        desc = re.search(r'<meta[^>]*property="og:description"[^>]*content="([^"]*)"', html)
-        desc_text = desc.group(1).strip() if desc else ""
-
-        author = None
-        scripts = re.findall(r'<script[^>]*>(.*?)</script>', html, re.DOTALL)
-        for script in scripts:
-            m = re.search(r'"nickname"\s*:\s*"([^"]+)"', script)
-            if m:
-                author = m.group(1).strip()
-                break
-        if not author:
-            author = re.search(r'<meta[^>]*name="author"[^>]*content="([^"]*)"', html)
-            author = author.group(1).strip() if author else "抖音用户"
-
-        image = re.search(r'<meta[^>]*property="og:image"[^>]*content="([^"]*)"', html)
-        image_url = image.group(1) if image else ""
-
-        # 检查是否成功提取到有效内容
-        has_valid_title = title_text and title_text not in ("抖音", "抖音视频", "抖音-记录美好生活") and len(title_text) > 2
-        has_valid_desc = desc_text and len(desc_text) > 5
-
-        if has_valid_title or has_valid_desc:
-            summary_parts = []
-            if has_valid_desc and desc_text != title_text:
-                summary_parts.append(desc_text[:500])
-            summary = " ".join(summary_parts) if summary_parts else title_text
-            return {
-                **base_fields,
-                "title": title_text[:100] if has_valid_title else "抖音视频",
-                "author": author,
-                "summary": f"[抖音视频] {summary}"[:800],
-                "platform": "douyin",
-                "image_url": image_url,
-                "restricted": True,
-            }
-        else:
-            return {
-                **base_fields,
-                "title": "抖音视频",
-                "author": author,
-                "summary": "[抖音视频链接，内容无法读取]",
-                "platform": "douyin",
-                "image_url": image_url,
-                "restricted": True,
-                "fetch_failed": True,
-            }
+    if "weibo.com" in url or "weibo.cn" in url:
+        from .weibo_parser import parse_weibo
+        return parse_weibo(html, url)
 
     if "xiaoheike" in url or "xiaoheihe" in url or "xiaoheih" in url:
         title = re.search(r'<meta[^>]*property="og:title"[^>]*content="([^"]*)"', html)
@@ -488,121 +233,12 @@ def _parse_by_platform(html: str, url: str) -> Optional[Dict[str, str]]:
         }
 
     if "bilibili.com/video" in url or "b23.tv" in url:
-        # ── 首选：从 window.__INITIAL_STATE__ 提取结构化数据 ──
-        render_info = _extract_bilibili_video_data(html, url)
-
-        if render_info and render_info.get("desc"):
-            desc_text = render_info.get("desc", "")
-            nickname = render_info.get("nickname", "B站UP主")
-            duration = render_info.get("duration", 0)
-            cover_url = render_info.get("cover_url", "")
-            view_count = render_info.get("view_count", 0)
-            comment_cnt = render_info.get("comment_count", 0)
-            digg_cnt = render_info.get("digg_count", 0)
-            danmaku_cnt = render_info.get("danmaku_count", 0)
-            desc_long = render_info.get("desc_long", "")
-
-            # 时长格式化
-            duration_text = ""
-            if duration:
-                if duration >= 60:
-                    duration_text = f"({duration // 60}分{duration % 60}秒)"
-                else:
-                    duration_text = f"({duration}秒)"
-
-            # 互动数据
-            stats_parts = []
-            if view_count:
-                stats_parts.append(f"{view_count}播放")
-            if digg_cnt:
-                stats_parts.append(f"{digg_cnt}点赞")
-            if comment_cnt:
-                stats_parts.append(f"{comment_cnt}评论")
-            if danmaku_cnt:
-                stats_parts.append(f"{danmaku_cnt}弹幕")
-            stats_text = f" [{', '.join(stats_parts)}]" if stats_parts else ""
-
-            summary = f"[B站视频{duration_text}{stats_text}] {desc_text[:400]}"
-            if desc_long and desc_long != desc_text:
-                summary += f" | {desc_long[:300]}"
-
-            return {
-                **base_fields,
-                "title": desc_text[:100] if desc_text else "B站视频",
-                "author": nickname,
-                "summary": summary[:800],
-                "platform": "bilibili",
-                "image_url": cover_url,
-                "restricted": True,
-            }
-
-        # ── 回退：从 meta 标签提取 ──
-        title = re.search(r'<meta[^>]*property="og:title"[^>]*content="([^"]*)"', html)
-        if not title:
-            title = re.search(r'<title[^>]*>(.*?)</title>', html, re.DOTALL)
-        title_text = _strip_html(title, "")
-
-        desc = re.search(r'<meta[^>]*property="og:description"[^>]*content="([^"]*)"', html)
-        desc_text = desc.group(1).strip() if desc else ""
-
-        image = re.search(r'<meta[^>]*property="og:image"[^>]*content="([^"]*)"', html)
-        image_url = image.group(1) if image else ""
-
-        # 检查是否成功提取到有效内容
-        has_valid_title = (
-            title_text and len(title_text) > 2
-            and "bilibili" not in title_text.lower()
-        )
-        has_valid_desc = desc_text and len(desc_text) > 5
-
-        if has_valid_title or has_valid_desc:
-            summary_parts = []
-            if has_valid_desc and desc_text != title_text:
-                summary_parts.append(desc_text[:500])
-            summary = " ".join(summary_parts) if summary_parts else title_text
-            return {
-                **base_fields,
-                "title": title_text[:100] if has_valid_title else "B站视频",
-                "author": "B站UP主",
-                "summary": f"[B站视频] {summary}"[:800],
-                "platform": "bilibili",
-                "image_url": image_url,
-                "restricted": True,
-            }
-        else:
-            return {
-                **base_fields,
-                "title": "B站视频",
-                "author": "B站UP主",
-                "summary": "[B站视频链接，内容无法读取]",
-                "platform": "bilibili",
-                "image_url": image_url,
-                "restricted": True,
-                "fetch_failed": True,
-            }
+        from .bilibili_parser import parse_bilibili_video
+        return parse_bilibili_video(html, url)
 
     if "bilibili.com/read" in url or "bilibili.com/opus" in url:
-        title = re.search(r'<h1[^>]*class="[^"]*title[^"]*"[^>]*>(.*?)</h1>', html)
-        title = _strip_html(title, "B站专栏")
-        author = re.search(r'"name":"([^"]+)"', html)
-        author = author.group(1) if author else "未知UP"
-        content = re.search(
-            r'<div[^>]*id="read-article-holder"[^>]*>(.*?)</div>\s*<div[^>]*class="[^"]*bottom-bar',
-            html, re.DOTALL
-        )
-        if not content:
-            content = re.search(
-                r'<div[^>]*class="[^"]*opus-module-content[^"]*"[^>]*>(.*?)</div>',
-                html, re.DOTALL
-            )
-        text = _clean_html(content.group(1)) if content else ""
-        return {
-            **base_fields,
-            "title": title,
-            "author": author,
-            "summary": text[:1200],
-            "platform": "bilibili",
-        }
+        from .bilibili_parser import parse_bilibili_read
+        return parse_bilibili_read(html, url)
 
     if "zhihu.com" in url:
         title = re.search(r'<h1[^>]*class="[^"]*QuestionHeader-title[^"]*"[^>]*>(.*?)</h1>', html)

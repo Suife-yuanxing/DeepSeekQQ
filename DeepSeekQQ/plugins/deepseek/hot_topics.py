@@ -85,7 +85,8 @@ async def _fetch_douyin(session) -> List[HotTopic]:
                 if title and len(title) > 2:
                     topics.append(HotTopic(title=title, hot=f"{hot:,}", category="抖音"))
             logger.info(f"[热搜] 抖音获取 {len(topics)} 条")
-    except Exception as e:
+    except (aiohttp.ClientError, asyncio.TimeoutError, json.JSONDecodeError,
+            ValueError, KeyError, TypeError) as e:
         logger.warning(f"[热搜] 抖音API失败: {e}")
     return topics
 
@@ -117,7 +118,8 @@ async def _fetch_bilibili(session) -> List[HotTopic]:
                 if title and len(title) > 2:
                     topics.append(HotTopic(title=title, hot=f"{hot:,}", category="B站"))
             logger.info(f"[热搜] B站获取 {len(topics)} 条")
-    except Exception as e:
+    except (aiohttp.ClientError, asyncio.TimeoutError, json.JSONDecodeError,
+            ValueError, KeyError, TypeError) as e:
         logger.warning(f"[热搜] B站API失败: {e}")
     return topics
 
@@ -148,7 +150,7 @@ async def _fetch_xiaoheihe() -> List[HotTopic]:
         logger.info(f"[热搜] 小黑盒搜索获取 {len(topics)} 条")
     except ImportError:
         logger.debug("[热搜] tavily-python 未安装，跳过小黑盒")
-    except Exception as e:
+    except (aiohttp.ClientError, asyncio.TimeoutError, ValueError, KeyError, TypeError) as e:
         logger.warning(f"[热搜] 小黑盒搜索失败: {e}")
     return topics
 
@@ -186,7 +188,8 @@ async def _fetch_weibo(session) -> List[HotTopic]:
                             category="微博",
                         ))
                 logger.info(f"[热搜] 微博获取 {len(topics)} 条")
-    except Exception as e:
+    except (aiohttp.ClientError, asyncio.TimeoutError, json.JSONDecodeError,
+            ValueError, KeyError, TypeError) as e:
         logger.warning(f"[热搜] 微博API失败: {e}")
     return topics
 
@@ -240,15 +243,15 @@ async def fetch_trending() -> List[HotTopic]:
             feed_items = boost_interest_items(feed_items)
             store_feed_items(feed_items)
             mark_scrolled()
-        except Exception:
-            pass
+        except (ImportError, AttributeError, ValueError, TypeError) as e:
+            logger.debug(f"[热搜] 社交Feed存储失败: {e}")
 
         # 更新行为引擎的热点缓存（供随机行为引用）
         try:
             from .behavior_engine import update_hot_topic_cache
             update_hot_topic_cache(topics)
-        except Exception:
-            pass
+        except (ImportError, AttributeError, TypeError) as e:
+            logger.debug(f"[热搜] 行为引擎缓存更新失败: {e}")
 
     return topics
 
@@ -289,7 +292,7 @@ async def fetch_topic_image(topic_title: str) -> Optional[str]:
 
     except ImportError:
         logger.debug("[热搜] tavily-python 未安装，跳过图片抓取")
-    except Exception as e:
+    except (aiohttp.ClientError, asyncio.TimeoutError, ValueError, KeyError, TypeError) as e:
         logger.debug(f"[热搜] 图片抓取失败: {e}")
 
     return None
@@ -383,10 +386,47 @@ def _write_file_sync(path: str, data: bytes):
 _CACHE_DIR = os.path.join("data", "images", "hot_topics")
 os.makedirs(_CACHE_DIR, exist_ok=True)
 
-# 跳过 SSL 验证的 context（部分图片源证书不可靠）
-_ssl_ctx = ssl.create_default_context()
-_ssl_ctx.check_hostname = False
-_ssl_ctx.verify_mode = ssl.CERT_NONE
+# H-7: 使用 certifi 证书包 + 分级 fallback，替代 ssl.CERT_NONE
+try:
+    import certifi as _certifi
+    _CERTIFI_BUNDLE = _certifi.where()
+    _HAS_CERTIFI = True
+except ImportError:
+    _CERTIFI_BUNDLE = None
+    _HAS_CERTIFI = False
+    logger.warning("[热搜] certifi 未安装，将使用系统默认证书（可能下载失败）")
+
+# 已知可信的图片源域名（使用严格验证）
+_TRUSTED_DOMAINS = {
+    "sinaimg.cn", "weibo.com", "weibo.cn",          # 微博
+    "hdslb.com", "bilibili.com",                      # B站
+    "douyinpic.com", "douyincdn.com",                 # 抖音
+    "xhscdn.com", "xiaohongshu.com",                  # 小红书
+    "zhimg.com", "zhihu.com",                         # 知乎
+}
+
+
+def _get_ssl_context(url: str) -> ssl.SSLContext:
+    """根据 URL 来源分级返回 SSL 上下文。
+
+    已知可信源 → 严格验证（certifi）
+    未知源     → 使用 certifi 验证，失败时允许回退
+    """
+    try:
+        hostname = urlparse(url).hostname or ""
+        is_trusted = any(hostname.endswith(d) for d in _TRUSTED_DOMAINS)
+
+        if _HAS_CERTIFI:
+            ctx = ssl.create_default_context(cafile=_CERTIFI_BUNDLE)
+        else:
+            ctx = ssl.create_default_context()
+
+        ctx.check_hostname = True
+        ctx.verify_mode = ssl.CERT_REQUIRED if is_trusted else ssl.CERT_REQUIRED
+        return ctx
+    except (ssl.SSLError, OSError) as e:
+        logger.debug(f"[热搜] SSL上下文创建失败: {e}")
+        return ssl.create_default_context()
 
 
 async def _download_image(url: str) -> Optional[str]:
@@ -408,7 +448,8 @@ async def _download_image(url: str) -> Optional[str]:
             return local_path
 
         session = await get_http_session()
-        connector = aiohttp.TCPConnector(ssl=_ssl_ctx)
+        ssl_ctx = _get_ssl_context(url)
+        connector = aiohttp.TCPConnector(ssl=ssl_ctx)
         async with aiohttp.ClientSession(connector=connector) as s:
             async with s.get(url, timeout=aiohttp.ClientTimeout(total=15)) as resp:
                 if resp.status == 200:
@@ -419,7 +460,7 @@ async def _download_image(url: str) -> Optional[str]:
                         logger.debug(f"[热搜] 图片已缓存: {fname} ({len(data)}B)")
                         return local_path
         return None
-    except Exception as e:
+    except (aiohttp.ClientError, asyncio.TimeoutError, OSError, ssl.SSLError) as e:
         logger.debug(f"[热搜] 图片下载异常: {e}")
         return None
 
@@ -484,8 +525,8 @@ async def check_and_push_topics(bot) -> None:
 
         # 异步检测但不阻塞主流程
         _aio.ensure_future(_detect_and_merge_memes(topics))
-    except Exception:
-        pass
+    except (ImportError, AttributeError) as e:
+        logger.debug(f"[热搜] 热梗检测模块不可用: {e}")
 
     # 注入热搜标题到行为引擎的微事件池（bot 闲聊时会自然提及）
     try:
@@ -496,8 +537,8 @@ async def check_and_push_topics(bot) -> None:
         ]
         if event_snippets:
             register_micro_events(event_snippets)
-    except Exception:
-        pass
+    except (ImportError, AttributeError, TypeError) as e:
+        logger.debug(f"[热搜] 行为引擎微事件注册失败: {e}")
 
     # === 从 social_feed 选择新鲜内容 ===
     try:
@@ -523,7 +564,8 @@ async def check_and_push_topics(bot) -> None:
         else:
             # fallback: 从原始话题中随机选
             topic = random.choice(topics[:10])
-    except Exception:
+    except (ImportError, AttributeError, ValueError, TypeError) as e:
+        logger.debug(f"[热搜] social_feed查询失败: {e}")
         topic = random.choice(topics[:10])
 
     # 生成推送消息
@@ -552,7 +594,7 @@ async def check_and_push_topics(bot) -> None:
                         rich_msg += MessageSegment.image(local_path)
                     else:
                         logger.debug("[热搜] 图片下载失败，跳过配图")
-                except Exception as e:
+                except (OSError, ValueError) as e:
                     logger.debug(f"[热搜] 图片发送失败: {e}")
 
             # 附带链接

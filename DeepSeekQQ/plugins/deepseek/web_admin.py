@@ -125,8 +125,18 @@ async def api_status(request: Request) -> Response:
         return _json_response({"error": str(e)}, 500)
 
 
-async def api_health():
-    """GET /health — 健康检查端点，验证服务和数据库连接。"""
+async def api_health(request: Request = None):
+    """GET /health — 健康检查端点，验证服务和数据库连接。
+
+    轻量级访问控制：可选的 health_token 查询参数限制访问。
+    """
+    # 2.6: 轻量级访问控制 — 配置了 HEALTH_TOKEN 则必须匹配
+    import os
+    health_token = os.getenv("HEALTH_TOKEN", "").strip()
+    if health_token and request:
+        token = request.query.get("token", "")
+        if token != health_token:
+            return _json_response({"status": "denied"}, 401)
     try:
         from .db_core import get_db
         db = await get_db()
@@ -217,7 +227,7 @@ async def api_templates(request: Request) -> Response:
                 "preview": content[:100] + "..." if content and len(content) > 100 else content,
             }
         return _json_response({"templates": result, "count": len(result)})
-    except Exception as e:
+    except (ImportError, AttributeError, ValueError, TypeError, KeyError) as e:
         return _json_response({"error": str(e)}, 500)
 
 
@@ -234,7 +244,7 @@ async def api_heat(request: Request) -> Response:
                 "last_message": datetime.fromtimestamp(gh.last_message_time).strftime("%m-%d %H:%M:%S"),
             }
         return _json_response({"groups": result, "count": len(result)})
-    except Exception as e:
+    except (ImportError, AttributeError, ValueError, TypeError) as e:
         return _json_response({"error": str(e)}, 500)
 
 
@@ -243,7 +253,7 @@ async def api_compression(request: Request) -> Response:
     try:
         from .context_compressor import get_compression_stats
         return _json_response(get_compression_stats())
-    except Exception as e:
+    except (ImportError, AttributeError, ValueError, TypeError) as e:
         return _json_response({"error": str(e)}, 500)
 
 
@@ -252,24 +262,37 @@ async def api_tokens(request: Request) -> Response:
     try:
         from .token_tracker import get_tracker
         return _json_response(get_tracker().get_stats())
-    except Exception as e:
+    except (ImportError, AttributeError, ValueError, TypeError) as e:
         return _json_response({"error": str(e)}, 500)
+
+
+def _sanitize_search_query(query: str) -> str:
+    """净化搜索输入：限制长度、过滤 LIKE 通配符，防止 SQL 注入式搜索。"""
+    # 限制最大 100 字符
+    query = query.strip()[:100]
+    # 过滤 LIKE 通配符（% _ \），转义后保留原字符含义
+    for char in ("\\", "%", "_"):
+        query = query.replace(char, f"\\{char}")
+    return query
 
 
 async def api_search_messages(request: Request) -> Response:
     """GET /admin/api/search?q=关键词&limit=50 — 对话搜索。"""
     try:
-        query = request.query.get("q", "").strip()
-        if not query or len(query) < 2:
+        raw_query = request.query.get("q", "").strip()
+        if not raw_query or len(raw_query) < 2:
             return _json_response({"error": "搜索词至少2个字符"}, 400)
+        if len(raw_query) > 100:
+            return _json_response({"error": "搜索词不能超过100个字符"}, 400)
 
+        query = _sanitize_search_query(raw_query)
         limit = min(int(request.query.get("limit", 50)), 200)
 
         from .db_core import get_db
         db = await get_db()
         async with db.execute(
             "SELECT role, content, timestamp, session_id FROM memories "
-            "WHERE content LIKE ? ORDER BY timestamp DESC LIMIT ?",
+            "WHERE content LIKE ? ESCAPE '\\' ORDER BY timestamp DESC LIMIT ?",
             (f"%{query}%", limit)
         ) as cur:
             rows = await cur.fetchall()
@@ -442,6 +465,10 @@ pre{background:#0a0a1a;padding:8px;border-radius:4px;overflow-x:auto;font-size:1
 </head>
 <body>
 <h1>🐱 念念 Bot 管理后台</h1>
+<div style="margin-bottom:12px;font-size:13px;color:#888">
+  认证状态: <span id="auth-status">🔒</span>
+  <button class="btn btn-secondary" onclick="setToken()" style="font-size:11px;padding:2px 8px">设置Token</button>
+</div>
 
 <div id="status-card" class="card">
   <h2>运行状态</h2>
@@ -500,12 +527,39 @@ pre{background:#0a0a1a;padding:8px;border-radius:4px;overflow-x:auto;font-size:1
 </div>
 
 <script>
+let authToken = localStorage.getItem('admin_token') || '';
 let autoRefresh = false;
 let autoTimer = null;
 
+// 首次访问时提示输入 Token
+if (!authToken) {
+  const input = prompt('请输入 Admin Token（设置后保存在浏览器本地）：');
+  if (input && input.trim()) {
+    authToken = input.trim();
+    localStorage.setItem('admin_token', authToken);
+  }
+}
+
 async function fetchJSON(url) {
-  const r = await fetch(url);
+  const headers = {};
+  if (authToken) headers['Authorization'] = 'Bearer ' + authToken;
+  const r = await fetch(url, { headers });
+  if (r.status === 401 || r.status === 403) {
+    localStorage.removeItem('admin_token');
+    authToken = '';
+    alert('认证失败，请刷新页面重新输入 Token');
+    throw new Error('Unauthorized');
+  }
   return r.json();
+}
+
+function setToken() {
+  const input = prompt('请输入新的 Admin Token：', authToken);
+  if (input && input.trim()) {
+    authToken = input.trim();
+    localStorage.setItem('admin_token', authToken);
+    alert('Token 已保存，刷新页面生效');
+  }
 }
 
 async function loadStatus() {
@@ -590,6 +644,7 @@ async function loadEmotion() {
 }
 
 loadStatus(); loadConfig(); refreshMessages(); loadHeat(); loadCompression(); loadTokens();
+document.getElementById('auth-status').textContent = authToken ? '🔒 已认证' : '🔓 未认证';
 </script>
 </body>
 </html>"""
@@ -612,9 +667,48 @@ if _HAS_NONEBOT:
     async def _register_admin_routes():
         """在 driver 启动后注册管理后台路由。"""
         try:
-            from fastapi import FastAPI
+            from fastapi import FastAPI, HTTPException
+            from fastapi.responses import JSONResponse
+            from .middleware.auth import ADMIN_API_KEY, is_admin_path, check_admin_key_configured
+
             app = driver.server_app
             if app and isinstance(app, FastAPI):
+                # C-1: Admin 认证中间件
+                admin_enabled = check_admin_key_configured()
+
+                @app.middleware("http")
+                async def admin_auth_middleware(request, call_next):
+                    """Admin 端点 Bearer Token 认证中间件 + 访问审计日志。"""
+                    if not admin_enabled:
+                        if is_admin_path(request.url.path):
+                            return JSONResponse(
+                                {"error": "管理后台未启用，请设置 ADMIN_API_KEY 环境变量"},
+                                status_code=503,
+                            )
+                    elif is_admin_path(request.url.path):
+                        peer = request.client.host if request.client else "unknown"
+                        path = request.url.path
+                        auth_header = request.headers.get("Authorization", "")
+                        if not auth_header.startswith("Bearer "):
+                            # M-16: 记录未授权访问
+                            _admin_logger.warning(f"[审计] Admin 访问拒绝（无Token）: {peer} → {path}")
+                            return JSONResponse(
+                                {"error": "需要 Bearer Token 认证"},
+                                status_code=401,
+                                headers={"WWW-Authenticate": "Bearer"},
+                            )
+                        token = auth_header[7:]
+                        if token != ADMIN_API_KEY:
+                            # M-16: 记录无效Token访问
+                            _admin_logger.warning(f"[审计] Admin 访问拒绝（Token无效）: {peer} → {path}")
+                            return JSONResponse(
+                                {"error": "Token 无效"},
+                                status_code=403,
+                            )
+                        # M-16: 记录合法访问
+                        _admin_logger.info(f"[审计] Admin 访问: {peer} → {path}")
+                    return await call_next(request)
+
                 # API 端点
                 app.add_api_route("/admin/api/status", api_status, methods=["GET"])
                 app.add_api_route("/admin/api/messages", api_messages, methods=["GET"])
@@ -631,10 +725,10 @@ if _HAS_NONEBOT:
                 app.add_api_route("/admin", admin_dashboard, methods=["GET"])
                 app.add_api_route("/admin/", admin_dashboard, methods=["GET"])
 
-                _admin_logger.info("[Admin] 管理后台已注册: http://0.0.0.0:8082/admin")
+                _admin_logger.info(f"[Admin] 管理后台已注册: http://{SERVER_HOST}:8082/admin (认证: {'启用' if admin_enabled else '未配置'})")
             else:
                 _admin_logger.warning("[Admin] FastAPI app 不可用，管理后台未注册")
-        except Exception as e:
+        except (ImportError, ValueError, TypeError) as e:
             _admin_logger.warning(f"[Admin] 注册失败（非关键错误）: {e}")
 
     @driver.on_startup
@@ -646,8 +740,8 @@ if _HAS_NONEBOT:
             app = driver.server_app
             if app and isinstance(app, FastAPI):
                 app.add_api_route("/health", api_health, methods=["GET"], response_model=None)
-                _admin_logger.info("[Health] 健康检查已注册: http://0.0.0.0:8082/health")
-        except Exception as e:
+                _admin_logger.info(f"[Health] 健康检查已注册: http://{SERVER_HOST}:8082/health")
+        except (ImportError, ValueError, TypeError) as e:
             _admin_logger.warning(f"[Health] 注册失败: {e}")
 else:
     # 测试环境：注册空回调，避免模块导入失败

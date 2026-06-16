@@ -10,6 +10,7 @@ __pycache__/
 
 # 数据文件（太大且频繁变化）
 data/
+!data/persona/   # 人设文件需要版本控制
 *.db
 *.sqlite
 *.sqlite3
@@ -45,8 +46,6 @@ logs/
 
 # 截图（临时文件）
 screenshot.png
-# 测试残留
-MagicMock/
 # 系统文件
 .DS_Store
 Thumbs.db

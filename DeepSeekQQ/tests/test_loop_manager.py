@@ -6,6 +6,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 import asyncio
 import pytest
 from plugins.deepseek.loop_manager import LoopManager, LoopTask
+
+pytestmark = [pytest.mark.unit, pytest.mark.slow]
 pytestmark = [pytest.mark.unit, pytest.mark.slow]
 
 

@@ -19,10 +19,10 @@ from nonebot.adapters.onebot.v11 import MessageEvent
 
 
 # ============================================================
-# 短路标记
+# 短路标记（从 constants 导入，消除 agent_base ↔ pipeline 循环引用）
 # ============================================================
 
-_SKIP = object()
+from .constants import _SKIP  # noqa: F401 — 向后兼容重导出
 
 
 # ============================================================
@@ -185,10 +185,14 @@ async def handle_chat(bot: Bot, event: MessageEvent):
         _has_voice = any(seg.type == "record" for seg in _msg_segments)
         _raw_msg = _msg_segments.extract_plain_text().strip()
 
+        # H-9: 截断超长用户消息，防止消耗过多 Token
+        from .config import MAX_USER_MSG_CHARS
+        _truncated_msg = _raw_msg[:MAX_USER_MSG_CHARS] if len(_raw_msg) > MAX_USER_MSG_CHARS else _raw_msg
+
         ctx = ChatContext(
             bot=bot,
             event=event,
-            raw_msg=_raw_msg,
+            raw_msg=_truncated_msg,
             session_id=get_session_id(event),
             user_id=str(event.user_id),
             is_group=isinstance(event, GroupMessageEvent),

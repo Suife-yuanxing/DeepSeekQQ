@@ -1,5 +1,7 @@
 """数据库连接池管理。全局单连接复用，aiosqlite 线程安全。"""
 import asyncio
+import os
+import stat
 from typing import Optional
 
 import aiosqlite
@@ -35,6 +37,12 @@ async def get_db() -> aiosqlite.Connection:
         await _db.execute("PRAGMA synchronous=NORMAL")
         await _db.execute("PRAGMA busy_timeout=5000")
         await _db.execute("PRAGMA foreign_keys=ON")
+        # M-15: 限制数据库文件权限为 600（仅 owner 可读写）
+        try:
+            if os.name != "nt":  # Windows 不支持 os.chmod 权限位
+                os.chmod(DB_PATH, stat.S_IRUSR | stat.S_IWUSR)
+        except Exception as e:
+            logger.debug(f"[数据库] 文件权限设置失败（非关键）: {e}")
     return _db
 
 

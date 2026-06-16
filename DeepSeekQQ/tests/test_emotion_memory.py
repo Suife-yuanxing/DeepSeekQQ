@@ -62,7 +62,7 @@ class TestBuildBotEmotionMemoryHint:
             "reason": "他说了过分的话", "time": time.time() - 3600 * 3
         })
         # 用 random.seed 确保触发
-        with patch("plugins.deepseek.memory.random.random", return_value=0.1):
+        with patch("plugins.deepseek.memory_cache.random.random", return_value=0.1):
             result = _build_bot_emotion_memory_hint(state, 3)
         assert result is not None
         assert "生气" in result or "脾气" in result
@@ -73,7 +73,7 @@ class TestBuildBotEmotionMemoryHint:
             "valence": -0.5, "arousal": 0.7, "dominant": "生气",
             "reason": "他说了过分的话", "time": time.time()
         })
-        with patch("plugins.deepseek.memory.random.random", return_value=0.1):
+        with patch("plugins.deepseek.memory_cache.random.random", return_value=0.1):
             result = _build_bot_emotion_memory_hint(state, 1)
         assert result is not None
         assert "过分的话" in result
@@ -84,7 +84,7 @@ class TestBuildBotEmotionMemoryHint:
             "valence": 0.6, "arousal": 0.5, "dominant": "开心",
             "reason": "", "time": time.time()
         })
-        with patch("plugins.deepseek.memory.random.random", return_value=0.1):
+        with patch("plugins.deepseek.memory_cache.random.random", return_value=0.1):
             result = _build_bot_emotion_memory_hint(state, 2)
         assert result is not None
         assert "开心" in result or "心情" in result
@@ -95,7 +95,7 @@ class TestBuildBotEmotionMemoryHint:
             "valence": -0.3, "arousal": 0.5, "dominant": "吃醋",
             "reason": "他提到了别的女生", "time": time.time()
         })
-        with patch("plugins.deepseek.memory.random.random", return_value=0.1):
+        with patch("plugins.deepseek.memory_cache.random.random", return_value=0.1):
             result = _build_bot_emotion_memory_hint(state, 2)
         assert result is not None
         assert "醋" in result
@@ -106,7 +106,7 @@ class TestBuildBotEmotionMemoryHint:
             "valence": 0.3, "arousal": 0.4, "dominant": "害羞",
             "reason": "", "time": time.time()
         })
-        with patch("plugins.deepseek.memory.random.random", return_value=0.1):
+        with patch("plugins.deepseek.memory_cache.random.random", return_value=0.1):
             result = _build_bot_emotion_memory_hint(state, 2)
         assert result is not None
         assert "害羞" in result
@@ -118,7 +118,7 @@ class TestBuildBotEmotionMemoryHint:
             "reason": "", "time": time.time() - 3600 * 100
         })
         # 72-168h: 10% chance, random=0.5 不触发
-        with patch("plugins.deepseek.memory.random.random", return_value=0.5):
+        with patch("plugins.deepseek.memory_cache.random.random", return_value=0.5):
             result = _build_bot_emotion_memory_hint(state, 100)
         assert result is None
 

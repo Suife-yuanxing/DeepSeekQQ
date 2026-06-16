@@ -20,7 +20,7 @@ class TestMoodDrivenBoost:
     async def test_excited_positive_boost(self):
         """高唤醒+正面 → boost=2.0"""
         from plugins.deepseek.proactive import _get_mood_driven_boost
-        with patch("plugins.deepseek.proactive.get_bot_mood", new=AsyncMock(
+        with patch("plugins.deepseek.proactive.shared.get_bot_mood", new=AsyncMock(
             return_value={"valence": 0.5, "arousal": 0.7, "dominant": "兴奋"}
         )):
             boost = await _get_mood_driven_boost()
@@ -30,7 +30,7 @@ class TestMoodDrivenBoost:
     async def test_angry_negative_boost(self):
         """高唤醒+负面 → boost=1.5"""
         from plugins.deepseek.proactive import _get_mood_driven_boost
-        with patch("plugins.deepseek.proactive.get_bot_mood", new=AsyncMock(
+        with patch("plugins.deepseek.proactive.shared.get_bot_mood", new=AsyncMock(
             return_value={"valence": -0.5, "arousal": 0.7, "dominant": "生气"}
         )):
             boost = await _get_mood_driven_boost()
@@ -40,7 +40,7 @@ class TestMoodDrivenBoost:
     async def test_happy_mild_boost(self):
         """中唤醒+正面 → boost=1.3"""
         from plugins.deepseek.proactive import _get_mood_driven_boost
-        with patch("plugins.deepseek.proactive.get_bot_mood", new=AsyncMock(
+        with patch("plugins.deepseek.proactive.shared.get_bot_mood", new=AsyncMock(
             return_value={"valence": 0.3, "arousal": 0.5, "dominant": "开心"}
         )):
             boost = await _get_mood_driven_boost()
@@ -50,7 +50,7 @@ class TestMoodDrivenBoost:
     async def test_lazy_low_boost(self):
         """极低唤醒 → boost=0.5"""
         from plugins.deepseek.proactive import _get_mood_driven_boost
-        with patch("plugins.deepseek.proactive.get_bot_mood", new=AsyncMock(
+        with patch("plugins.deepseek.proactive.shared.get_bot_mood", new=AsyncMock(
             return_value={"valence": 0.0, "arousal": 0.1, "dominant": "平静"}
         )):
             boost = await _get_mood_driven_boost()
@@ -60,7 +60,7 @@ class TestMoodDrivenBoost:
     async def test_neutral_no_boost(self):
         """中性情绪 → boost=1.0"""
         from plugins.deepseek.proactive import _get_mood_driven_boost
-        with patch("plugins.deepseek.proactive.get_bot_mood", new=AsyncMock(
+        with patch("plugins.deepseek.proactive.shared.get_bot_mood", new=AsyncMock(
             return_value={"valence": 0.0, "arousal": 0.3, "dominant": "平静"}
         )):
             boost = await _get_mood_driven_boost()
@@ -70,7 +70,7 @@ class TestMoodDrivenBoost:
     async def test_exception_returns_default(self):
         """异常时返回 1.0（不阻塞）"""
         from plugins.deepseek.proactive import _get_mood_driven_boost
-        with patch("plugins.deepseek.proactive.get_bot_mood", new=AsyncMock(
+        with patch("plugins.deepseek.proactive.shared.get_bot_mood", new=AsyncMock(
             side_effect=Exception("db error")
         )):
             boost = await _get_mood_driven_boost()
@@ -222,7 +222,7 @@ class TestHotTopicMerge:
         """无热搜时返回 False。"""
         from plugins.deepseek.proactive import _try_push_hot_topic
         mock_bot = AsyncMock()
-        with patch("plugins.deepseek.proactive.hot_topics.fetch_trending", new=AsyncMock(return_value=[])):
+        with patch("plugins.deepseek.proactive.silence_probe.hot_topics.fetch_trending", new=AsyncMock(return_value=[])):
             result = await _try_push_hot_topic(mock_bot, "12345")
             assert result is False
 
@@ -236,7 +236,7 @@ class TestHotTopicMerge:
         mock_dt = MagicMock()
         mock_dt.now.return_value = dt.datetime(2026, 6, 6, 3, 0, 0)
         mock_dt.strftime = dt.datetime.strftime
-        with patch("plugins.deepseek.proactive.datetime", mock_dt):
+        with patch("plugins.deepseek.proactive.silence_probe.datetime", mock_dt):
             result = await _try_push_hot_topic(mock_bot, "12345")
             assert result is False
 
@@ -250,7 +250,7 @@ class TestHotTopicMerge:
             HotTopic(title="股市大涨", category="财经"),
             HotTopic(title="猫咪咖啡厅走红", category="生活"),
         ]
-        with patch("plugins.deepseek.proactive.get_relevant_memory_tags", new=AsyncMock(
+        with patch("plugins.deepseek.proactive.silence_probe.get_relevant_memory_tags", new=AsyncMock(
             return_value=[{"content": "原神", "tag_type": "preference"}]
         )):
             result = await _match_topic_to_user_async(topics, "12345")
@@ -263,7 +263,7 @@ class TestHotTopicMerge:
         from plugins.deepseek.proactive import _match_topic_to_user_async
         from plugins.deepseek.hot_topics import HotTopic
         topics = [HotTopic(title="股市大涨", category="财经")]
-        with patch("plugins.deepseek.proactive.get_relevant_memory_tags", new=AsyncMock(
+        with patch("plugins.deepseek.proactive.silence_probe.get_relevant_memory_tags", new=AsyncMock(
             return_value=[{"content": "原神", "tag_type": "preference"}]
         )):
             result = await _match_topic_to_user_async(topics, "12345")
@@ -275,7 +275,7 @@ class TestHotTopicMerge:
         from plugins.deepseek.proactive import _match_topic_to_user_async
         from plugins.deepseek.hot_topics import HotTopic
         topics = [HotTopic(title="原神新角色", category="游戏")]
-        with patch("plugins.deepseek.proactive.get_relevant_memory_tags", new=AsyncMock(return_value=[])):
+        with patch("plugins.deepseek.proactive.silence_probe.get_relevant_memory_tags", new=AsyncMock(return_value=[])):
             result = await _match_topic_to_user_async(topics, "12345")
             assert result is None
 

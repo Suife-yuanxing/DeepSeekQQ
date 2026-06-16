@@ -67,7 +67,7 @@ async def is_opted_out(user_id: str) -> bool:
         ) as cur:
             row = await cur.fetchone()
             return row is not None
-    except Exception as e:
+    except (OSError, ValueError, TypeError, KeyError, AttributeError) as e:
         logger.debug(f"[主动门控] opt-out 查询失败: {e}")
         return False  # fail-open：查询失败不阻塞
 
@@ -82,7 +82,7 @@ async def set_opt_out(user_id: str, reason: str = ""):
         )
         await db.commit()
         logger.info(f"[主动消息] 用户 {user_id[:6]} 退订主动消息 (原因: {reason})")
-    except Exception as e:
+    except (OSError, ValueError, TypeError) as e:
         logger.warning(f"[主动门控] opt-out 持久化失败: {e}")
 
 
@@ -95,7 +95,7 @@ async def clear_opt_out(user_id: str):
         )
         await db.commit()
         logger.info(f"[主动消息] 用户 {user_id[:6]} 重新订阅主动消息")
-    except Exception as e:
+    except (OSError, ValueError, TypeError) as e:
         logger.warning(f"[主动门控] opt-in 持久化失败: {e}")
 
 
@@ -106,7 +106,7 @@ async def get_opt_out_count() -> int:
         async with db.execute("SELECT COUNT(*) as c FROM proactive_opt_out") as cur:
             row = await cur.fetchone()
             return row["c"] if row else 0
-    except Exception:
+    except (OSError, ValueError, TypeError, KeyError, AttributeError):
         return 0
 
 
@@ -181,7 +181,7 @@ async def record_proactive_ignored(user_id: str):
                 f"[主动消息] 用户 {user_id[:6]} 连续忽略 {new_count} 次，"
                 f"退避至 {time.strftime('%m-%d %H:%M', time.localtime(backoff_until))}"
             )
-    except Exception as e:
+    except (OSError, ValueError, TypeError, KeyError, AttributeError) as e:
         logger.debug(f"[主动门控] 退避记录失败: {e}")
 
 
@@ -195,7 +195,7 @@ async def reset_backoff(user_id: str):
             (time.time(), str(user_id))
         )
         await db.commit()
-    except Exception as e:
+    except (OSError, ValueError, TypeError, KeyError, AttributeError) as e:
         logger.debug(f"[主动门控] 退避重置失败: {e}")
 
 
@@ -222,7 +222,7 @@ async def check_backoff(user_id: str) -> tuple[bool, str]:
                     return True, f"suspended({remaining:.0f}h)"
                 else:
                     return True, f"backoff({remaining:.0f}h)"
-    except Exception:
+    except (OSError, ValueError, TypeError, KeyError, AttributeError):
         pass
     return False, ""
 
@@ -262,7 +262,7 @@ async def proactive_gate(user_id: str, scene: str = "") -> tuple[bool, str]:
         count = await get_today_proactive_count(user_id)
         if count >= MAX_PROACTIVE_PER_DAY:
             return False, f"daily_limit({count}/{MAX_PROACTIVE_PER_DAY})"
-    except Exception as e:
+    except (ImportError, AttributeError, OSError, ValueError, TypeError) as e:
         logger.debug(f"[主动门控] 每日计数查询失败: {e}")
         # 查询失败时不阻塞（fail-open）
 
@@ -279,7 +279,7 @@ async def proactive_gate(user_id: str, scene: str = "") -> tuple[bool, str]:
         from .database import has_recent_message
         if await has_recent_message(user_id, minutes=15):
             return False, "user_active"
-    except Exception as e:
+    except (ImportError, AttributeError, OSError, ValueError, TypeError) as e:
         logger.debug(f"[主动门控] 活跃检查失败: {e}")
 
     return True, "ok"
@@ -294,7 +294,7 @@ async def record_proactive_sent(user_id: str, scene: str, content: str):
     try:
         from .database import log_proactive
         await log_proactive(user_id, "private", content, scene=scene)
-    except Exception as e:
+    except (ImportError, AttributeError, OSError, ValueError, TypeError) as e:
         logger.debug(f"[主动门控] 记录失败: {e}")
 
 

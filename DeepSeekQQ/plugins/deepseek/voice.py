@@ -75,7 +75,7 @@ async def get_baidu_token() -> str:
             expires_in = data.get("expires_in", 2592000)
             BAIDU_TTS_TOKEN_EXPIRE = now + expires_in
             return BAIDU_TTS_TOKEN
-    except Exception as e:
+    except (aiohttp.ClientError, asyncio.TimeoutError, KeyError) as e:
         logger.error(f"[语音] 获取百度Token失败: {e}")
         return ""
 
@@ -119,7 +119,7 @@ async def _convert_mp3_to_silk(mp3_path: str) -> Optional[str]:
             logger.warning(f"[语音] silk 编码失败: {stderr.decode()[:200]}")
             safe_remove(silk_path)
             return None
-    except Exception as e:
+    except (OSError, asyncio.TimeoutError) as e:
         logger.error(f"[语音] silk 编码异常: {e}")
         safe_remove(silk_path)
         return None
@@ -166,7 +166,7 @@ async def _generate_baidu_voice(text: str, is_singing: bool = False) -> Optional
             return mp3_path
         logger.warning("[语音] 文件过小或不存在")
         return None
-    except Exception as e:
+    except (aiohttp.ClientError, asyncio.TimeoutError, OSError) as e:
         logger.error(f"[语音] 百度TTS失败: {e}")
         safe_remove(mp3_path)
         return None
@@ -246,7 +246,7 @@ async def send_voice(bot: Bot, event: MessageEvent, text: str, emotion: str = No
             b64 = base64.b64encode(audio_bytes).decode()
         await bot.send(event, MessageSegment.record(file=f"base64://{b64}"))
         logger.info(f"[语音] 发送成功 ({len(audio_bytes)} bytes, {'silk' if send_path.endswith('.silk') else 'mp3'})")
-    except Exception as e:
+    except (OSError, aiohttp.ClientError, asyncio.TimeoutError) as e:
         logger.error(f"[语音] 发送失败: {e}")
     finally:
         schedule_cleanup(voice_path)
@@ -458,7 +458,7 @@ async def send_greeting_voice(bot: Bot, event: MessageEvent):
             await send_voice_file(bot, event, voice_path)
             logger.info(f"[语音通话] 接听语音发送成功: {text}")
             return
-    except Exception as e:
+    except (OSError, aiohttp.ClientError, asyncio.TimeoutError) as e:
         logger.error(f"[语音通话] 接听语音发送失败: {e}")
     # 语音失败 → 发文字
     try:
@@ -478,7 +478,7 @@ async def send_farewell_voice(bot: Bot, event: MessageEvent):
             await send_voice_file(bot, event, voice_path)
             logger.info(f"[语音通话] 挂断语音发送成功: {text}")
             return
-    except Exception as e:
+    except (OSError, aiohttp.ClientError, asyncio.TimeoutError) as e:
         logger.error(f"[语音通话] 挂断语音发送失败: {e}")
     # 语音失败 → 发文字
     try:

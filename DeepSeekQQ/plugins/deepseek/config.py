@@ -72,8 +72,10 @@ MAX_MEMORY: int = _safe_int(getattr(cfg, "max_memory", 30), 30, "max_memory")
 SHARE_TTL: int = _safe_int(getattr(cfg, "share_ttl", 1800), 1800, "share_ttl")
 
 # === 服务器 ===
-SERVER_HOST: str = getattr(cfg, "host", "0.0.0.0")
+SERVER_HOST: str = getattr(cfg, "host", "127.0.0.1")
 SERVER_PORT: int = _safe_int(getattr(cfg, "port", 8080), 8080, "port")
+# CORS 白名单 origin（逗号分隔），为空则使用默认限制
+CORS_ALLOW_ORIGINS: str = str(getattr(cfg, "cors_allow_origins", "") or "").strip()
 
 # === 主人 QQ ===
 MY_QQ: str = str(getattr(cfg, "my_qq", ""))
@@ -287,6 +289,8 @@ MIMO_STT_MODEL: str = getattr(cfg, "mimo_stt_model", "whisper-1")
 PHONE_RELAY_PORT: int = _safe_int(getattr(cfg, "phone_relay_port", 8765), 8765, "phone_relay_port")
 # 认证密钥（手机 App 和控制端共用）
 PHONE_WS_KEY: str = str(getattr(cfg, "phone_ws_key", "") or "").strip()
+# C-2: IP 白名单（逗号分隔），默认仅允许本地
+PHONE_ALLOW_IPS: str = str(getattr(cfg, "phone_allow_ips", "127.0.0.1") or "").strip()
 
 # === 音乐功能 ===
 MUSIC_ENABLED: bool = str(getattr(cfg, "music_enabled", "true")).lower() == "true"
