@@ -37,6 +37,7 @@ from .config import REMINDER_ENABLED
 from .config import SEARCH_ENABLED
 from .config import STICKER_ENABLED
 from .config import TAVILY_API_KEY
+from .config import SERVER_HOST
 from .config import VOICE_ENABLED_GROUP
 from .config import VOICE_ENABLED_PRIVATE
 from .config import WEATHER_ENABLED
