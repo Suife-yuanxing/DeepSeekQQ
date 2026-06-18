@@ -954,17 +954,21 @@ class TestJudgeFallback(unittest.TestCase):
     @patch.object(council_call, 'call_model')
     @patch('os.getenv')
     def test_judge_fallback_triggered(self, mock_getenv, mock_call):
-        """首选模型失败时应触发降级"""
-        # 第一次失败，第二次成功
+        """首选模型失败时应触发降级（降级链：glm-5.2 → glm-4-plus → deepseek-v4-pro）"""
+        # 第一次（primary deepseek-v4-pro）失败，第二次（fallback glm-5.2）成功
         mock_call.side_effect = [
             make_error_result("Service unavailable"),
             make_success_result(
-                "# 裁决报告\n\nPASS (降级)", model="deepseek-v4-flash",
+                "# 裁决报告\n\nPASS (降级至 glm-5.2)", model="glm-5.2",
                 tokens={"input": 1000, "output": 500, "total": 1500},
             ),
         ]
-        # 模拟 fallback 模型需要的环境变量（DEEPSEEK_API_KEY）
+        # 模拟降级链需要的环境变量
+        # - COUNCIL_JUDGE_API_KEY: glm-5.2 / glm-4-plus 的 Key（优先降级路径）
+        # - DEEPSEEK_API_KEY: deepseek-v4-pro 兜底（但因和 primary 重复被去重跳过）
         def fake_getenv(key, default=""):
+            if key == "COUNCIL_JUDGE_API_KEY":
+                return "sk-judge-fallback"
             if key == "DEEPSEEK_API_KEY":
                 return "sk-fallback"
             return default
