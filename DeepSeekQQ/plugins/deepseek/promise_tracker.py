@@ -90,17 +90,29 @@ def should_forget() -> bool:
     return random.random() < _FORGET_RATE
 
 
-def estimate_due_time(due_hint: str, created_at: float) -> float:
-    """根据 due_hint 估算到期时间戳。"""
+def estimate_due_time(due_hint: str, created_at: float, due_offset: float = None) -> tuple[float, float]:
+    """根据 due_hint 估算到期时间戳。返回 (due_at, due_offset)。
+
+    M12: 若提供 persisted_offset，则复用该偏移（重启后一致性）。
+         否则生成随机偏移并返回，由调用方持久化。
+    """
+    if due_offset is not None:
+        return created_at + due_offset, due_offset
+
     if due_hint == "明天":
-        return created_at + 86400 + random.randint(0, 14400)  # 明天+随机0-4小时
+        offset = random.randint(0, 14400)  # 明天+随机0-4小时
+        return created_at + 86400 + offset, offset
     elif due_hint in ("等下", "晚点"):
-        return created_at + random.randint(1800, 7200)  # 0.5-2小时后
+        offset = random.randint(1800, 7200)  # 0.5-2小时后
+        return created_at + offset, offset
     elif due_hint == "回头":
-        return created_at + random.randint(3600, 21600)  # 1-6小时后
+        offset = random.randint(3600, 21600)  # 1-6小时后
+        return created_at + offset, offset
     elif due_hint == "下次":
-        return created_at + random.randint(86400, 259200)  # 1-3天后
-    return created_at + 86400
+        offset = random.randint(86400, 259200)  # 1-3天后
+        return created_at + offset, offset
+    offset = 86400  # 默认明天
+    return created_at + offset, offset
 
 
 def get_forgotten_apology(promise_text: str) -> str:
@@ -120,21 +132,23 @@ def get_fulfill_prefix(promise_text: str) -> str:
 # ============================================================
 
 async def save_promise(promise: dict) -> Optional[int]:
-    """保存承诺到数据库。"""
+    """保存承诺到数据库。M12: 同时持久化 due_offset。"""
     try:
         from .database import get_db
         db = await get_db()
         cursor = await db.execute(
             """INSERT INTO promises (user_id, session_id, promise_text, due_hint,
-               created_at, due_at, fulfilled, forgotten)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+               created_at, due_at, fulfilled, forgotten, due_offset)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (promise["user_id"], promise["session_id"], promise["promise_text"],
              promise.get("due_hint", ""), promise["created_at"], promise["due_at"],
-             promise.get("fulfilled", 0), promise.get("forgotten", 0))
+             promise.get("fulfilled", 0), promise.get("forgotten", 0),
+             promise.get("due_offset", 0))
         )
         await db.commit()
         return cursor.lastrowid
     except Exception as e:
+        await db.rollback()
         logger.error(f"[承诺追踪] 保存失败: {e}")
         return None
 
@@ -190,6 +204,7 @@ async def mark_fulfilled(promise_id: int) -> bool:
         await db.commit()
         return True
     except Exception as e:
+        await db.rollback()
         logger.error(f"[承诺追踪] 标记兑现失败: {e}")
         return False
 
@@ -206,6 +221,7 @@ async def mark_apologized(promise_id: int) -> bool:
         await db.commit()
         return True
     except Exception as e:
+        await db.rollback()
         logger.error(f"[承诺追踪] 标记道歉失败: {e}")
         return False
 
@@ -214,10 +230,13 @@ async def process_bot_reply(reply_text: str, user_id: str, session_id: str):
     """处理 bot 回复：提取承诺并保存（在 post_process 阶段调用）。
 
     这是主入口函数。
+    M12: due_offset 持久化确保随机偏移在重启后保持一致。
     """
     promises = extract_promises(reply_text, user_id, session_id)
     for p in promises:
-        p["due_at"] = estimate_due_time(p["due_hint"], p["created_at"])
+        due_at, offset = estimate_due_time(p["due_hint"], p["created_at"])
+        p["due_at"] = due_at
+        p["due_offset"] = offset
         if should_forget():
             p["forgotten"] = 1
         p["fulfilled"] = 0
@@ -225,5 +244,5 @@ async def process_bot_reply(reply_text: str, user_id: str, session_id: str):
         if p_id:
             logger.info(
                 f"[承诺追踪] 新承诺: {p['promise_text'][:30]} "
-                f"due={p['due_hint']} forget={p['forgotten']}"
+                f"due={p['due_hint']} offset={offset}s forget={p['forgotten']}"
             )

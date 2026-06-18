@@ -1,7 +1,7 @@
-"""群聊热度状态机单元测试。"""
+"""私聊热度状态机单元测试。"""
 import time
 import pytest
-from plugins.deepseek.heat_engine import (
+from plugins.deepseek.private_heat import (
     HeatState, update_heat, get_heat_state,
     should_interject, get_interjection_strategy,
     get_group_heat_description, reset_heat, cleanup_stale_trackers,

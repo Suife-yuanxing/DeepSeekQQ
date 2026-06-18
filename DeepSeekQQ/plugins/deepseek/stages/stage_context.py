@@ -244,8 +244,8 @@ def _run_sync_computations(ctx: ChatContext) -> str:
     # === 群聊热度状态机 ===
     if ctx.is_group:
         try:
-            from ..heat_engine import update_heat as _update_heat
-            from ..heat_engine import get_group_heat_description as _get_heat_desc
+            from ..private_heat import update_heat as _update_heat
+            from ..private_heat import get_group_heat_description as _get_heat_desc
             _update_heat(ctx.session_id, is_group=True)
             ctx.heat_state = _get_heat_desc(ctx.session_id)
         except Exception:
@@ -255,9 +255,9 @@ def _run_sync_computations(ctx: ChatContext) -> str:
     try:
         from ..social_feed import get_recent_feed
         from ..social_feed import get_scroll_memory_summary
-        from ..heat_engine import should_interject
-        from ..heat_engine import HeatState
-        from ..heat_engine import get_heat_state as _get_heat_state
+        from ..private_heat import should_interject
+        from ..private_heat import HeatState
+        from ..private_heat import get_heat_state as _get_heat_state
 
         feed_items = get_recent_feed(limit=5, max_age_minutes=240)
         has_fresh = len(feed_items) > 0

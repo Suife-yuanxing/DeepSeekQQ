@@ -28,11 +28,15 @@ async def update_catgirl_mood(user_msg: str) -> Dict[str, Any]:
         row = await cursor.fetchone()
     new_score = max(0, min(100, row["score"] + delta + random.randint(-2, 2)))
     mood = "开心" if new_score > 70 else "平淡" if new_score > 40 else "傲娇" if new_score > 20 else "生气"
-    await db.execute(
-        "UPDATE catgirl_mood SET mood = ?, score = ?, last_updated = ? WHERE id = 1",
-        (mood, new_score, datetime.now().timestamp())
-    )
-    await db.commit()
+    try:
+        await db.execute(
+            "UPDATE catgirl_mood SET mood = ?, score = ?, last_updated = ? WHERE id = 1",
+            (mood, new_score, datetime.now().timestamp())
+        )
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        raise
     return {"mood": mood, "score": new_score}
 
 
@@ -76,11 +80,15 @@ async def get_bot_mood() -> Dict[str, Any]:
 
         if dt > duration:
             # 已经过了足够久，自动恢复平静
-            await db.execute(
-                "UPDATE bot_mood SET valence=0.0, arousal=0.2, dominant='平静', trigger_reason='自然消退', trigger_time=?, last_updated=? WHERE id=1",
-                (now, now)
-            )
-            await db.commit()
+            try:
+                await db.execute(
+                    "UPDATE bot_mood SET valence=0.0, arousal=0.2, dominant='平静', trigger_reason='自然消退', trigger_time=?, last_updated=? WHERE id=1",
+                    (now, now)
+                )
+                await db.commit()
+            except Exception:
+                await db.rollback()
+                raise
             return {"valence": 0.0, "arousal": 0.2, "dominant": "平静", "trigger_reason": "自然消退", "trigger_time": now, "last_updated": now}
 
     return {
@@ -96,11 +104,15 @@ async def get_bot_mood() -> Dict[str, Any]:
 async def update_bot_mood(valence: float, arousal: float, dominant: str, reason: str = ""):
     db = await get_db()
     now = datetime.now().timestamp()
-    await db.execute(
-        "UPDATE bot_mood SET valence=?, arousal=?, dominant=?, trigger_reason=?, trigger_time=?, last_updated=? WHERE id=1",
-        (valence, arousal, dominant, reason, now, now)
-    )
-    await db.commit()
+    try:
+        await db.execute(
+            "UPDATE bot_mood SET valence=?, arousal=?, dominant=?, trigger_reason=?, trigger_time=?, last_updated=? WHERE id=1",
+            (valence, arousal, dominant, reason, now, now)
+        )
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        raise
 
 
 # ---------- user_mood (VA 情绪模型) ----------
@@ -124,15 +136,19 @@ async def get_user_mood(user_id: str) -> Optional[Dict[str, Any]]:
 async def update_user_mood(user_id: str, valence: float, arousal: float, dominant: str):
     db = await get_db()
     now = datetime.now().timestamp()
-    await db.execute(
-        """INSERT INTO user_mood (user_id, valence, arousal, dominant, last_updated)
-           VALUES (?, ?, ?, ?, ?)
-           ON CONFLICT(user_id) DO UPDATE SET
-           valence = ?, arousal = ?, dominant = ?, last_updated = ?""",
-        (str(user_id), valence, arousal, dominant, now,
-         valence, arousal, dominant, now)
-    )
-    await db.commit()
+    try:
+        await db.execute(
+            """INSERT INTO user_mood (user_id, valence, arousal, dominant, last_updated)
+               VALUES (?, ?, ?, ?, ?)
+               ON CONFLICT(user_id) DO UPDATE SET
+               valence = ?, arousal = ?, dominant = ?, last_updated = ?""",
+            (str(user_id), valence, arousal, dominant, now,
+             valence, arousal, dominant, now)
+        )
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        raise
 
 
 async def decay_user_mood(user_id: str, decay_factor: float = 0.9):
@@ -147,11 +163,15 @@ async def decay_user_mood(user_id: str, decay_factor: float = 0.9):
     new_v = row["valence"] * decay_factor
     new_a = row["arousal"] * decay_factor
     now = datetime.now().timestamp()
-    await db.execute(
-        "UPDATE user_mood SET valence = ?, arousal = ?, last_updated = ? WHERE user_id = ?",
-        (new_v, new_a, now, str(user_id))
-    )
-    await db.commit()
+    try:
+        await db.execute(
+            "UPDATE user_mood SET valence = ?, arousal = ?, last_updated = ? WHERE user_id = ?",
+            (new_v, new_a, now, str(user_id))
+        )
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        raise
 
 
 # ---------- mood_snapshots (情绪快照) ----------
@@ -162,12 +182,16 @@ async def save_mood_snapshot(user_id: str, session_id: str):
         return
     db = await get_db()
     now = time.time()
-    await db.execute(
-        """INSERT INTO mood_snapshots (user_id, session_id, valence, arousal, dominant, snapshot_time)
-           VALUES (?, ?, ?, ?, ?, ?)""",
-        (str(user_id), session_id, mood["valence"], mood["arousal"], mood["dominant"], now)
-    )
-    await db.commit()
+    try:
+        await db.execute(
+            """INSERT INTO mood_snapshots (user_id, session_id, valence, arousal, dominant, snapshot_time)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            (str(user_id), session_id, mood["valence"], mood["arousal"], mood["dominant"], now)
+        )
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        raise
 
 
 async def get_last_mood_snapshot(user_id: str) -> Optional[Dict[str, Any]]:

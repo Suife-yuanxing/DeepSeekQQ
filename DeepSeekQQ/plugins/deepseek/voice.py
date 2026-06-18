@@ -281,7 +281,9 @@ def should_send_voice(user_msg: str, reply_text: str, history: List[Dict[str, An
     multiplier = 1.0
 
     # 好感度修正
-    if affection_score >= 500:
+    from .constants import AFFECTION_CLOSE
+
+    if affection_score >= AFFECTION_CLOSE:
         multiplier *= 3.0   # 命定之人→经常发语音
     elif affection_score >= 200:
         multiplier *= 2.0   # 重要的人→较多语音

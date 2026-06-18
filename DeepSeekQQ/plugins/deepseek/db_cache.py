@@ -21,10 +21,14 @@ async def get_article_cache(url_hash: str) -> Optional[Dict[str, Any]]:
 
 async def save_article_cache(url_hash: str, url: str, title: str, author: str, summary: str):
     db = await get_db()
-    await db.execute(
-        """INSERT OR REPLACE INTO article_cache
-        (url_hash, url, title, author, summary, fetched_at)
-        VALUES (?, ?, ?, ?, ?, ?)""",
-        (url_hash, url, title, author, summary[:2000], datetime.now().timestamp())
-    )
-    await db.commit()
+    try:
+        await db.execute(
+            """INSERT OR REPLACE INTO article_cache
+            (url_hash, url, title, author, summary, fetched_at)
+            VALUES (?, ?, ?, ?, ?, ?)""",
+            (url_hash, url, title, author, summary[:2000], datetime.now().timestamp())
+        )
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        raise

@@ -220,7 +220,7 @@ async def generate_reminder_reply(scene: str, **kwargs) -> str:
                 repeat = "每天" if r["repeat_type"] == "daily" else "每周" if r["repeat_type"] == "weekly" else ""
                 lines.append(f"{i}. {t} {r['content']}{' (' + repeat + ')' if repeat else ''} ID:{r['id']}")
             prompt = (
-                f"用户的提醒列表：\n{'chr(10)'.join(lines)}\n"
+                f"用户的提醒列表：\n{chr(10).join(lines)}\n"
                 "用你的性格开头介绍一下，然后列出清单，最后告诉他可以取消。口语化，不要括号动作。"
             )
         elif scene == "cancel_success":

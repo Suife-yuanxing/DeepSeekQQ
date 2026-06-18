@@ -69,30 +69,38 @@ async def get_top_preferences(user_id: str, pref_type: str, limit: int = 3) -> l
 async def update_user_preference(user_id: str, pref_type: str, pref_key: str, delta: float = 0.1):
     db = await get_db()
     now = datetime.now().timestamp()
-    await db.execute(
-        """INSERT INTO user_preferences (user_id, pref_type, pref_key, pref_value, sample_count, last_updated)
-           VALUES (?, ?, ?, ?, 1, ?)
-           ON CONFLICT(user_id, pref_type, pref_key)
-           DO UPDATE SET pref_value = MIN(1.0, pref_value + ?),
-                         sample_count = sample_count + 1,
-                         last_updated = ?""",
-        (str(user_id), pref_type, pref_key, max(0, delta), now, delta, now)
-    )
-    await db.commit()
+    try:
+        await db.execute(
+            """INSERT INTO user_preferences (user_id, pref_type, pref_key, pref_value, sample_count, last_updated)
+               VALUES (?, ?, ?, ?, 1, ?)
+               ON CONFLICT(user_id, pref_type, pref_key)
+               DO UPDATE SET pref_value = MIN(1.0, pref_value + ?),
+                             sample_count = sample_count + 1,
+                             last_updated = ?""",
+            (str(user_id), pref_type, pref_key, max(0, delta), now, delta, now)
+        )
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        raise
 
 
 async def update_user_preference_raw(user_id: str, pref_type: str, pref_key: str, weight: float = 0.05):
     """内部用：直接更新偏好（供 relationship_style 等调用）。"""
     db = await get_db()
     now = datetime.now().timestamp()
-    await db.execute(
-        """INSERT INTO user_preferences (user_id, pref_type, pref_key, pref_value, sample_count, last_updated)
-           VALUES (?, ?, ?, ?, 1, ?)
-           ON CONFLICT(user_id, pref_type, pref_key)
-           DO UPDATE SET pref_value = pref_value + ?, sample_count = sample_count + 1, last_updated = ?""",
-        (str(user_id), pref_type, pref_key, weight, now, weight, now)
-    )
-    await db.commit()
+    try:
+        await db.execute(
+            """INSERT INTO user_preferences (user_id, pref_type, pref_key, pref_value, sample_count, last_updated)
+               VALUES (?, ?, ?, ?, 1, ?)
+               ON CONFLICT(user_id, pref_type, pref_key)
+               DO UPDATE SET pref_value = pref_value + ?, sample_count = sample_count + 1, last_updated = ?""",
+            (str(user_id), pref_type, pref_key, weight, now, weight, now)
+        )
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        raise
 
 
 # ---------- reply_quality ----------
@@ -100,14 +108,18 @@ async def save_reply_quality(user_id: str, session_id: str, reply_text: str,
                              quality_score: float, feedback_type: str,
                              emotion_at_reply: str = "", params_used: str = "{}"):
     db = await get_db()
-    await db.execute(
-        """INSERT INTO reply_quality
-           (user_id, session_id, reply_text, quality_score, feedback_type, created_at, emotion_at_reply, params_used)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-        (str(user_id), session_id, reply_text[:500], quality_score, feedback_type,
-         datetime.now().timestamp(), emotion_at_reply, params_used)
-    )
-    await db.commit()
+    try:
+        await db.execute(
+            """INSERT INTO reply_quality
+               (user_id, session_id, reply_text, quality_score, feedback_type, created_at, emotion_at_reply, params_used)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            (str(user_id), session_id, reply_text[:500], quality_score, feedback_type,
+             datetime.now().timestamp(), emotion_at_reply, params_used)
+        )
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        raise
 
 
 async def get_quality_stats(user_id: str, days: int = 7) -> Dict[str, Any]:

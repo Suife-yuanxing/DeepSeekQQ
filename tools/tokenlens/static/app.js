@@ -71,6 +71,33 @@ function showToast(msg, isError) {
   toastTimer = setTimeout(function () { el.className = 'toast'; }, 3000);
 }
 
+// ─── M4: 会话详情模态框 ─────────────────────────────
+function showSessionModal(sid, project, models, msgs, tokens, cost) {
+  var overlay = document.getElementById('session-modal');
+  var detail = document.getElementById('modal-detail');
+  detail.innerHTML =
+    '<dt>会话 ID</dt><dd>' + esc(sid) + '</dd>' +
+    '<dt>项目</dt><dd>' + esc(project || '—') + '</dd>' +
+    '<dt>模型</dt><dd>' + esc(models || '—') + '</dd>' +
+    '<dt>消息数</dt><dd>' + fmt(msgs) + '</dd>' +
+    '<dt>Token</dt><dd>' + fmt(tokens) + '</dd>' +
+    '<dt>费用</dt><dd>' + fmtCost(cost) + '</dd>';
+  overlay.classList.add('active');
+  // 点击遮罩关闭
+  overlay.onclick = function(e) { if (e.target === overlay) closeSessionModal(); };
+  // ESC 关闭
+  document.addEventListener('keydown', _onModalEsc);
+}
+
+function closeSessionModal() {
+  document.getElementById('session-modal').classList.remove('active');
+  document.removeEventListener('keydown', _onModalEsc);
+}
+
+function _onModalEsc(e) {
+  if (e.key === 'Escape') closeSessionModal();
+}
+
 // ─── Chart.js 可用性检查 ───────────────────────────
 function hasChartJS() {
   return typeof Chart !== 'undefined';
@@ -478,7 +505,7 @@ function renderSessionsTable(data) {
       '<td class="num-cell">' + fmt(s.msg_count || 0) + '</td>' +
       '<td class="num-cell" title="' + (s.tokens || 0).toLocaleString() + '">' + bar(s.tokens, maxTokens, 'var(--tl-accent)') + fmt(s.tokens) + '</td>' +
       '<td class="num-cell" title="\xA5' + (s.cost || 0).toFixed(4) + '">' + bar(s.cost, maxCost, '#d29922') + fmtCost(s.cost) + '</td>' +
-      '<td><a href="#" onclick="alert(\'Session: ' + esc(s.short_id) + '\\nProject: ' + esc(s.project) + '\\nModels: ' + esc((s.models_used || []).join(', ')) + '\\nMessages: ' + (s.msg_count || 0) + '\\nTokens: ' + fmt(s.tokens) + '\\nCost: ' + fmtCost(s.cost) + '\');return false;" title="详情">📋</a></td>' +
+      '<td><a href="#" onclick="showSessionModal(\'' + esc(s.short_id) + '\',\'' + esc(s.project) + '\',\'' + esc((s.models_used || []).join(', ')) + '\',' + (s.msg_count || 0) + ',' + (s.tokens || 0) + ',' + (s.cost || 0) + ');return false;" title="详情">📋</a></td>' +
       '</tr>';
   }).join('');
 }

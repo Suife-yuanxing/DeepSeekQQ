@@ -11,6 +11,7 @@ import json
 import math
 import re
 import time
+from datetime import datetime
 from dataclasses import dataclass
 from dataclasses import field
 from typing import Any
@@ -21,12 +22,22 @@ from typing import Optional
 from nonebot import logger
 
 from . import api
+from .constants import EMOTION_INERTIA
 from .database import decay_user_mood
 from .database import get_bot_mood
 from .database import get_catgirl_mood
+from .database import get_db
 from .database import get_user_mood
 from .database import update_bot_mood
 from .database import update_user_mood
+from .db_affection import get_affection
+from .emotion_classifier import apply_emotional_contagion_with_buffer
+from .emotion_classifier import quick_emotion_check
+from .emotion_deep import apply_emotional_contagion
+from .emotion_deep import get_gradual_recovery
+from .emotion_deep import maybe_trigger_mood_swing
+from .utils import clean_json_text
+from .utils import safe_task
 
 # ============================================================
 # 数据结构
@@ -96,9 +107,6 @@ COMPOUND_EMOTION_BLENDS = {
     "担心又无奈": (-0.35, 0.35, "担心但又没办法"),
 }
 
-# 情绪惯性系数：保留旧情绪的比例
-EMOTION_INERTIA = 0.65
-
 # 情绪衰减配置
 DECAY_HALF_LIFE_SECONDS = 1800  # 30分钟半衰期（激动情绪衰减到一半）
 
@@ -108,7 +116,6 @@ def apply_environmental_modifiers(emotion: 'EmotionState') -> 'EmotionState':
 
     修正量很小（±0.05），不影响主要情绪，只是增加真实感。
     """
-    from datetime import datetime
     hour = datetime.now().hour
     weekday = datetime.now().weekday()
 
@@ -199,7 +206,6 @@ def _build_analysis_prompt(user_msg: str, history: List[Dict[str, Any]], shares:
 def _parse_analysis_response(raw: str) -> Optional[dict]:
     """解析LLM返回的JSON"""
     # 去除 markdown 代码块
-    from .utils import clean_json_text
     clean = clean_json_text(raw)
     # 尝试提取 JSON 对象
     match = re.search(r'\{[\s\S]*\}', clean)
@@ -238,7 +244,6 @@ async def analyze_context_and_emotion(
 
     # 快速规则预检（<1ms，补充 VA 模型）
     try:
-        from .emotion_classifier import quick_emotion_check
         quick_label, quick_conf = quick_emotion_check(user_msg)
         if quick_label and quick_conf >= 0.6:
             logger.debug(f"[情绪] 快速规则命中: {quick_label} conf={quick_conf:.2f}")
@@ -320,7 +325,6 @@ async def analyze_context_and_emotion(
         await update_user_mood(user_id, final_valence, final_arousal, emo_type)
 
         # Phase 3：异步记录情绪日志
-        from .utils import safe_task
         safe_task(_log_emotion(user_id, "private_" + user_id, emo_type, final_valence, final_arousal, user_msg))
 
         logger.info(
@@ -345,7 +349,6 @@ async def _log_emotion(user_id: str, session_id: str, emotion_label: str,
                        valence: float, arousal: float, trigger_text: str):
     """异步记录情绪快照到 emotion_log 表（Phase 3）。"""
     try:
-        from .database import get_db
         db = await get_db()
         await db.execute(
             """INSERT INTO emotion_log (user_id, session_id, emotion_label, valence, arousal, trigger_text, cause_chain, timestamp)
@@ -360,7 +363,6 @@ async def _log_emotion(user_id: str, session_id: str, emotion_label: str,
 async def get_emotion_cause_chain(user_id: str, lookback: int = 10) -> str:
     """查询最近 N 条情绪日志，生成简单因果链（Phase 3）。"""
     try:
-        from .database import get_db
         db = await get_db()
         async with db.execute(
             """SELECT emotion_label, trigger_text, timestamp FROM emotion_log
@@ -591,7 +593,6 @@ async def update_bot_emotion(user_msg: str, user_emotion: EmotionState, user_id:
     # 没有触发新情绪，返回当前状态（衰减后的）
     if old_mood["dominant"] != "平静":
         # 渐进恢复：检查是否处于恢复阶段
-        from .emotion_deep import get_gradual_recovery
         recovery = get_gradual_recovery(old_mood["dominant"], old_mood.get("trigger_time", now), duration)
         if recovery:
             # 处于恢复阶段，返回恢复提示
@@ -621,12 +622,10 @@ async def update_bot_emotion(user_msg: str, user_emotion: EmotionState, user_id:
         return result
 
     # 平静状态：检查随机波动 + 情绪传染
-    from .emotion_deep import maybe_trigger_mood_swing
     # B4 fix: 查询真实好感度，而非硬编码 0（修复高好感 mood 永不触发的问题）
     real_affection = 0
     if user_id:
         try:
-            from .db_affection import get_affection
             aff_data = await get_affection(str(user_id))
             real_affection = aff_data.get("score", 0)
         except Exception:
@@ -652,7 +651,6 @@ async def _try_apply_contagion(result: dict, user_emotion: EmotionState, old_moo
     # 有 user_id 时使用带缓冲的传染（需要连续 N 条同向情绪才触发）
     if user_id:
         try:
-            from .emotion_classifier import apply_emotional_contagion_with_buffer
             user_label = user_emotion.dominant
             bot_mood_dict = {
                 "valence": old_mood.get("valence", 0),
@@ -662,7 +660,6 @@ async def _try_apply_contagion(result: dict, user_emotion: EmotionState, old_moo
             # 查询真实好感度（而非从 bot_mood 取不存在的 affection 键）
             real_affection = 0
             try:
-                from .db_affection import get_affection
                 aff_data = await get_affection(str(user_id))
                 real_affection = aff_data.get("score", 0)
             except Exception:
@@ -678,7 +675,6 @@ async def _try_apply_contagion(result: dict, user_emotion: EmotionState, old_moo
             pass  # fallback 到直接传染
 
     # 直接传染（无 user_id 或缓冲失败时的回退行为）
-    from .emotion_deep import apply_emotional_contagion
     contagion = apply_emotional_contagion(
         user_emotion.valence, user_emotion.arousal,
         old_mood.get("valence", 0), old_mood.get("arousal", 0.2),

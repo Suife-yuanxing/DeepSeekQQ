@@ -23,13 +23,13 @@ nohup python bot.py &
 ## 测试
 
 ```bash
-python -m pytest tests/ -v    # 739 个测试，应全部通过
+python -m pytest tests/ -v    # 858 个测试，应全部通过
 ```
 
 ## 架构要点
 
 - **Pipeline 架构**: handler.py 定义 22 个有序阶段，每阶段可短路（返回 `_SKIP`）
-- **API 二层降级**: DeepSeek 远程 → 友好错误提示（Ollama 本地降级待实现）
+- **API 二层降级**: DeepSeek 远程 → Ollama 本地模型（含熔断器保护，local_llm.py）
 - **记忆系统**: 置信度评分（0.5起步，引用+0.1，每日-0.02），低于 0.15 自动清理
 - **情绪引擎**: VA 模型（效价+唤醒度），情绪惯性系数 0.65
 

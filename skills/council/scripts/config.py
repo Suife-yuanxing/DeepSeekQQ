@@ -70,6 +70,48 @@ def _load_dotenv(filepath: Path):
                     os.environ[key] = value
 
 
+def _validate_models_json(data: dict) -> list[str]:
+    """验证 models.json 结构完整性，返回错误列表（空列表 = 通过）。"""
+    errors = []
+
+    if not isinstance(data, dict):
+        return ["models.json 必须是 JSON 对象"]
+
+    # 检查 supported_models
+    supported = data.get("supported_models")
+    if not isinstance(supported, list) or len(supported) == 0:
+        errors.append("缺少 'supported_models' 数组或为空")
+
+    # 检查 model_registry
+    registry = data.get("model_registry")
+    if not isinstance(registry, dict):
+        errors.append("缺少 'model_registry' 对象")
+    else:
+        for key, cfg in registry.items():
+            if not isinstance(cfg, dict):
+                errors.append(f"model_registry.{key} 必须是对象")
+                continue
+            # 必需字段
+            for field in ("persona", "prefix", "api_key_env", "default_base_url", "default_model"):
+                if not cfg.get(field):
+                    errors.append(f"model_registry.{key} 缺少 '{field}'")
+
+    # 检查 judge_fallback_chain
+    chain = data.get("judge_fallback_chain")
+    if not isinstance(chain, list):
+        errors.append("缺少 'judge_fallback_chain' 数组")
+    else:
+        for i, fb in enumerate(chain):
+            if not isinstance(fb, dict):
+                errors.append(f"judge_fallback_chain[{i}] 必须是对象")
+                continue
+            for field in ("model", "api_key_env", "auth_header", "default_base_url"):
+                if not fb.get(field):
+                    errors.append(f"judge_fallback_chain[{i}] 缺少 '{field}'")
+
+    return errors
+
+
 def _load_models_json() -> dict:
     """加载 models.json，文件不存在时返回内置默认值。"""
     from utils import log_progress
@@ -77,7 +119,16 @@ def _load_models_json() -> dict:
     if models_path.exists():
         try:
             with open(models_path, encoding="utf-8") as f:
-                return json.load(f)
+                data = json.load(f)
+            # L7: 结构验证
+            validation_errors = _validate_models_json(data)
+            if validation_errors:
+                log_progress(f"models.json 结构验证失败 ({len(validation_errors)} 项):", "error")
+                for err in validation_errors:
+                    log_progress(f"  - {err}", "error")
+            else:
+                log_progress("models.json 结构验证通过", "info")
+            return data
         except (json.JSONDecodeError, OSError) as e:
             log_progress(f"models.json 解析失败，使用内置默认值: {e}", "error")
     # 内置默认值

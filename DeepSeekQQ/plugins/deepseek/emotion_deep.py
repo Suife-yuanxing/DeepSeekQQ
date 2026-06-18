@@ -143,8 +143,10 @@ def get_emotion_expression(emotion: str, affection: float) -> str:
         # 默认表达
         return _EMOTION_EXPRESSION_MAP.get(emotion, "正常语气")
 
+    from .constants import AFFECTION_WARM
+
     # 好感度影响：高好感度更直接，低好感度更含蓄
-    if affection > 150:
+    if affection >= AFFECTION_WARM:
         # 偏好直接表达
         direct_variants = [v for v in variants if '直接' in v or '撒娇' in v]
         if direct_variants:
@@ -163,8 +165,7 @@ def get_emotion_expression(emotion: str, affection: float) -> str:
 # 情绪传染 — 用户情绪影响 bot 情绪
 # ============================================================
 
-# 传染基础系数
-_CONTAGION_BASE = 0.15
+from .constants import EMOTION_CONTAGION_BASE as _CONTAGION_BASE
 
 # 好感度到传染系数的映射
 _AFFECTION_CONTAGION_MAP = [

@@ -66,6 +66,10 @@ class TestSharedMemories:
                 "test_user", "first_chat", "我们第一次聊天很开心", "开心"
             )
             assert db.execute.call_count >= 1
+            # 验证 SQL 包含 INSERT 或 UPDATE（确认调用了写操作）
+            first_call_sql = str(db.execute.call_args_list[0])
+            assert "INSERT" in first_call_sql or "UPDATE" in first_call_sql or "first_chat" in first_call_sql, \
+                f"期望 INSERT/UPDATE 但得到: {first_call_sql[:200]}"
             assert db.commit.called
 
     @pytest.mark.asyncio
@@ -79,8 +83,11 @@ class TestSharedMemories:
             await save_shared_memory(
                 "test_user", "first_chat", "我们第一次聊天很开心"
             )
-            # 应该执行了至少一次 SQL
+            # 应该执行了至少一次 SQL，且包含写操作
             assert db.execute.call_count >= 1
+            first_call_sql = str(db.execute.call_args_list[0])
+            assert "INSERT" in first_call_sql or "UPDATE" in first_call_sql or "SELECT" in first_call_sql, \
+                f"期望有效 SQL 但得到: {first_call_sql[:200]}"
 
     @pytest.mark.asyncio
     async def test_get_recall_candidates_empty(self, mock_db):
@@ -134,6 +141,9 @@ class TestPrivateMemes:
                 origin_context="以后叫你小喵喵", trigger_keywords="小喵喵"
             )
             assert db.execute.call_count >= 1
+            first_call_sql = str(db.execute.call_args_list[0])
+            assert "INSERT" in first_call_sql or "UPDATE" in first_call_sql or "nickname" in first_call_sql, \
+                f"期望 INSERT/UPDATE 但得到: {first_call_sql[:200]}"
             assert db.commit.called
 
     @pytest.mark.asyncio
@@ -189,6 +199,9 @@ class TestImportantDates:
                 "test_user", "birthday", "03-15", "生日 03-15"
             )
             assert db.execute.call_count >= 1
+            first_call_sql = str(db.execute.call_args_list[0])
+            assert "INSERT" in first_call_sql or "birthday" in first_call_sql or "03-15" in first_call_sql, \
+                f"期望 INSERT 包含日期数据但得到: {first_call_sql[:200]}"
             assert db.commit.called
 
     @pytest.mark.asyncio

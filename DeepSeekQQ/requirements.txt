@@ -43,7 +43,7 @@ pydantic_core==2.46.4
 Pygments==2.20.0
 pygtrie==2.5.0
 pytest==9.0.3
-pytest-asyncio==1.4.0
+pytest-asyncio>=0.24.0
 python-dotenv==1.2.2
 pyttsx3==2.99
 pytz==2026.2

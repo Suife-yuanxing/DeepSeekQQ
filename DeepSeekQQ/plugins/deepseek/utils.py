@@ -12,28 +12,9 @@ from typing import Tuple
 
 from nonebot import logger
 
-# 后台任务引用集合，防止 GC 回收未完成的 task
-_background_tasks: set = set()
-
-
-def safe_task(coro) -> asyncio.Task:
-    """安全创建后台任务：保存引用 + 捕获异常。
-
-    替代 asyncio.create_task，避免：
-    1. task 被 GC 回收导致 "Task was destroyed but it is pending" 警告
-    2. task 内部异常被静默丢弃
-    """
-    task = asyncio.create_task(coro)
-    _background_tasks.add(task)
-    task.add_done_callback(_on_task_done)
-    return task
-
-
-def _on_task_done(task: asyncio.Task):
-    """task 完成回调：从引用集合移除 + 记录异常。"""
-    _background_tasks.discard(task)
-    if task.exception():
-        logger.warning(f"[后台任务] {task.get_name()} 失败: {task.exception()}")
+# 后台任务 — 向后兼容重导出
+from .error_reporter import safe_task, pending_count  # noqa: F401
+_background_tasks = set()  # 已迁移到 error_reporter，保留变量名兼容旧代码引用
 
 
 def clean_json_text(raw: str) -> str:

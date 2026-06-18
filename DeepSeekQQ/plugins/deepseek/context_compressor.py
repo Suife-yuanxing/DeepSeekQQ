@@ -28,24 +28,7 @@ COMPRESS_RATIO = 0.2
 CIRCUIT_BREAKER_MAX_FAILURES = 3
 
 
-# 改进的中文 token 估算（B21: 覆盖广义 CJK，汉字 ~0.7 字/token）
-def estimate_tokens(text: str) -> int:
-    """估算文本的 token 数。CJK 约 0.7 字符/token，英文约 4 字符/token。"""
-    cjk = 0
-    latin = 0
-    other = 0
-    for ch in text:
-        cp = ord(ch)
-        if (0x4E00 <= cp <= 0x9FFF or 0x3400 <= cp <= 0x4DBF or
-            0x20000 <= cp <= 0x2A6DF or 0xF900 <= cp <= 0xFAFF or
-            0x3040 <= cp <= 0x30FF or 0xAC00 <= cp <= 0xD7AF or
-            0x3100 <= cp <= 0x312F or 0x31A0 <= cp <= 0x31BF):
-            cjk += 1
-        elif ch.isascii() and (ch.isalpha() or ch.isdigit()):
-            latin += 1
-        else:
-            other += 1
-    return max(1, int(cjk / 0.7 + latin / 4 + other / 6))
+from .token_utils import estimate_tokens
 
 
 def estimate_messages_tokens(messages: List[Dict[str, str]]) -> int:
@@ -159,7 +142,7 @@ compressor = ContextCompressor()
 async def compress_context(
     session_id: str,
     messages: List[Dict[str, str]],
-    api_call_fn,
+    api_call_fn=None,
 ) -> Tuple[List[Dict[str, str]], bool]:
     """压缩对话上下文。
 
@@ -168,7 +151,8 @@ async def compress_context(
     Args:
         session_id: 会话 ID
         messages: 原始消息列表 [{"role": ..., "content": ...}, ...]
-        api_call_fn: LLM API 调用函数 async fn(messages, temperature, task_type) -> str
+        api_call_fn: LLM API 调用函数，若为 None 则使用默认 api.call_deepseek_api。
+                     可注入 mock 用于测试。
     """
     if not compressor.needs_compression(messages):
         return messages, False
@@ -217,8 +201,10 @@ async def compress_context(
             {"role": "user", "content": compress_prompt},
         ]
 
-        from . import api
-        summary = await api.call_deepseek_api(
+        if api_call_fn is None:
+            from . import api
+            api_call_fn = api.call_deepseek_api
+        summary = await api_call_fn(
             compress_messages,
             temperature=0.3,
             task_type="compress",

@@ -5,6 +5,7 @@
 
 import json
 import os
+import random
 import re
 import sys
 import time
@@ -325,6 +326,53 @@ def _parse_issue_block(block: str) -> dict:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# 速率限制（自适应退避）
+# ═══════════════════════════════════════════════════════════════════════════════════
+
+# 模型 RPM 限制（保守估计，避免触发 API 限流）
+_MODEL_RPM_LIMITS: dict[str, float] = {
+    # 按 base_url 域名后缀匹配；未匹配到的默认 30 RPM
+    "deepseek.com": 60,
+    "moonshot.cn": 30,
+    "xiaomimimo.com": 30,
+    "minimaxi.com": 30,
+    "bigmodel.cn": 30,
+}
+_DEFAULT_RPM = 30
+
+# 每个 base_url 的最后调用时间戳（线程安全由 GIL 保障）
+_last_call_time: dict[str, float] = {}
+
+
+def _extract_domain(base_url: str) -> str:
+    """从 base_url 提取域名用于速率限制键。"""
+    for domain in _MODEL_RPM_LIMITS:
+        if domain in base_url:
+            return domain
+    return base_url  # fallback: use full URL as key
+
+
+def _get_min_interval(base_url: str) -> float:
+    """获取两次调用之间的最小间隔（秒）。"""
+    domain = _extract_domain(base_url)
+    rpm = _MODEL_RPM_LIMITS.get(domain, _DEFAULT_RPM)
+    return 60.0 / rpm
+
+
+def _wait_for_rate_limit(base_url: str, model_name: str = ""):
+    """如果需要，在调用前等待以满足速率限制。"""
+    interval = _get_min_interval(base_url)
+    domain = _extract_domain(base_url)
+    now = time.time()
+    last = _last_call_time.get(domain, 0)
+    wait = interval - (now - last)
+    if wait > 0:
+        log_progress(f"  {model_name or domain}: 速率限制等待 {wait:.1f}s", "info")
+        time.sleep(wait)
+    _last_call_time[domain] = time.time()
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # API 调用
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -361,6 +409,10 @@ def call_model(model_config: dict, messages: list[dict],
 
     for attempt in range(max_retries + 1):
         try:
+            # 速率限制：调用前等待
+            if attempt == 0:
+                _wait_for_rate_limit(base_url, model)
+
             t0 = time.time()
 
             if HAS_HTTPX:
@@ -415,9 +467,19 @@ def call_model(model_config: dict, messages: list[dict],
                     error_detail = e.read().decode()[:300]
             except Exception:
                 pass
+
+            # 检测速率限制错误 (HTTP 429)
+            is_rate_limit = "429" in error_detail or "rate" in error_detail.lower()
+
             if attempt < max_retries:
-                log_progress(f"{model}: 重试 {attempt + 1}/{max_retries}（{error_detail}）", "info")
-                time.sleep(2)
+                # 自适应退避：指数增长 + 随机抖动（±25%）
+                base_delay = 2 ** (attempt + 1)  # 2s, 4s, 8s...
+                if is_rate_limit:
+                    base_delay = 5 * (2 ** attempt)  # 5s, 10s, 20s...（限流更严重）
+                jitter = base_delay * 0.25 * (2 * random.random() - 1)
+                delay = base_delay + jitter
+                log_progress(f"{model}: 重试 {attempt + 1}/{max_retries}（{error_detail}，等待 {delay:.1f}s）", "info")
+                time.sleep(delay)
                 continue
             return {
                 "status": "error",

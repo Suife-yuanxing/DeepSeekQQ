@@ -1,12 +1,17 @@
-"""群聊热度状态机 — 智能判断Bot是否应该插话分享feed内容。
+"""私聊热度引擎 — 用半衰期公式计算私聊对话节奏。
+
+与 group_heat.py 的分工：
+  - private_heat.py（本文件）：私聊场景，5 状态枚举（IDLE/COLD/WARM/ACTIVE/FLOOD），关注刷屏检测
+  - group_heat.py：群聊场景，3 状态类（ACTIVE/IDLE/COOLDOWN），关注群参与度
+
+两者状态模型本质不同（私聊关注刷屏检测，群聊关注参与度），不合并。
 
 核心借鉴: nonebot-plugin-wtfllm 的 Heat State Machine
 
 原理：
-- 用半衰期公式计算群聊活跃度
+- 用半衰期公式计算对话活跃度
 - 状态流转: IDLE → COLD → WARM → ACTIVE → FLOOD
 - 不同状态下Bot插话分享feed的概率不同
-- 私聊场景也有简化版热度判断（对话节奏）
 """
 import time
 from collections import defaultdict

@@ -745,7 +745,9 @@ def build_state_hints(
     hints = []
 
     # 好感度
-    if affection["score"] >= 500:
+    from .constants import AFFECTION_CLOSE
+
+    if affection["score"] >= AFFECTION_CLOSE:
         hints.append("你和他很亲密，会撒娇会任性，会主动撩他说骚话，大胆又暧昧")
     elif affection["score"] >= 200:
         hints.append("你对他有好感，会撒娇要抱抱，偶尔说让人脸红的话")

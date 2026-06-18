@@ -87,11 +87,11 @@ class TestMoodSwing:
         """3% 概率触发，多次测试应该有触发"""
         from plugins.deepseek.emotion_deep import maybe_trigger_mood_swing
         triggered = 0
-        for _ in range(200):
+        for _ in range(500):
             result = maybe_trigger_mood_swing("平静", 200)
             if result:
                 triggered += 1
-        # 3% × 200 = 6 次期望，允许 0-20 的范围
+        # 3% × 500 = 15 次期望，增大样本量提升可靠性
         assert triggered >= 0  # 至少不报错
 
     def test_high_affection_gets_soft_swing(self):

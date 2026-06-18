@@ -27,11 +27,15 @@ async def get_today_proactive_count(user_id: str, today: str = "") -> int:
 
 async def log_proactive(user_id: str, msg_type: str, content: str, scene: str = ""):
     db = await get_db()
-    await db.execute(
-        "INSERT INTO proactive_log (user_id, type, content, timestamp, scene) VALUES (?, ?, ?, ?, ?)",
-        (user_id, msg_type, content[:200], datetime.now().timestamp(), scene)
-    )
-    await db.commit()
+    try:
+        await db.execute(
+            "INSERT INTO proactive_log (user_id, type, content, timestamp, scene) VALUES (?, ?, ?, ?, ?)",
+            (user_id, msg_type, content[:200], datetime.now().timestamp(), scene)
+        )
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        raise
 
 
 async def get_recent_greetings(scene: str, limit: int = 10) -> List[str]:
@@ -71,13 +75,15 @@ async def get_today_proactive_count_by_scene(user_id: str, scene: str, today: st
         return row["cnt"] if row else 0
 
 
-async def get_silent_private_users(threshold: float) -> List[str]:
+async def get_silent_private_users(threshold: float, limit: int = 500) -> List[str]:
     db = await get_db()
     async with db.execute(
         """SELECT session_id, MAX(timestamp) as last_time
            FROM memories WHERE session_id LIKE 'private_%' AND archived = 0
-           GROUP BY session_id HAVING last_time < ?""",
-        (threshold,)
+           GROUP BY session_id HAVING last_time < ?
+           ORDER BY last_time ASC
+           LIMIT ?""",
+        (threshold, limit)
     ) as cursor:
         rows = await cursor.fetchall()
         return [r["session_id"].replace("private_", "") for r in rows]

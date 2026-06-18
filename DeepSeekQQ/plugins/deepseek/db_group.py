@@ -71,13 +71,17 @@ async def get_or_create_member(group_id: str, member_id: str, nickname: str = ""
         }
 
     # 创建新记录
-    await db.execute(
-        """INSERT INTO group_members (group_id, member_id, nickname, last_active, relationship)
-           VALUES (?, ?, ?, ?, 'stranger')
-           ON CONFLICT(group_id, member_id) DO UPDATE SET last_active = ?""",
-        (str(group_id), str(member_id), nickname, now, now)
-    )
-    await db.commit()
+    try:
+        await db.execute(
+            """INSERT INTO group_members (group_id, member_id, nickname, last_active, relationship)
+               VALUES (?, ?, ?, ?, 'stranger')
+               ON CONFLICT(group_id, member_id) DO UPDATE SET last_active = ?""",
+            (str(group_id), str(member_id), nickname, now, now)
+        )
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        raise
 
     return {
         "nickname": nickname,
@@ -92,21 +96,29 @@ async def update_member_activity(group_id: str, member_id: str):
     """更新成员最后活跃时间。"""
     db = await get_db()
     now = time.time()
-    await db.execute(
-        """UPDATE group_members SET last_active = ? WHERE group_id = ? AND member_id = ?""",
-        (now, str(group_id), str(member_id))
-    )
-    await db.commit()
+    try:
+        await db.execute(
+            """UPDATE group_members SET last_active = ? WHERE group_id = ? AND member_id = ?""",
+            (now, str(group_id), str(member_id))
+        )
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        raise
 
 
 async def update_member_nickname(group_id: str, member_id: str, nickname: str):
     """更新成员昵称。"""
     db = await get_db()
-    await db.execute(
-        """UPDATE group_members SET nickname = ? WHERE group_id = ? AND member_id = ?""",
-        (nickname, str(group_id), str(member_id))
-    )
-    await db.commit()
+    try:
+        await db.execute(
+            """UPDATE group_members SET nickname = ? WHERE group_id = ? AND member_id = ?""",
+            (nickname, str(group_id), str(member_id))
+        )
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        raise
 
 
 async def add_personality_tag(group_id: str, member_id: str, tag: str):
@@ -124,11 +136,15 @@ async def add_personality_tag(group_id: str, member_id: str, tag: str):
     tags = json.loads(row["personality_tags"]) if row["personality_tags"] else []
     if tag not in tags:
         tags.append(tag)
-        await db.execute(
-            """UPDATE group_members SET personality_tags = ? WHERE group_id = ? AND member_id = ?""",
-            (json.dumps(tags), str(group_id), str(member_id))
-        )
-        await db.commit()
+        try:
+            await db.execute(
+                """UPDATE group_members SET personality_tags = ? WHERE group_id = ? AND member_id = ?""",
+                (json.dumps(tags), str(group_id), str(member_id))
+            )
+            await db.commit()
+        except Exception:
+            await db.rollback()
+            raise
 
 
 async def get_active_members(group_id: str, hours: float = 24) -> List[Dict[str, Any]]:

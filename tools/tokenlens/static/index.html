@@ -225,6 +225,30 @@
 
   /* ─── 粘性表头 ─── */
   .table-wrap thead { position:sticky; top:0; z-index:2; background:var(--pico-card-background-color); }
+
+  /* ─── M4: 会话详情模态框 ─── */
+  .modal-overlay {
+    display:none; position:fixed; inset:0; z-index:1000;
+    background:rgba(0,0,0,0.6); align-items:center; justify-content:center;
+    backdrop-filter:blur(2px);
+  }
+  .modal-overlay.active { display:flex; }
+  .modal-dialog {
+    background:var(--pico-card-background-color); border:1px solid var(--pico-muted-border-color);
+    border-radius:0.75rem; padding:1.5rem; max-width:480px; width:90%;
+    box-shadow:0 8px 32px rgba(0,0,0,0.5); animation:modal-in 0.2s ease;
+  }
+  @keyframes modal-in { from { opacity:0; transform:scale(0.95) translateY(-8px); } to { opacity:1; transform:scale(1) translateY(0); } }
+  .modal-dialog h4 { margin:0 0 1rem 0; font-size:1rem; }
+  .modal-dialog .detail-grid { display:grid; grid-template-columns:auto 1fr; gap:0.5rem 0.75rem; font-size:0.85rem; }
+  .modal-dialog .detail-grid dt { color:var(--pico-muted-color); white-space:nowrap; }
+  .modal-dialog .detail-grid dd { margin:0; word-break:break-all; }
+  .modal-dialog .modal-close {
+    display:block; margin:1rem auto 0; padding:0.5rem 1.5rem;
+    background:var(--tl-accent, var(--pico-primary-background)); color:#fff;
+    border:none; border-radius:0.375rem; cursor:pointer; font-size:0.85rem;
+  }
+  .modal-dialog .modal-close:hover { opacity:0.85; }
 </style>
 </head>
 <body>
@@ -404,11 +428,21 @@
 
 </div>
 
+<!-- M4: 会话详情模态框 -->
+<div class="modal-overlay" id="session-modal">
+  <div class="modal-dialog" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+    <h4 id="modal-title">📋 会话详情</h4>
+    <dl class="detail-grid" id="modal-detail"></dl>
+    <button class="modal-close" onclick="closeSessionModal()">关闭</button>
+  </div>
+</div>
+
 <!-- Toast -->
 <div class="toast" id="toast"></div>
 
+<!-- M3: Chart.js CDN 主源 + 自动回退到 unpkg -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js"
-  onerror="document.getElementById('chart-trend-error').style.display='flex';document.getElementById('chart-trend-error').textContent='Chart.js 加载失败，请检查网络';"></script>
+  onerror="var s=document.createElement('script');s.src='https://unpkg.com/chart.js@4.4.8/dist/chart.umd.min.js';s.onerror=function(){var e=document.getElementById('chart-trend-error');if(e){e.style.display='flex';e.textContent='Chart.js 加载失败（已尝试 jsdelivr + unpkg），请检查网络';}};document.head.appendChild(s);this.onerror=null;"></script>
 <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
 <script src="/static/app.js?v=2"></script>
 </body>

@@ -96,7 +96,9 @@ async def evolve_opinion(
 
     条件：affection >= 500 且 该话题已被讨论过 >= 3次
     """
-    if affection_score < 500:
+    from .constants import AFFECTION_CLOSE
+
+    if affection_score < AFFECTION_CLOSE:
         return False
 
     try:

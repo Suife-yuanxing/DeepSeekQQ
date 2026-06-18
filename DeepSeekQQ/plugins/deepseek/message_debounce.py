@@ -104,14 +104,16 @@ class MessageDebouncer:
         except asyncio.CancelledError:
             return  # 被新消息取消，不处理
 
+        # 仅持锁执行 pop 操作，避免长时间阻塞其他消息
         async with self._lock:
             session = self._sessions.pop(session_key, None)
-            if not session or not session.messages:
-                return
+        # 锁在此处释放，后续 handler 调用不持锁
+        if not session or not session.messages:
+            return
 
-            messages = session.messages
+        messages = session.messages
 
-        # 合并消息处理
+        # 合并消息处理（不持锁，避免长耗时 handler 阻塞新消息入队）
         try:
             if len(messages) == 1:
                 # 单条消息，直接处理

@@ -65,22 +65,30 @@ async def record_relationship(
         new_count = existing["interaction_count"] + 1
         # 关系升级：互动多了可能从 stranger → friend → close
         new_type = _maybe_upgrade_rel(existing["rel_type"], new_count)
-        await db.execute(
-            """UPDATE group_social_graph
-               SET strength = ?, interaction_count = ?, rel_type = ?,
-                   last_interaction = ?, evidence = ?
-               WHERE id = ?""",
-            (new_strength, new_count, new_type, now, evidence[:200] or existing["evidence"], existing["id"])
-        )
+        try:
+            await db.execute(
+                """UPDATE group_social_graph
+                   SET strength = ?, interaction_count = ?, rel_type = ?,
+                       last_interaction = ?, evidence = ?
+                   WHERE id = ?""",
+                (new_strength, new_count, new_type, now, evidence[:200] or existing["evidence"], existing["id"])
+            )
+        except Exception:
+            await db.rollback()
+            raise
     else:
-        await db.execute(
-            """INSERT INTO group_social_graph
-               (group_id, member_a, member_b, rel_type, strength, evidence,
-                interaction_count, created_at, last_interaction)
-               VALUES (?, ?, ?, ?, 0.1, ?, 1, ?, ?)""",
-            (str(group_id), str(member_a), str(member_b), rel_type,
-             evidence[:200], now, now)
-        )
+        try:
+            await db.execute(
+                """INSERT INTO group_social_graph
+                   (group_id, member_a, member_b, rel_type, strength, evidence,
+                    interaction_count, created_at, last_interaction)
+                   VALUES (?, ?, ?, ?, 0.1, ?, 1, ?, ?)""",
+                (str(group_id), str(member_a), str(member_b), rel_type,
+                 evidence[:200], now, now)
+            )
+        except Exception:
+            await db.rollback()
+            raise
     await db.commit()
     logger.debug(f"[社交] 记录关系: {member_a[:6]}-{member_b[:6]} = {rel_type}")
 
@@ -165,16 +173,22 @@ async def get_group_relationships_summary(group_id: str) -> str:
     return "群内关系：" + "；".join(rels)
 
 
-async def decay_relationships(inactive_days: int = 30, decay_amount: float = 0.02):
+from .constants import MEMORY_DECAY_PER_DAY
+
+async def decay_relationships(inactive_days: int = 30, decay_amount: float = MEMORY_DECAY_PER_DAY):
     """对长期不活跃的关系做衰减。"""
     db = await get_db()
     cutoff = time.time() - inactive_days * 86400
-    await db.execute(
-        """UPDATE group_social_graph SET strength = MAX(0.05, strength - ?)
-           WHERE last_interaction < ? AND strength > 0.05""",
-        (decay_amount, cutoff)
-    )
-    await db.commit()
+    try:
+        await db.execute(
+            """UPDATE group_social_graph SET strength = MAX(0.05, strength - ?)
+               WHERE last_interaction < ? AND strength > 0.05""",
+            (decay_amount, cutoff)
+        )
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        raise
 
 
 # ============================================================
@@ -209,6 +223,7 @@ async def save_group_meme(
         await db.commit()
         logger.info(f"[群聊梗] 保存: group={group_id[:6]} type={meme_type} content={content[:20]}")
     except Exception as e:
+        await db.rollback()
         logger.debug(f"[群聊梗] 保存失败: {e}")
 
 
@@ -253,11 +268,15 @@ async def find_matching_group_meme(group_id: str, current_msg: str) -> Optional[
         if row["last_used"] and (now - row["last_used"]) < 3600:
             continue
         if random.random() < row["frequency"]:
-            await db.execute(
-                "UPDATE group_memes SET usage_count = usage_count + 1, last_used = ? WHERE id = ?",
-                (now, row["id"])
-            )
-            await db.commit()
+            try:
+                await db.execute(
+                    "UPDATE group_memes SET usage_count = usage_count + 1, last_used = ? WHERE id = ?",
+                    (now, row["id"])
+                )
+                await db.commit()
+            except Exception:
+                await db.rollback()
+                raise
             return dict(row)
 
     return None
@@ -310,6 +329,7 @@ async def record_social_reference(
         await db.commit()
         logger.debug(f"[社交记忆] 记录: user={user_id[:6]} person={person_name} rel={relationship}")
     except Exception as e:
+        await db.rollback()
         logger.debug(f"[社交记忆] 记录失败: {e}")
 
 

@@ -31,6 +31,24 @@ app = FastAPI(
     version="1.0.0",
 )
 
+# ─── 请求超时中间件 ────────────────────────────────────
+# M5: 防止长时间运行的端点（/api/refresh, /api/summary）无限挂起
+
+_REQUEST_TIMEOUT = 60  # 秒
+
+
+@app.middleware("http")
+async def timeout_middleware(request: Request, call_next):
+    """为每个请求添加超时保护。"""
+    try:
+        return await asyncio.wait_for(call_next(request), timeout=_REQUEST_TIMEOUT)
+    except asyncio.TimeoutError:
+        logger.warning(f"请求超时 ({_REQUEST_TIMEOUT}s): {request.method} {request.url.path}")
+        return JSONResponse(
+            status_code=504,
+            content={"error": "请求超时", "timeout_seconds": _REQUEST_TIMEOUT},
+        )
+
 # 静态文件目录
 STATIC_DIR = Path(__file__).parent / "static"
 

@@ -12,13 +12,17 @@ async def save_reminder(user_id: str, session_id: str, content: str,
                         original_msg: str = "") -> int:
     db = await get_db()
     now = datetime.now().timestamp()
-    cursor = await db.execute(
-        """INSERT INTO reminders (user_id, session_id, content, trigger_time, repeat_type, status, created_at, original_msg)
-           VALUES (?, ?, ?, ?, ?, 'pending', ?, ?)""",
-        (str(user_id), session_id, content, trigger_time, repeat_type, now, original_msg)
-    )
-    await db.commit()
-    return cursor.lastrowid
+    try:
+        cursor = await db.execute(
+            """INSERT INTO reminders (user_id, session_id, content, trigger_time, repeat_type, status, created_at, original_msg)
+               VALUES (?, ?, ?, ?, ?, 'pending', ?, ?)""",
+            (str(user_id), session_id, content, trigger_time, repeat_type, now, original_msg)
+        )
+        await db.commit()
+        return cursor.lastrowid
+    except Exception:
+        await db.rollback()
+        raise
 
 
 async def get_due_reminders() -> List[Dict[str, Any]]:
@@ -36,17 +40,25 @@ async def get_due_reminders() -> List[Dict[str, Any]]:
 
 async def mark_reminder_done(reminder_id: int):
     db = await get_db()
-    await db.execute("UPDATE reminders SET status = 'done' WHERE id = ?", (reminder_id,))
-    await db.commit()
+    try:
+        await db.execute("UPDATE reminders SET status = 'done' WHERE id = ?", (reminder_id,))
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        raise
 
 
 async def reschedule_reminder(reminder_id: int, next_trigger: float):
     db = await get_db()
-    await db.execute(
-        "UPDATE reminders SET trigger_time = ? WHERE id = ?",
-        (next_trigger, reminder_id)
-    )
-    await db.commit()
+    try:
+        await db.execute(
+            "UPDATE reminders SET trigger_time = ? WHERE id = ?",
+            (next_trigger, reminder_id)
+        )
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        raise
 
 
 async def get_user_reminders(user_id: str, status: str = "pending") -> List[Dict[str, Any]]:
@@ -63,12 +75,16 @@ async def get_user_reminders(user_id: str, status: str = "pending") -> List[Dict
 
 async def cancel_reminder(user_id: str, reminder_id: int) -> bool:
     db = await get_db()
-    cursor = await db.execute(
-        "UPDATE reminders SET status = 'cancelled' WHERE id = ? AND user_id = ?",
-        (reminder_id, str(user_id))
-    )
-    await db.commit()
-    return cursor.rowcount > 0
+    try:
+        cursor = await db.execute(
+            "UPDATE reminders SET status = 'cancelled' WHERE id = ? AND user_id = ?",
+            (reminder_id, str(user_id))
+        )
+        await db.commit()
+        return cursor.rowcount > 0
+    except Exception:
+        await db.rollback()
+        raise
 
 
 async def find_reminder_by_content(user_id: str, keyword: str) -> List[Dict[str, Any]]:

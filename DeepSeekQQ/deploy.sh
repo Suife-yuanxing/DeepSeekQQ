@@ -72,7 +72,8 @@ rollback() {
     if [ -d "$backup_dir" ]; then
         echo "⏪ 正在回滚到 $backup_dir ..."
         rm -rf plugins/deepseek
-        cp -r "$backup_dir" plugins/deepseek
+        cp -r "$backup_dir/plugins/deepseek" plugins/
+        cp "$backup_dir"/bot.py "$backup_dir"/pyproject.toml "$backup_dir"/requirements.txt . 2>/dev/null || true
         echo "✅ 已回滚"
     fi
 }
@@ -87,7 +88,10 @@ echo "🔄 开始部署..."
 BACKUP_DIR="$BACKUP_BASE/deepseek_$(date +%m%d_%H%M)"
 if [ -d plugins/deepseek ]; then
     mkdir -p "$BACKUP_BASE"
-    cp -r plugins/deepseek "$BACKUP_DIR"
+    # 备份核心文件
+    mkdir -p "$BACKUP_DIR/plugins/deepseek"
+    cp -r plugins/deepseek "$BACKUP_DIR/plugins/"
+    cp bot.py pyproject.toml requirements.txt "$BACKUP_DIR/" 2>/dev/null || true
     echo "✅ 已备份到 $BACKUP_DIR"
 fi
 
@@ -119,7 +123,7 @@ except SyntaxError as e:
                 SYNTAX_OK=false
             fi
         fi
-    done < <(find plugins/deepseek -name "*.py" -type f)
+    done < <(find plugins/deepseek -name "*.py" -type f; for f in bot.py config.py; do [ -f "$f" ] && echo "$f"; done)
 
     if [ "$SYNTAX_OK" = false ]; then
         echo "❌ 语法检查失败，中止部署（未影响线上服务）"
@@ -131,12 +135,12 @@ else
     echo "⚠️ 跳过语法检查"
 fi
 
-# 4. 安装所有依赖
+# 4. 安装所有依赖（优先 requirements.txt 精确版本，避免 pyproject.toml >= 拉取破坏性更新）
 echo "📦 安装依赖..."
-if [ -f pyproject.toml ]; then
-    $PYTHON -m pip install -e . || { echo "❌ 依赖安装失败，中止部署"; exit 1; }
-elif [ -f requirements.txt ]; then
+if [ -f requirements.txt ]; then
     $PYTHON -m pip install -r requirements.txt || { echo "❌ 依赖安装失败，中止部署"; exit 1; }
+elif [ -f pyproject.toml ]; then
+    $PYTHON -m pip install -e . || { echo "❌ 依赖安装失败，中止部署"; exit 1; }
 else
     echo "⚠️ 未找到依赖文件，跳过"
 fi

@@ -32,36 +32,10 @@ DEFAULT_CACHE_PATH = Path.home() / ".tokenlens" / "pricing_cache.json"
 # 缓存有效期（秒）
 CACHE_TTL = 86400  # 24h
 
-# ─── 硬编码默认值（定期手动更新，始终反映最新官方价格） ───
-# 价格单位: RMB / 百万 token
-# USD → RMB 按汇率 7.25 计算
-#
-# ⚠️ 同步维护：此表与 pricing.py 的 _DEFAULT_PRICING 必须保持一致。
-#   pricing.py 是运行时定价的权威来源，此表仅作为网络获取失败时的
-#   离线兜底。更新价格时请同时修改两处。
-
-FALLBACK_PRICING: dict[str, dict[str, float]] = {
-    # DeepSeek 官方人民币定价 (2026-06-17)
-    # V4 Pro: ¥3.00 输入 / ¥0.025 缓存命中 / ¥6.00 输出
-    #   (USD 参考: $0.435 / $0.003625 / $0.87)
-    # V4 Flash: ¥1.00 输入 / ¥0.02 缓存命中 / ¥2.00 输出
-    #   (USD 参考: $0.14 / $0.0028 / $0.28)
-    "deepseek-v4-pro":         {"input": 3.00, "cache_read": 0.025, "output": 6.00},
-    "deepseek-v4-flash":       {"input": 1.00, "cache_read": 0.02,  "output": 2.00},
-
-    # 小米 MiMo (对标 DeepSeek)
-    "mimo-v2.5-pro":           {"input": 3.00, "cache_read": 0.025, "output": 6.00},
-    "mimo-v2.5":               {"input": 1.00, "cache_read": 0.02,  "output": 2.00},
-
-    # Kimi/Moonshot 官方 (USD→RMB @7.25)
-    # $0.95 / $0.16 / $4.00
-    "kimi-k2.6":               {"input": 6.89, "cache_read": 1.16, "output": 29.0},
-
-    # Claude 家族 (Anthropic 官方, USD→RMB @7.25)
-    # Sonnet 4: $3 / $0.30 / $15, Opus 4: $15 / $1.50 / $75
-    "claude-sonnet-4-20250514": {"input": 21.75, "cache_read": 2.18, "output": 108.75},
-    "claude-opus-4-20250514":   {"input": 108.75, "cache_read": 10.88, "output": 543.75},
-}
+# ─── 离线兜底定价 ───
+# 单一数据源：从 pricing.py 导入 _DEFAULT_PRICING，无需重复维护。
+# 价格单位: RMB / 百万 token，USD → RMB 按汇率 7.25 计算。
+from .pricing import _DEFAULT_PRICING as FALLBACK_PRICING  # noqa: F811
 
 # OpenRouter 模型名 → 内部名映射
 _OPENROUTER_MAP = {

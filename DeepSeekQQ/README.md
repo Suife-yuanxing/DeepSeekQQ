@@ -71,7 +71,7 @@ python bot.py
 python -m pytest tests/ -v
 ```
 
-共 607 个测试，包含单元测试和集成测试。
+共 858 个测试，包含单元测试和集成测试。
 
 测试分类标签：
 - `unit` — 纯逻辑，无 I/O
@@ -93,7 +93,7 @@ python -m pytest tests/ -v
               ├─ humanize          # 真人化处理
               └─ post_process      # 发送回复
 
-API 降级：DeepSeek 远程 → 友好错误提示
+API 降级：DeepSeek 远程 → Ollama 本地模型（含熔断器保护）
 数据库：SQLite (WAL 模式) + 14版本迁移
 ```
 
@@ -122,7 +122,7 @@ DeepSeekQQ/
 │   ├── share_parser.py       # 分享链接解析
 │   ├── ...                   # 其他模块
 │   └── plugins/              # 热加载插件目录
-├── tests/                    # 测试套件（~30文件/607测试）
+├── tests/                    # 测试套件（~30文件/858测试）
 ├── data/                     # 运行时数据
 │   ├── stickers/              # 表情包
 │   └── persona/              # 人设文件
@@ -131,8 +131,6 @@ DeepSeekQQ/
 
 ## 已知限制
 
-- Ollama 本地降级尚未实现（`api.py` 中为 stub）
-- `handler.py` 较长（~1800行），待按阶段拆分
 - Web 管理后台为基础版本
 - 部分模块测试覆盖不足
 

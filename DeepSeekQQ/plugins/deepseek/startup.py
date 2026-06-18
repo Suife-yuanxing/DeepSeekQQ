@@ -230,7 +230,7 @@ async def on_start():
     # 热度追踪器清理：每小时清理过期追踪器
     async def _heat_cleanup():
         try:
-            from .heat_engine import cleanup_stale_trackers
+            from .private_heat import cleanup_stale_trackers
             cleanup_stale_trackers(max_age_seconds=3600)
         except (ImportError, AttributeError):
             pass

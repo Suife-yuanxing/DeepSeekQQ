@@ -29,6 +29,8 @@ select = [
     "C4",     # flake8-comprehensions
     "SIM",    # flake8-simplify
     "RUF",    # Ruff-specific rules
+    "N",      # pep8-naming — 命名规范
+    "D",      # pydocstyle — 文档字符串规范
 ]
 
 # 忽略的规则
@@ -39,6 +41,21 @@ ignore = [
     "RUF001", # 中文字符在字符串中（本项目大量使用中文）
     "RUF002", # 中文字符在 docstring 中
     "RUF003", # 中文字符在注释中
+    # pydocstyle 豁免 — 渐进式补充文档
+    "D100",   # 模块缺少 docstring
+    "D101",   # 公开类缺少 docstring
+    "D102",   # 公开方法缺少 docstring
+    "D103",   # 公开函数缺少 docstring
+    "D104",   # 公开包缺少 docstring
+    "D105",   # 魔术方法缺少 docstring
+    "D107",   # __init__ 缺少 docstring
+    "D202",   # 空行在 docstring 后（与 D212 冲突）
+    "D203",   # 1 空行在类 docstring 前（与 D211 冲突）
+    "D212",   # 多行 docstring 摘要不在第一行
+    "D213",   # 多行 docstring 摘要不在第二行
+    # pep8-naming 豁免
+    "N818",   # 异常类名应以 Error 结尾
+    "N806",   # 函数参数不应大写（本项目有些参数是大写）
 ]
 
 # 单行 import 排序

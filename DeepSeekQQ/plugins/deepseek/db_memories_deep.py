@@ -73,6 +73,7 @@ async def update_meme_feedback(
         """, (weights.get(user_reaction, 1.0), meme_id))
         await db.commit()
     except Exception as e:
+        await db.rollback()
         logger.debug(f"[私人梗反馈] 更新失败: {e}")
 
 
@@ -164,6 +165,7 @@ async def get_meme_to_use(
         return available[-1] if available else None
 
     except Exception as e:
+        await db.rollback()
         logger.debug(f"[私人梗选择] 失败: {e}")
         return None
 
@@ -187,26 +189,30 @@ async def save_shared_memory(
     """
     db = await get_db()
     now = datetime.now().timestamp()
-    # 去重：同一用户、同一类型、描述相似则合并（提升 importance）
-    async with db.execute(
-        "SELECT id, importance FROM shared_memories WHERE user_id = ? AND event_type = ? AND event_desc = ?",
-        (str(user_id), event_type, event_desc[:200])
-    ) as cursor:
-        existing = await cursor.fetchone()
-    if existing:
-        new_imp = min(1.0, existing["importance"] + 0.1)
-        await db.execute(
-            "UPDATE shared_memories SET importance = ?, recall_count = recall_count + 1, last_recalled = ? WHERE id = ?",
-            (new_imp, now, existing["id"])
-        )
-    else:
-        await db.execute(
-            """INSERT INTO shared_memories
-               (user_id, event_type, event_desc, emotion_tag, context, importance, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
-            (str(user_id), event_type, event_desc[:200], emotion_tag, context[:500], importance, now)
-        )
-    await db.commit()
+    try:
+        # 去重：同一用户、同一类型、描述相似则合并（提升 importance）
+        async with db.execute(
+            "SELECT id, importance FROM shared_memories WHERE user_id = ? AND event_type = ? AND event_desc = ?",
+            (str(user_id), event_type, event_desc[:200])
+        ) as cursor:
+            existing = await cursor.fetchone()
+        if existing:
+            new_imp = min(1.0, existing["importance"] + 0.1)
+            await db.execute(
+                "UPDATE shared_memories SET importance = ?, recall_count = recall_count + 1, last_recalled = ? WHERE id = ?",
+                (new_imp, now, existing["id"])
+            )
+        else:
+            await db.execute(
+                """INSERT INTO shared_memories
+                   (user_id, event_type, event_desc, emotion_tag, context, importance, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (str(user_id), event_type, event_desc[:200], emotion_tag, context[:500], importance, now)
+            )
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        raise
     logger.info(f"[共同回忆] 保存: user={user_id[:6]} type={event_type} desc={event_desc[:30]}")
 
 
@@ -287,13 +293,17 @@ async def get_recall_candidates(user_id: str, current_msg: str, limit: int = 3) 
     result = [candidates[i] for i in selected_idx]
 
     # 更新 recall_count 和 last_recalled
-    for item in result:
-        await db.execute(
-            """UPDATE shared_memories SET recall_count = recall_count + 1, last_recalled = ?
-               WHERE id = ?""",
-            (now, item["id"])
-        )
-    await db.commit()
+    try:
+        for item in result:
+            await db.execute(
+                """UPDATE shared_memories SET recall_count = recall_count + 1, last_recalled = ?
+                   WHERE id = ?""",
+                (now, item["id"])
+            )
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        raise
 
     return result
 
@@ -301,11 +311,15 @@ async def get_recall_candidates(user_id: str, current_msg: str, limit: int = 3) 
 async def boost_shared_memory(memory_id: int, boost: float = 0.1):
     """被成功回忆时提升重要性。"""
     db = await get_db()
-    await db.execute(
-        "UPDATE shared_memories SET importance = MIN(1.0, importance + ?) WHERE id = ?",
-        (boost, memory_id)
-    )
-    await db.commit()
+    try:
+        await db.execute(
+            "UPDATE shared_memories SET importance = MIN(1.0, importance + ?) WHERE id = ?",
+            (boost, memory_id)
+        )
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        raise
 
 
 async def decay_shared_memories(base_rate: float = 0.01):
@@ -318,13 +332,17 @@ async def decay_shared_memories(base_rate: float = 0.01):
     now = datetime.now().timestamp()
     # 只衰减 7 天前创建的回忆
     cutoff = now - 7 * 86400
-    await db.execute(
-        """UPDATE shared_memories
-           SET importance = MAX(0.1, importance - ? / (1 + importance) * CASE WHEN recall_count > 0 THEN 0.5 ELSE 1.0 END)
-           WHERE created_at < ? AND importance > 0.1""",
-        (base_rate, cutoff)
-    )
-    await db.commit()
+    try:
+        await db.execute(
+            """UPDATE shared_memories
+               SET importance = MAX(0.1, importance - ? / (1 + importance) * CASE WHEN recall_count > 0 THEN 0.5 ELSE 1.0 END)
+               WHERE created_at < ? AND importance > 0.1""",
+            (base_rate, cutoff)
+        )
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        raise
 
 
 # ============================================================
@@ -345,27 +363,31 @@ async def save_private_meme(
     """
     db = await get_db()
     now = datetime.now().timestamp()
-    # 去重
-    async with db.execute(
-        "SELECT id FROM private_memes WHERE user_id = ? AND meme_type = ? AND content = ?",
-        (str(user_id), meme_type, content[:100])
-    ) as cursor:
-        existing = await cursor.fetchone()
-    if existing:
-        # 已存在，更新频率
-        await db.execute(
-            "UPDATE private_memes SET frequency = MIN(0.8, frequency + 0.05), last_used = ? WHERE id = ?",
-            (now, existing["id"])
-        )
-    else:
-        await db.execute(
-            """INSERT INTO private_memes
-               (user_id, meme_type, content, origin_context, trigger_keywords, frequency, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
-            (str(user_id), meme_type, content[:100], origin_context[:300],
-             trigger_keywords[:200], frequency, now)
-        )
-    await db.commit()
+    try:
+        # 去重
+        async with db.execute(
+            "SELECT id FROM private_memes WHERE user_id = ? AND meme_type = ? AND content = ?",
+            (str(user_id), meme_type, content[:100])
+        ) as cursor:
+            existing = await cursor.fetchone()
+        if existing:
+            # 已存在，更新频率
+            await db.execute(
+                "UPDATE private_memes SET frequency = MIN(0.8, frequency + 0.05), last_used = ? WHERE id = ?",
+                (now, existing["id"])
+            )
+        else:
+            await db.execute(
+                """INSERT INTO private_memes
+                   (user_id, meme_type, content, origin_context, trigger_keywords, frequency, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (str(user_id), meme_type, content[:100], origin_context[:300],
+                 trigger_keywords[:200], frequency, now)
+            )
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        raise
     logger.info(f"[私人梗] 保存: user={user_id[:6]} type={meme_type} content={content[:20]}")
 
 
@@ -421,11 +443,15 @@ async def find_matching_meme(user_id: str, current_msg: str) -> Optional[Dict[st
         # 频率概率触发
         if random.random() < row["frequency"]:
             # 更新使用记录
-            await db.execute(
-                "UPDATE private_memes SET usage_count = usage_count + 1, last_used = ? WHERE id = ?",
-                (now, row["id"])
-            )
-            await db.commit()
+            try:
+                await db.execute(
+                    "UPDATE private_memes SET usage_count = usage_count + 1, last_used = ? WHERE id = ?",
+                    (now, row["id"])
+                )
+                await db.commit()
+            except Exception:
+                await db.rollback()
+                raise
             return dict(row)
 
     return None
@@ -463,6 +489,7 @@ async def save_important_date(
         await db.commit()
         logger.info(f"[重要日期] 保存: user={user_id[:6]} type={date_type} date={date_value}")
     except Exception as e:
+        await db.rollback()
         logger.info(f"[重要日期] 保存失败: {e}")
 
 

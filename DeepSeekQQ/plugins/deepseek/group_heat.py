@@ -1,5 +1,11 @@
 """群聊热度状态机 — 基于 WTFLLM 设计。
 
+与 private_heat.py 的分工：
+  - private_heat.py：私聊场景，5 状态枚举（IDLE/COLD/WARM/ACTIVE/FLOOD），关注刷屏检测
+  - group_heat.py（本文件）：群聊场景，3 状态类（ACTIVE/IDLE/COOLDOWN），关注群参与度
+
+两者状态模型本质不同，不合并。
+
 群聊消息频率动态调节 Bot 活跃度：
 - 每条消息 +1.0 热度，@Bot +3.0
 - EMA 平滑 (α=0.3)，半衰期 300 秒

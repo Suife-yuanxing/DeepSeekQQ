@@ -13,7 +13,7 @@
     "playwright": {
       "command": "npx",
       "args": [
-        "@playwright/mcp@latest"
+        "@playwright/mcp@1"
       ]
     }
   }

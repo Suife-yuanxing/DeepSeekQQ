@@ -8,6 +8,7 @@ import aiosqlite
 from nonebot import logger
 
 from .db_core import get_db
+from .constants import MEMORY_MIN_CONFIDENCE, MEMORY_DECAY_PER_DAY
 
 
 async def save_memory_tags(user_id: str, tags: List[Dict[str, str]], new_embeddings: Optional[Dict[str, bytes]] = None):
@@ -89,7 +90,11 @@ async def save_memory_tags(user_id: str, tags: List[Dict[str, str]], new_embeddi
             )
             saved_ids.append(cursor.lastrowid)
 
-    await db.commit()
+    try:
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        raise
     return saved_ids
 
 
@@ -127,7 +132,7 @@ def _keyword_jaccard(text_a: str, text_b: str) -> float:
     return intersection / union if union > 0 else 0.0
 
 
-async def decay_memory_tags(user_id: str = None, decay_rate: float = 0.02, tier: str = None):
+async def decay_memory_tags(user_id: str = None, decay_rate: float = MEMORY_DECAY_PER_DAY, tier: str = None):
     """对记忆标签做时间衰减。"""
     db = await get_db()
     now = datetime.now().timestamp()
@@ -150,23 +155,31 @@ async def decay_memory_tags(user_id: str = None, decay_rate: float = 0.02, tier:
         else:
             query = """UPDATE memory_tags SET confidence = MAX(0.0, confidence - ?)
                    WHERE last_used < ? - 86400"""
-    await db.execute(query, params)
-    await db.commit()
+    try:
+        await db.execute(query, params)
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        raise
 
 
-async def prune_memory_tags(min_confidence: float = 0.15, tier: str = None):
+async def prune_memory_tags(min_confidence: float = MEMORY_MIN_CONFIDENCE, tier: str = None):
     """清理置信度过低的记忆标签。"""
     db = await get_db()
-    if tier:
-        cursor = await db.execute(
-            "DELETE FROM memory_tags WHERE confidence < ? AND tier = ?",
-            (min_confidence, tier)
-        )
-    else:
-        cursor = await db.execute(
-            "DELETE FROM memory_tags WHERE confidence < ?", (min_confidence,)
-        )
-    await db.commit()
+    try:
+        if tier:
+            cursor = await db.execute(
+                "DELETE FROM memory_tags WHERE confidence < ? AND tier = ?",
+                (min_confidence, tier)
+            )
+        else:
+            cursor = await db.execute(
+                "DELETE FROM memory_tags WHERE confidence < ?", (min_confidence,)
+            )
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        raise
     deleted = cursor.rowcount
     if deleted > 0:
         logger.info(f"[记忆] 清理了 {deleted} 条低置信度标签 (tier={tier or 'all'})")
@@ -180,9 +193,9 @@ async def get_relevant_memory_tags(user_id: str, limit: int = 5) -> List[aiosqli
     """
     db = await get_db()
     async with db.execute(
-        """SELECT tag_type, content, weight, confidence, hit_count, last_used
+        f"""SELECT tag_type, content, weight, confidence, hit_count, last_used
            FROM memory_tags
-           WHERE user_id = ? AND confidence >= 0.15
+           WHERE user_id = ? AND confidence >= {MEMORY_MIN_CONFIDENCE}
              AND (tag_type IN ('preference', 'fact', 'taboo', 'pinned') OR weight > 1.2)
            ORDER BY (confidence * weight) DESC, last_used DESC LIMIT ?""",
         (str(user_id), limit)
@@ -226,29 +239,37 @@ async def ensure_tag(user_id: str, tag_type: str, content: str, confidence: floa
         )
         logger.info(f"[db_tags] ensure_tag 新建: {tag_type}/{content[:30]} → conf={confidence}")
 
-    await db.commit()
+    try:
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        raise
 
 
 async def boost_memory_tag(user_id: str, content: str, boost: float = 0.1):
     """当记忆被成功引用时，提升其置信度和权重。"""
     db = await get_db()
     now = datetime.now().timestamp()
-    await db.execute(
-        """UPDATE memory_tags SET confidence = MIN(0.95, confidence + ?),
-               weight = weight + 0.05, last_used = ?
-           WHERE user_id = ? AND content = ?""",
-        (boost, now, str(user_id), content)
-    )
-    await db.commit()
+    try:
+        await db.execute(
+            """UPDATE memory_tags SET confidence = MIN(0.95, confidence + ?),
+                   weight = weight + 0.05, last_used = ?
+               WHERE user_id = ? AND content = ?""",
+            (boost, now, str(user_id), content)
+        )
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        raise
 
 
 async def get_all_memory_tags_for_user(user_id: str) -> List[dict]:
     """获取用户的所有记忆标签，用于向量索引初始化。"""
     db = await get_db()
     async with db.execute(
-        """SELECT id, tag_type, content, weight, confidence, hit_count, last_used
+        f"""SELECT id, tag_type, content, weight, confidence, hit_count, last_used
            FROM memory_tags
-           WHERE user_id = ? AND confidence >= 0.15
+           WHERE user_id = ? AND confidence >= {MEMORY_MIN_CONFIDENCE}
            ORDER BY (confidence * weight) DESC""",
         (str(user_id),)
     ) as cursor:

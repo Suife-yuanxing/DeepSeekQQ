@@ -221,7 +221,9 @@ def _build_conflict_hint(conflict: dict, affection_score: float) -> Optional[str
     style = conflict["style"]
 
     # 根据好感度选择表达风格
-    if affection_score >= 500:
+    from .constants import AFFECTION_CLOSE
+
+    if affection_score >= AFFECTION_CLOSE:
         # 专属：完全真实，可以撒娇式反驳
         return (
             f"用户对「{topic}」的看法和你不一致。"

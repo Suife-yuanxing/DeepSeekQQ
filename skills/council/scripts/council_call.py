@@ -398,8 +398,11 @@ def truncate_context(plan_text: str, round1_results: dict, round2_results: dict,
                     mini["missed_issues"] = missed
                 context_parts.append(f"\n## {cv_key}\n```json\n{json.dumps(mini, ensure_ascii=False, indent=2)}\n```\n")
     context = "".join(context_parts)
-    if len(context) > max_tokens * 2:
-        context = context[:max_tokens * 2] + "\n\n[... 截断 ...]"
+    # 精确 token 截断：中文 char/token 比可达 0.5-1.5，char*2 估算偏差大
+    actual_tokens = count_tokens(context)
+    if actual_tokens > max_tokens:
+        log_progress(f"  上下文截断: ~{actual_tokens} tokens → {max_tokens}", "info")
+        context = truncate_to_tokens(context, max_tokens)
     return context
 
 
@@ -707,7 +710,21 @@ def main():
         log_progress(f"缺少 API Key: {', '.join(missing)}", "error")
         log_progress("请设置对应的环境变量或创建 Skill .env 文件", "error")
 
-    plan_path = Path(args.plan)
+    plan_path = Path(args.plan).resolve()
+    # L8: 路径遍历保护 — 确保解析后的路径在安全目录内
+    _ALLOWED_ROOTS = [
+        Path.cwd().resolve(),
+        Path.home().resolve(),
+    ]
+    is_safe = any(
+        str(plan_path).startswith(str(root))
+        for root in _ALLOWED_ROOTS
+    )
+    if not is_safe:
+        print(f"❌ 安全限制：不允许访问当前目录和用户目录之外的路径: {plan_path}", file=sys.stderr)
+        print(f"   允许的根目录: {', '.join(str(r) for r in _ALLOWED_ROOTS)}", file=sys.stderr)
+        sys.exit(1)
+
     if not plan_path.exists():
         print(f"❌ 文件不存在: {args.plan}", file=sys.stderr)
         sys.exit(1)

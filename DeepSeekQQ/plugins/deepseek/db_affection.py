@@ -40,37 +40,41 @@ async def update_affection(user_id: str, delta: float = 1.0):
         (str(user_id),)
     ) as cursor:
         row = await cursor.fetchone()
-    if not row:
-        await db.execute(
-            """INSERT INTO affection
-            (user_id, score, level, title, last_interaction, total_chats, streak_days, last_streak_date, first_interaction)
-            VALUES (?, ?, 1, ?, ?, 1, 1, ?, ?)""",
-            (str(user_id), delta, AFFECTION_LEVELS[0][1], now.timestamp(), today, now.timestamp())
-        )
-    else:
-        score, total_chats, streak_days, last_streak = row
-        new_score = max(0, score + delta)
-        new_total = total_chats + 1
-        if last_streak == today:
-            new_streak = streak_days
-        elif last_streak == (now - timedelta(days=1)).strftime("%Y-%m-%d"):
-            new_streak = streak_days + 1
+    try:
+        if not row:
+            await db.execute(
+                """INSERT INTO affection
+                (user_id, score, level, title, last_interaction, total_chats, streak_days, last_streak_date, first_interaction)
+                VALUES (?, ?, 1, ?, ?, 1, 1, ?, ?)""",
+                (str(user_id), delta, AFFECTION_LEVELS[0][1], now.timestamp(), today, now.timestamp())
+            )
         else:
-            new_streak = 1
-        new_level = 1
-        new_title = AFFECTION_LEVELS[0][1]
-        for threshold, title in AFFECTION_LEVELS:
-            if new_score >= threshold:
-                new_level = AFFECTION_LEVELS.index((threshold, title)) + 1
-                new_title = title
-        await db.execute(
-            """UPDATE affection
-            SET score = ?, level = ?, title = ?, last_interaction = ?,
-                total_chats = ?, streak_days = ?, last_streak_date = ?
-            WHERE user_id = ?""",
-            (new_score, new_level, new_title, now.timestamp(), new_total, new_streak, today, str(user_id))
-        )
-    await db.commit()
+            score, total_chats, streak_days, last_streak = row
+            new_score = max(0, score + delta)
+            new_total = total_chats + 1
+            if last_streak == today:
+                new_streak = streak_days
+            elif last_streak == (now - timedelta(days=1)).strftime("%Y-%m-%d"):
+                new_streak = streak_days + 1
+            else:
+                new_streak = 1
+            new_level = 1
+            new_title = AFFECTION_LEVELS[0][1]
+            for threshold, title in AFFECTION_LEVELS:
+                if new_score >= threshold:
+                    new_level = AFFECTION_LEVELS.index((threshold, title)) + 1
+                    new_title = title
+            await db.execute(
+                """UPDATE affection
+                SET score = ?, level = ?, title = ?, last_interaction = ?,
+                    total_chats = ?, streak_days = ?, last_streak_date = ?
+                WHERE user_id = ?""",
+                (new_score, new_level, new_title, now.timestamp(), new_total, new_streak, today, str(user_id))
+            )
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        raise
 
 
 async def decay_affection(inactive_days: int = 7, decay_points: float = -1.0):
@@ -78,19 +82,24 @@ async def decay_affection(inactive_days: int = 7, decay_points: float = -1.0):
     from datetime import datetime
     db = await get_db()
     threshold = datetime.now().timestamp() - inactive_days * 86400
-    # BUGFIX: 使用单条 UPDATE + 子查询，替代 N+1 循环；同时添加 archived=0 过滤
-    await db.execute(
-        """UPDATE affection SET score = MAX(0, score + ?)
-           WHERE score > 0 AND user_id NOT IN (
-               SELECT DISTINCT REPLACE(session_id, 'private_', '') FROM memories
-               WHERE session_id LIKE 'private_%' AND timestamp > ? AND archived = 0
-           )""",
-        (decay_points, threshold)
-    )
-    affected = db.total_changes
-    if affected > 0:
-        await db.commit()
-        logger.info(f"[好感度] {affected} 个用户好感度自然衰减")
+    try:
+        # M10: 使用 NOT EXISTS 替代 NOT IN，利用索引避免全表扫描
+        await db.execute(
+            """UPDATE affection SET score = MAX(0, score + ?)
+               WHERE score > 0 AND NOT EXISTS (
+                   SELECT 1 FROM memories
+                   WHERE session_id = 'private_' || affection.user_id
+                     AND timestamp > ? AND archived = 0
+               )""",
+            (decay_points, threshold)
+        )
+        affected = db.total_changes
+        if affected > 0:
+            await db.commit()
+            logger.info(f"[好感度] {affected} 个用户好感度自然衰减")
+    except Exception:
+        await db.rollback()
+        raise
 
 
 async def get_affection_decay_hint(user_id: str) -> str:
@@ -180,11 +189,15 @@ async def check_and_trigger_milestone(user_id: str) -> Optional[str]:
                         else total_chats if "messages" in key
                         else streak if "streak" in key
                         else int(info["check"]))
-        await db.execute(
-            "INSERT INTO relationship_milestones (user_id, milestone_type, milestone_value, triggered_at, triggered) VALUES (?, ?, ?, ?, 1)",
-            (str(user_id), key, actual_value, now)
-        )
-        await db.commit()
+        try:
+            await db.execute(
+                "INSERT INTO relationship_milestones (user_id, milestone_type, milestone_value, triggered_at, triggered) VALUES (?, ?, ?, ?, 1)",
+                (str(user_id), key, actual_value, now)
+            )
+            await db.commit()
+        except Exception:
+            await db.rollback()
+            raise
         logger.info(f"[里程碑] user={user_id[:6]} 触发: {key}")
         return info["text"]
     return None

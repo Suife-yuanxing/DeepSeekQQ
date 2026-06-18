@@ -3,19 +3,49 @@ from datetime import datetime
 from typing import Any
 from typing import Dict
 from typing import List
+from typing import Optional
 
 import aiosqlite
 
 from .db_core import get_db
 
 
+async def _fetch_one(sql: str, params: tuple = ()) -> Optional[aiosqlite.Row]:
+    """执行查询并返回单行，无结果返回 None。"""
+    db = await get_db()
+    async with db.execute(sql, params) as cursor:
+        return await cursor.fetchone()
+
+
+async def _fetch_all(sql: str, params: tuple = ()) -> List[aiosqlite.Row]:
+    """执行查询并返回所有行。"""
+    db = await get_db()
+    async with db.execute(sql, params) as cursor:
+        return await cursor.fetchall()
+
+
+async def _execute(sql: str, params: tuple = ()) -> None:
+    """执行写操作（INSERT/UPDATE/DELETE）并提交事务。"""
+    db = await get_db()
+    try:
+        await db.execute(sql, params)
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        raise
+
+
 async def save_message(session_id: str, role: str, content: str):
     db = await get_db()
-    await db.execute(
-        "INSERT INTO memories (session_id, role, content, timestamp) VALUES (?, ?, ?, ?)",
-        (session_id, role, content, datetime.now().timestamp())
-    )
-    await db.commit()
+    try:
+        await db.execute(
+            "INSERT INTO memories (session_id, role, content, timestamp) VALUES (?, ?, ?, ?)",
+            (session_id, role, content, datetime.now().timestamp())
+        )
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        raise
 
 
 async def get_recent_memories(session_id: str, limit: int = 30) -> List[Dict[str, Any]]:
@@ -31,14 +61,18 @@ async def get_recent_memories(session_id: str, limit: int = 30) -> List[Dict[str
 async def trim_memories(session_id: str, keep: int = 30):
     """裁剪旧消息：仅作用于非归档行，避免删除 B9 已归档的历史。"""
     db = await get_db()
-    await db.execute(
-        """DELETE FROM memories WHERE session_id = ? AND archived = 0
-           AND id NOT IN (
-               SELECT id FROM memories WHERE session_id = ? AND archived = 0 ORDER BY timestamp DESC LIMIT ?
-           )""",
-        (session_id, session_id, keep)
-    )
-    await db.commit()
+    try:
+        await db.execute(
+            """DELETE FROM memories WHERE session_id = ? AND archived = 0
+               AND id NOT IN (
+                   SELECT id FROM memories WHERE session_id = ? AND archived = 0 ORDER BY timestamp DESC LIMIT ?
+               )""",
+            (session_id, session_id, keep)
+        )
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        raise
 
 
 async def count_memories(session_id: str) -> int:
@@ -73,11 +107,15 @@ async def archive_memories_except(session_id: str, keep_ids: List[int]):
         return
     db = await get_db()
     placeholders = ",".join(["?"] * len(keep_ids))
-    await db.execute(
-        f"UPDATE memories SET archived = 1 WHERE session_id = ? AND id NOT IN ({placeholders}) AND archived = 0",
-        (session_id, *keep_ids)
-    )
-    await db.commit()
+    try:
+        await db.execute(
+            f"UPDATE memories SET archived = 1 WHERE session_id = ? AND id NOT IN ({placeholders}) AND archived = 0",
+            (session_id, *keep_ids)
+        )
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        raise
 
 
 async def has_recent_message(session_id: str, minutes: int = 30) -> bool:

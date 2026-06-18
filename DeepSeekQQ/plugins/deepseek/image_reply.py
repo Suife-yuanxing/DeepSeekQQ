@@ -216,7 +216,9 @@ def _build_food_reply(vision_result: str, affection_score: float, intent: str) -
 
 def _build_person_reply(vision_result: str, affection_score: float, intent: str) -> str:
     """人物照片回复策略（核心：好感度驱动）。"""
-    if affection_score >= 500:
+    from .constants import AFFECTION_CLOSE
+
+    if affection_score >= AFFECTION_CLOSE:
         style_hint = "大胆、暧昧、撒娇、吃醋。可以适当说些暧昧的话。"
     elif affection_score >= 200:
         style_hint = "温暖、调侃、偶尔撩一下。"

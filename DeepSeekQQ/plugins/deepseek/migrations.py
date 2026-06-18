@@ -465,3 +465,12 @@ async def migrate_v17_proactive_opt_out(db: aiosqlite.Connection):
         )
     """)
     await db.commit()
+
+
+@migration(18)
+async def migrate_v18_add_promise_due_offset(db: aiosqlite.Connection):
+    """M12: 为 promises 表添加 due_offset 列，持久化随机偏移。"""
+    await db.execute(
+        "ALTER TABLE promises ADD COLUMN due_offset REAL DEFAULT 0"
+    )
+    await db.commit()

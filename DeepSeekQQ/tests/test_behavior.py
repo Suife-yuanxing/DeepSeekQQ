@@ -134,12 +134,12 @@ class TestRandomBehavior:
         """深夜应减少活跃类行为"""
         from plugins.deepseek.behavior_engine import get_random_behavior
         active_count = 0
-        for _ in range(100):
+        for _ in range(300):
             result = get_random_behavior(schedule_period="sleeping", trigger_chance=1.0)
             if result and result["type"] in ("anticipation", "curiosity"):
                 active_count += 1
         # 深夜活跃类行为应该较少
-        assert active_count < 50  # 远小于正常比例
+        assert active_count < 120  # 远小于正常比例（300次采样容差增大）
 
 
 # ============================================================
@@ -174,8 +174,8 @@ class TestVerbosityModifier:
     def test_weekend_bonus(self):
         """周末应有额外活跃度（多次采样消除随机波动）"""
         from plugins.deepseek.behavior_engine import get_verbosity_modifier
-        weekday_avg = sum(get_verbosity_modifier(is_weekend=False) for _ in range(100)) / 100
-        weekend_avg = sum(get_verbosity_modifier(is_weekend=True) for _ in range(100)) / 100
+        weekday_avg = sum(get_verbosity_modifier(is_weekend=False) for _ in range(300)) / 300
+        weekend_avg = sum(get_verbosity_modifier(is_weekend=True) for _ in range(300)) / 300
         assert weekend_avg >= weekday_avg
 
     def test_modifier_in_range(self):
@@ -329,13 +329,16 @@ class TestMicroEventBehavior:
         test_event = "【测试事件】刚刚测试了一下..."
         register_micro_events([test_event])
 
-        # 验证事件已注册（直接检查列表即可，无需依赖随机选择）
-        assert test_event in _MICRO_EVENTS, "注册的事件应在事件列表中"
-        assert len(_MICRO_EVENTS) == original_len + 1
-
-        # 清理：移除测试事件
-        _MICRO_EVENTS.remove(test_event)
-        assert len(_MICRO_EVENTS) == original_len
+        try:
+            # 验证事件已注册（直接检查列表即可，无需依赖随机选择）
+            assert test_event in _MICRO_EVENTS, "注册的事件应在事件列表中"
+            assert len(_MICRO_EVENTS) == original_len + 1
+        finally:
+            # 清理：确保即使断言失败也移除测试事件，防止污染其他测试
+            try:
+                _MICRO_EVENTS.remove(test_event)
+            except ValueError:
+                pass  # 如果已被移除或注册失败，忽略
 
 
 # ============================================================

@@ -23,23 +23,31 @@ async def save_session_state(session_id: str, topic: str = "", emotion: str = ""
     # BUGFIX: 两条路径均加锁，防止 scratchpad 和非 scratchpad 写入竞态
     async with scratchpad_lock:
         if scratchpad is not None:
-            await db.execute(
-                """INSERT INTO session_state (session_id, last_topic, last_emotion, last_interaction, context_summary, bot_mood_snapshot, scratchpad)
-                   VALUES (?, ?, ?, ?, ?, ?, ?)
-                   ON CONFLICT(session_id) DO UPDATE SET
-                   last_topic = ?, last_emotion = ?, last_interaction = ?, context_summary = ?, bot_mood_snapshot = ?, scratchpad = ?""",
-                (session_id, topic, emotion, now, context_summary, bot_mood, scratchpad,
-                 topic, emotion, now, context_summary, bot_mood, scratchpad)
-            )
+            try:
+                await db.execute(
+                    """INSERT INTO session_state (session_id, last_topic, last_emotion, last_interaction, context_summary, bot_mood_snapshot, scratchpad)
+                       VALUES (?, ?, ?, ?, ?, ?, ?)
+                       ON CONFLICT(session_id) DO UPDATE SET
+                       last_topic = ?, last_emotion = ?, last_interaction = ?, context_summary = ?, bot_mood_snapshot = ?, scratchpad = ?""",
+                    (session_id, topic, emotion, now, context_summary, bot_mood, scratchpad,
+                     topic, emotion, now, context_summary, bot_mood, scratchpad)
+                )
+            except Exception:
+                await db.rollback()
+                raise
         else:
-            await db.execute(
-                """INSERT INTO session_state (session_id, last_topic, last_emotion, last_interaction, context_summary, bot_mood_snapshot)
-                   VALUES (?, ?, ?, ?, ?, ?)
-                   ON CONFLICT(session_id) DO UPDATE SET
-                   last_topic = ?, last_emotion = ?, last_interaction = ?, context_summary = ?, bot_mood_snapshot = ?""",
-                (session_id, topic, emotion, now, context_summary, bot_mood,
-                 topic, emotion, now, context_summary, bot_mood)
-            )
+            try:
+                await db.execute(
+                    """INSERT INTO session_state (session_id, last_topic, last_emotion, last_interaction, context_summary, bot_mood_snapshot)
+                       VALUES (?, ?, ?, ?, ?, ?)
+                       ON CONFLICT(session_id) DO UPDATE SET
+                       last_topic = ?, last_emotion = ?, last_interaction = ?, context_summary = ?, bot_mood_snapshot = ?""",
+                    (session_id, topic, emotion, now, context_summary, bot_mood,
+                     topic, emotion, now, context_summary, bot_mood)
+                )
+            except Exception:
+                await db.rollback()
+                raise
         await db.commit()
 
 
@@ -123,14 +131,18 @@ async def get_memory_summary(session_id: str) -> Optional[str]:
 async def append_memory_summary(session_id: str, summary: str):
     db = await get_db()
     now = datetime.now().timestamp()
-    await db.execute(
-        """INSERT INTO memory_summaries (session_id, summary, key_moments, updated_at)
-           VALUES (?, ?, ?, ?)
-           ON CONFLICT(session_id) DO UPDATE SET
-           summary = summary || ' | ' || ?, updated_at = ?""",
-        (session_id, summary, "[]", now, summary, now)
-    )
-    await db.commit()
+    try:
+        await db.execute(
+            """INSERT INTO memory_summaries (session_id, summary, key_moments, updated_at)
+               VALUES (?, ?, ?, ?)
+               ON CONFLICT(session_id) DO UPDATE SET
+               summary = summary || ' | ' || ?, updated_at = ?""",
+            (session_id, summary, "[]", now, summary, now)
+        )
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        raise
 
 
 # ---------- user_profiles ----------
@@ -147,7 +159,11 @@ async def get_or_create_user_profile(user_id: str) -> Dict[str, Any]:
         "INSERT INTO user_profiles (user_id, first_interaction) VALUES (?, ?)",
         (str(user_id), now)
     )
-    await db.commit()
+    try:
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        raise
     return {
         "user_id": str(user_id),
         "relationship_style": "neutral",
@@ -178,10 +194,14 @@ async def update_user_profile(user_id: str, **kwargs):
     db = await get_db()
     sets = ", ".join(f"{k} = ?" for k in kwargs)
     values = list(kwargs.values()) + [str(user_id)]
-    await db.execute(
-        f"UPDATE user_profiles SET {sets} WHERE user_id = ?", values
-    )
-    await db.commit()
+    try:
+        await db.execute(
+            f"UPDATE user_profiles SET {sets} WHERE user_id = ?", values
+        )
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        raise
 
 
 async def update_relationship_style(user_id: str, style: str, weight: float = 0.05):
@@ -226,14 +246,18 @@ async def get_undisclosed_facts(user_id: str, affection_score: float) -> Optiona
 async def mark_disclosed(user_id: str, disclosure_key: str):
     db = await get_db()
     now = datetime.now().timestamp()
-    await db.execute(
-        """INSERT INTO bot_disclosures (user_id, disclosure_key, revealed_at)
-           VALUES (?, ?, ?)
-           ON CONFLICT(user_id, disclosure_key) DO UPDATE SET
-           reveal_count = reveal_count + 1, revealed_at = ?""",
-        (str(user_id), disclosure_key, now, now)
-    )
-    await db.commit()
+    try:
+        await db.execute(
+            """INSERT INTO bot_disclosures (user_id, disclosure_key, revealed_at)
+               VALUES (?, ?, ?)
+               ON CONFLICT(user_id, disclosure_key) DO UPDATE SET
+               reveal_count = reveal_count + 1, revealed_at = ?""",
+            (str(user_id), disclosure_key, now, now)
+        )
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        raise
 
 
 # ---------- 用户画像总结 ----------

@@ -47,8 +47,8 @@ class TestStickerFallback:
 
     def test_dynamic_fallback_chance(self):
         """功能⑤：高 fallback_chance 应该更容易触发。"""
-        hits_high = sum(1 for _ in range(200) if should_send_sticker_fallback("哈哈", fallback_chance=0.9))
-        hits_low = sum(1 for _ in range(200) if should_send_sticker_fallback("哈哈", fallback_chance=0.01))
+        hits_high = sum(1 for _ in range(500) if should_send_sticker_fallback("哈哈", fallback_chance=0.9))
+        hits_low = sum(1 for _ in range(500) if should_send_sticker_fallback("哈哈", fallback_chance=0.01))
         assert hits_high > hits_low
 
 
@@ -58,8 +58,8 @@ class TestFilterStickerDynamicProb:
     def test_high_probability_keeps_more(self):
         """高保留概率应该保留更多标签。"""
         text = "你好 [sticker:happy|撒娇]"
-        hits_high = sum(1 for _ in range(200) if filter_sticker_tag(text, "test_sess", keep_probability=0.9)[1])
-        hits_low = sum(1 for _ in range(200) if filter_sticker_tag(text, "test_sess2", keep_probability=0.01)[1])
+        hits_high = sum(1 for _ in range(500) if filter_sticker_tag(text, "test_sess", keep_probability=0.9)[1])
+        hits_low = sum(1 for _ in range(500) if filter_sticker_tag(text, "test_sess2", keep_probability=0.01)[1])
         assert hits_high > hits_low
 
     def test_default_probability(self):

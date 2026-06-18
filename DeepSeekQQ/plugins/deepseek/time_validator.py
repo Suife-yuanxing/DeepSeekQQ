@@ -169,9 +169,11 @@ def validate_time_in_reply(reply_text: str) -> str:
         # 编造了小时数 → 替换为真实时间
         real_hour = hour
         old_text = m.group(0)
-        # 保留原始格式中的修饰词
-        suffix = old_text[len(m.group(1)):]  # "点半了" → "点半了"
-        new_text = f"{real_hour}{suffix}"
+        # 保留原始格式中的修饰词（处理前缀如"都"/"已经"）
+        hour_pos = m.start(1) - m.start(0)  # group(1) 在 match 内的相对位置
+        prefix = old_text[:hour_pos]
+        suffix = old_text[hour_pos + len(m.group(1)):]
+        new_text = f"{prefix}{real_hour}{suffix}"
         text = text.replace(old_text, new_text, 1)
         fixed_count += 1
         logger.info(f"[时间校验] 小时修正: '{old_text}' → '{new_text}'（实际{hour}点）")
