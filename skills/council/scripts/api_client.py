@@ -135,26 +135,193 @@ def extract_json(text: str) -> Optional[dict]:
 
 
 def extract_json_fields_regex(text: str) -> dict:
-    """用正则从非结构化文本中提取关键字段（降级用）。"""
-    result = {"raw_text": text, "issues": [], "score": 0, "summary": ""}
+    """用正则从非结构化/JSON-like 文本中提取关键字段（parse_failed 降级用）。
 
-    score_match = re.search(r'(?:score|评分|分数)[:\s]*(\d+)', text, re.IGNORECASE)
+    当 extract_json 失败时调用，尽力从 LLM 原始输出中恢复结构化数据。
+    支持两种输入：JSON-like 文本（最常见——LLM 输出了 JSON 但有小格式错误）、
+    纯自然语言文本（少见——LLM 完全没输出 JSON）。
+    """
+    result: dict = {"raw_text": text, "issues": [], "score": 0, "summary": "", "strengths": [], "suggestions": []}
+
+    # ── 1. 提取 score ──
+    score_match = re.search(r'(?:"score"|score|评分|分数)\s*[:：]\s*(\d+)', text, re.IGNORECASE)
     if score_match:
-        result["score"] = int(score_match.group(1))
+        try:
+            result["score"] = int(score_match.group(1))
+        except ValueError:
+            pass
 
-    titles = re.findall(r'(?:^|\n)\s*(?:[-*#]|\d+[.)])\s*(.{10,120})', text)
-    for title in titles:
-        result["issues"].append({
-            "id": "M-?",
-            "severity": "medium",
-            "title": title.strip(),
-            "detail": "",
-            "evidence": "",
-            "fix_suggestion": "",
-            "_extracted_by_regex": True,
-        })
+    # ── 2. 提取 summary ──
+    summary_match = re.search(r'(?:"summary"|summary)\s*[:：]\s*"([^"]{10,500})"', text, re.IGNORECASE)
+    if not summary_match:
+        summary_match = re.search(r'(?:摘要|总结)[：:]\s*(.{20,500})', text)
+    if summary_match:
+        result["summary"] = summary_match.group(1)
+
+    # ── 3. 提取 issues 数组 ── 从 JSON-like 文本中匹配每个 issue 对象
+    # 策略 A：逐对匹配大括号，提取每个 issue 对象
+    issue_blocks = _extract_json_objects(text, '"id"') or _extract_json_objects(text, '"severity"')
+    if not issue_blocks:
+        # 策略 B：尝试匹配 "issues" 数组后的内容
+        issues_section = re.search(r'"issues"\s*[:：]\s*\[(.*?)\]\s*[,}]', text, re.DOTALL)
+        if issues_section:
+            issue_blocks = _extract_json_objects(issues_section.group(1), '"title"')
+
+    if issue_blocks:
+        for block in issue_blocks:
+            issue = _parse_issue_block(block)
+            if issue.get("title"):
+                result["issues"].append(issue)
+
+    # ── 4. 兜底：策略 B 也失败时，用标题行提取 ──
+    if not result["issues"]:
+        # 匹配 Markdown 标题行 + 列表项风格（LLM 完全不用 JSON 的情况）
+        raw_issues = re.findall(
+            r'(?:^|\n)\s*(?:[-*#]|\d+[.)])\s*\*{0,2}(?:\[([^\]]+)\]\s*)?(.{10,150})',
+            text, re.MULTILINE
+        )
+        for idx, match in enumerate(raw_issues):
+            sev_text = (match[0] or "").lower()
+            severity = "high" if "high" in sev_text or "🔴" in sev_text else \
+                       "medium" if "medium" in sev_text or "🟡" in sev_text else \
+                       "low" if "low" in sev_text or "🟢" in sev_text else "medium"
+            result["issues"].append({
+                "id": f"RX-{idx + 1}",
+                "severity": severity,
+                "title": match[1].strip(),
+                "detail": "",
+                "evidence": "",
+                "fix_suggestion": "",
+                "_extracted_by_regex": True,
+            })
+
+    # ── 5. 提取 strengths ──
+    strengths_match = re.search(r'"strengths"\s*[:：]\s*\[(.*?)\]', text, re.DOTALL)
+    if strengths_match:
+        items = re.findall(r'"([^"]{10,200})"', strengths_match.group(1))
+        result["strengths"] = items[:10]
+
+    # ── 6. 提取 suggestions ──
+    suggestions_match = re.search(r'"suggestions"\s*[:：]\s*\[(.*?)\]', text, re.DOTALL)
+    if suggestions_match:
+        sug_blocks = _extract_json_objects(suggestions_match.group(1), '"title"')
+        for block in sug_blocks:
+            title_match = re.search(r'"title"\s*[:：]\s*"([^"]+)"', block)
+            detail_match = re.search(r'"detail"\s*[:：]\s*"([^"]+)"', block)
+            benefit_match = re.search(r'"benefit"\s*[:：]\s*"([^"]+)"', block)
+            if title_match:
+                result["suggestions"].append({
+                    "title": title_match.group(1),
+                    "detail": detail_match.group(1) if detail_match else "",
+                    "benefit": benefit_match.group(1) if benefit_match else "",
+                })
 
     return result
+
+
+def _extract_json_objects(text: str, anchor_field: str) -> list[str]:
+    """从文本中提取所有包含 anchor_field 的 JSON 对象块。
+
+    通过大括号配对找到每个 { ... } 对象，检查是否含 anchor_field，
+    是则返回该块文本。
+    """
+    blocks = []
+    seen_starts = set()
+    for match in re.finditer(r'\{', text):
+        start = match.start()
+        if start in seen_starts:
+            continue
+        seen_starts.add(start)
+        depth = 0
+        in_string = False
+        escape = False
+        for i in range(start, len(text)):
+            ch = text[i]
+            if escape:
+                escape = False
+                continue
+            if ch == '\\':
+                escape = True
+                continue
+            if ch == '"':
+                in_string = not in_string
+                continue
+            if in_string:
+                continue
+            if ch == '{':
+                depth += 1
+            elif ch == '}':
+                depth -= 1
+                if depth == 0:
+                    block = text[start:i + 1]
+                    # 过滤：1) 含 anchor_field 2) 非过大容器 3) anchor_field 在顶层(depth=1)
+                    if anchor_field in block and len(block) > 20 and len(block) < 3000:
+                        # 检查 anchor_field 是否在深度1出现（非嵌套在子对象中）
+                        if _is_top_level_key(block, anchor_field):
+                            blocks.append(block)
+                    break
+        if len(blocks) >= 50:
+            break
+    return blocks
+
+
+def _is_top_level_key(json_block: str, key: str) -> bool:
+    """检查 key 是否出现在 JSON 块的顶层(depth=1)，而非嵌套在子对象中。
+
+    仅跟踪大括号深度，不跟踪方括号（数组不影响对象层级判断）。
+    在进入字符串前检查 key 匹配（key 本身是带引号的，如 '"id"'）。
+    """
+    depth = 0
+    in_string = False
+    escape = False
+    for i, ch in enumerate(json_block):
+        if escape:
+            escape = False
+            continue
+        if ch == '\\':
+            escape = True
+            continue
+        if ch == '"':
+            # 进入字符串前检查：当前深度是否为目标 key
+            if not in_string and depth == 1 and json_block[i:i + len(key)] == key:
+                return True
+            in_string = not in_string
+            continue
+        if in_string:
+            continue
+        if ch == '{':
+            depth += 1
+        elif ch == '}':
+            depth -= 1
+    return False
+
+
+def _parse_issue_block(block: str) -> dict:
+    """从单个 issue JSON 块中用正则提取字段（容错解析）。"""
+    def _field(name: str) -> str:
+        # 匹配 "name": "value" 或 "name":"value"
+        m = re.search(rf'"{name}"\s*[:：]\s*"((?:[^"\\]|\\.)*)"', block)
+        return m.group(1) if m else ""
+
+    issue = {
+        "id": _field("id") or "RX-?",
+        "severity": _field("severity") or "medium",
+        "title": _field("title"),
+        "detail": _field("detail"),
+        "evidence": _field("evidence"),
+        "fix_suggestion": _field("fix_suggestion"),
+        "_extracted_by_regex": True,
+    }
+    # 规范化 severity
+    sev = issue["severity"].lower()
+    if sev not in ("high", "medium", "low"):
+        if "high" in sev or "🔴" in sev or "严重" in sev:
+            issue["severity"] = "high"
+        elif "low" in sev or "🟢" in sev:
+            issue["severity"] = "low"
+        else:
+            issue["severity"] = "medium"
+    return issue
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -214,6 +381,9 @@ def call_model(model_config: dict, messages: list[dict],
 
             elapsed = time.time() - t0
             content = data["choices"][0]["message"]["content"]
+            # 推理模型（如 glm-5.2）content 可能为空，降级到 reasoning_content
+            if not content:
+                content = data["choices"][0]["message"].get("reasoning_content", "")
             usage = data.get("usage", {})
 
             return {
@@ -306,7 +476,13 @@ def call_model_with_json_retry(model_config: dict, messages: list[dict],
     regex_extracted = extract_json_fields_regex(result["content"])
     result["parsed"] = regex_extracted
     result["parse_failed"] = True
-    result["raw_text"] = truncate_to_tokens(result["content"], 800)
+    # 优先保留完整 raw_text 供后续分析，仅当内容过大（>16K chars）时截断
+    full_content = result["content"]
+    if len(full_content) > 16000:
+        result["raw_text"] = full_content[:16000] + "\n\n[... raw_text truncated at 16K chars ...]"
+    else:
+        result["raw_text"] = full_content
+    result["_json_extraction"] = "regex" if regex_extracted.get("issues") else "regex_titles"
     result["_json_retries"] = json_retries
     return result
 

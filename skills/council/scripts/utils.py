@@ -66,21 +66,43 @@ def truncate_to_tokens(text: str, max_tokens: int) -> str:
 def extract_gate_from_report(report_text: str) -> Optional[str]:
     """从 Chairman 报告中提取质量门控结果（以 AI 输出为准）。
 
-    匹配模式：
-    - 质量门控：**PASS**
-    - 质量门控：**BLOCK**
-    - 质量门控：**REVISE**
-    - 门控结论：PASS/BLOCK/REVISE
+    搜索策略（按优先级）：
+    1. 精确匹配"质量门控：**REVISE**"等标准格式
+    2. 匹配"门控结论：PASS/BLOCK/REVISE"
+    3. 宽泛搜索：任何靠近"门控"的 PASS/BLOCK/REVISE
+    4. 最后手段：搜索报告前 15 行（摘要区）中的门控
     """
+    # 策略 1+2：标准格式
     patterns = [
-        re.compile(r'质量门控[：:]\s*\*{0,2}(PASS|BLOCK|REVISE)\*{0,2}'),
-        re.compile(r'门控结论[：:]\s*\*{0,2}(PASS|BLOCK|REVISE)\*{0,2}'),
-        re.compile(r'质量\s*门控[：:]\s*\*{0,2}(PASS|BLOCK|REVISE)\*{0,2}'),
+        re.compile(r'质量门控[：:]\s*\*{0,2}(PASS|BLOCK|REVISE)\*{0,2}', re.IGNORECASE),
+        re.compile(r'门控结论[：:]\s*\*{0,2}(PASS|BLOCK|REVISE)\*{0,2}', re.IGNORECASE),
+        re.compile(r'质量\s*门控[：:]\s*\*{0,2}(PASS|BLOCK|REVISE)\*{0,2}', re.IGNORECASE),
     ]
     for pat in patterns:
         match = pat.search(report_text)
         if match:
-            return match.group(1)
+            return match.group(1).upper()
+
+    # 策略 3：宽泛搜索（门控出现在同一行或下一行的 PASS/BLOCK/REVISE）
+    broad = re.search(
+        r'(?:门控|gate)[：:\s]*.{0,30}?\b(PASS|BLOCK|REVISE)\b',
+        report_text, re.IGNORECASE
+    )
+    if broad:
+        return broad.group(1).upper()
+
+    # 策略 4：搜索报告前 15 行（摘要区通常在顶部）
+    head = "\n".join(report_text.split("\n")[:15])
+    for pat in [
+        re.compile(r'\b(PASS|BLOCK|REVISE)\b', re.IGNORECASE),
+    ]:
+        match = pat.search(head)
+        if match:
+            val = match.group(1).upper()
+            # 确认上下文是门控相关（避免匹配到方案正文中的词）
+            if re.search(r'(?:门控|gate|质量)', head[:match.start() + 50], re.IGNORECASE):
+                return val
+
     return None
 
 

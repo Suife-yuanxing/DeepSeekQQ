@@ -40,7 +40,7 @@ from utils import (
     extract_gate_from_report, HAS_TIKTOKEN,
 )
 from config import (
-    MODE_CONFIG, DEFAULT_TIMEOUT, MIMO_TIMEOUT, MIMO_MAX_PLAN_CHARS,
+    MODE_CONFIG, DEFAULT_TIMEOUT, KIMI_TIMEOUT, MIMO_TIMEOUT, MIMO_MAX_PLAN_CHARS,
     JACCARD_THRESHOLD, MAX_PLAN_CHARS, SUPPORTED_MODELS, MODEL_OVERRIDES,
     COST_PER_M, JUDGE_FALLBACK_CHAIN, load_config,
 )
@@ -62,28 +62,25 @@ def run_round1(plan_text: str, active_models: list[str],
 
     results = {}
 
-    def _call_one(model_key):
-        model_config = config[model_key]
-        messages = build_round1_messages(plan_text, model_key)
-        log_progress(f"  调用 {model_key} ({MODEL_ROLE_MAP[model_key]['persona']})...", "info")
-        timeout = MIMO_TIMEOUT if model_key == "mimo" else None
-        result = call_model_with_json_retry(model_config, messages,
-                                            max_tokens=2048, timeout=timeout)
-        if result["status"] == "success":
-            if not result.get("parse_failed"):
-                retry_info = f" (重试 {result['_json_retries']} 次)" if result.get("_json_retries") else ""
-                log_progress(f"  {model_key}: ✅ 成功 ({result['time_s']}s, {result['tokens'].get('total', '?')} tokens){retry_info}", "success")
-            else:
-                log_progress(f"  {model_key}: ⚠️ JSON 解析失败，保留 raw_text", "error")
-        else:
-            log_progress(f"  {model_key}: ❌ 失败 ({result.get('error', 'unknown')[:100]})", "error")
-        return model_key, result
-
     with ThreadPoolExecutor(max_workers=len(active_models)) as executor:
-        futures = {executor.submit(_call_one, m): m for m in active_models}
+        futures = {}
+        for m in active_models:
+            log_progress(f"  调用 {m} ({MODEL_ROLE_MAP[m]['persona']})...", "info")
+            futures[executor.submit(_call_one_r1, m, plan_text, config)] = m
         for future in as_completed(futures):
-            model_key, result = future.result()
+            model_key = futures[future]
+            result = future.result()
             results[model_key] = result
+            if result["status"] == "success":
+                if not result.get("parse_failed"):
+                    retry_info = f" (重试 {result['_json_retries']} 次)" if result.get("_json_retries") else ""
+                    log_progress(f"  {model_key}: ✅ 成功 ({result['time_s']}s, {result['tokens'].get('total', '?')} tokens){retry_info}", "success")
+                else:
+                    extraction_method = result.get("_json_extraction", "unknown")
+                    issues_found = len((result.get("parsed") or {}).get("issues", []))
+                    log_progress(f"  {model_key}: ⚠️ JSON 解析失败，正则提取到 {issues_found} 个 issue（{extraction_method}）", "error")
+            else:
+                log_progress(f"  {model_key}: ❌ 失败 ({result.get('error', 'unknown')[:100]})", "error")
 
     return results
 
@@ -179,7 +176,14 @@ def run_round1_and_2_pipelined(plan_text: str, active_models: list[str],
                     round1_results[model_key] = result
                     progress.task_done(f"R1:{model_key}", result.get("time_s", 0) if result["status"] == "success" else 0)
                     progress.log()
-                    status_icon = "✅" if result["status"] == "success" and not result.get("parse_failed") else "⚠️" if result["status"] == "success" else "❌"
+                    if result["status"] == "success":
+                        if result.get("parse_failed"):
+                            issues_count = len((result.get("parsed") or {}).get("issues", []))
+                            status_icon = f"⚠️(RX:{issues_count})"
+                        else:
+                            status_icon = "✅"
+                    else:
+                        status_icon = "❌"
                     log_progress(f"  R1 {model_key} {status_icon} → 检查可启动的 R2 对...", "info")
                     for pair in r2_by_target.get(model_key, []):
                         cv_key = f"{pair['reviewer']}_to_{pair['target']}"
@@ -218,7 +222,7 @@ def _call_one_r1(model_key: str, plan_text: str, config: dict) -> dict:
     """执行单个模型的 Round 1 审查（供流水线使用）。"""
     model_config = config[model_key]
     messages = build_round1_messages(plan_text, model_key)
-    timeout = MIMO_TIMEOUT if model_key == "mimo" else None
+    timeout = MIMO_TIMEOUT if model_key == "mimo" else KIMI_TIMEOUT if model_key == "kimi" else None
     return call_model_with_json_retry(model_config, messages, max_tokens=2048, timeout=timeout)
 
 
@@ -478,10 +482,11 @@ def run_round3(plan_text: str, round1_results: dict, round2_results: dict,
             if extracted_gate:
                 result["gate"] = extracted_gate
                 result["gate_source"] = "chairman_report"
+                log_progress(f"  Chairman ({jc['model']}): ✅ 裁决完成 ({result['time_s']}s) → {result['gate']} (从报告提取)", "success")
             else:
                 result["gate"] = evaluate_gate(len(high), len(medium))
                 result["gate_source"] = "computed"
-            log_progress(f"  Chairman ({jc['model']}): ✅ 裁决完成 ({result['time_s']}s) → {result['gate']}", "success")
+                log_progress(f"  Chairman ({jc['model']}): ✅ 裁决完成 ({result['time_s']}s) → {result['gate']} (数学计算，⚠️ 报告门控提取失败)", "success")
             result["judge_model_used"] = jc["model"]
             result["judge_fallback_used"] = i > 0
             result["judge_tried"] = tried_models
@@ -664,8 +669,8 @@ def main():
   --mode=deep     全流程（5~7 次调用 + 去重 + 裁决），约 60~360s（默认）
 
 模型选择:
-  --models deepseek,kimi,mimo      三模型（默认）
-  --models deepseek,kimi           两模型
+  --models deepseek,kimi,mimo      三模型（mimo 慢 ~150s/次）
+  --models deepseek,kimi           两模型（推荐日常）
   --models deepseek                单模型
 
 示例:
@@ -677,8 +682,8 @@ def main():
     parser.add_argument("plan", help="方案文件路径（Markdown）")
     parser.add_argument("--mode", choices=["fast", "debate", "deep"],
                         default="deep", help="审查模式（默认: deep）")
-    parser.add_argument("--models", default="deepseek,kimi,mimo",
-                        help="参与模型，逗号分隔（默认: deepseek,kimi,mimo）")
+    parser.add_argument("--models", default="deepseek,kimi",
+                        help="参与模型，逗号分隔（默认: deepseek,kimi）")
     parser.add_argument("--output", "-o", default=None,
                         help="输出文件路径（默认: ./council-verified-{timestamp}.md）")
     parser.add_argument("--json", action="store_true",
@@ -777,6 +782,11 @@ def main():
     else:
         if round3_result and round3_result["status"] == "success":
             report = round3_result["content"]
+            # 以 Chairman 报告原文中的门控为准（已在 run_round3 中提取）
+            gate = round3_result.get('gate', '?')
+            gate_source = round3_result.get('gate_source', 'unknown')
+            if gate_source == "computed":
+                log_progress(f"  ⚠️ 门控由数学计算得出({gate})，Chairman 报告中未自动提取到门控结论", "error")
             stats = f"""
 
 ---
@@ -789,7 +799,7 @@ def main():
 | 总耗时 | {total_time:.1f}s |
 | 估算费用 | ¥{total_cost:.2f} |
 | 发现问题（确认/排除） | {len(merged_issues)}/0 |
-| 质量门控 | {round3_result.get('gate', '?')} |
+| 质量门控 | {gate} |
 """
             report += stats
         else:

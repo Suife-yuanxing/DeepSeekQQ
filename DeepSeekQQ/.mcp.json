@@ -9,6 +9,12 @@
         "GLM_API_KEY": "${GLM_API_KEY}",
         "GLM_MODEL": "glm-4-flash"
       }
+    },
+    "playwright": {
+      "command": "npx",
+      "args": [
+        "@playwright/mcp@latest"
+      ]
     }
   }
 }

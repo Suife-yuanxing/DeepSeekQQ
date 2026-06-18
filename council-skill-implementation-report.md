@@ -1,6 +1,6 @@
 # Council Skill 实施报告
 
-> 最后更新：2026-06-16 | 状态：**✅ 全部完成 — Kimi k2.6上线 + CI/CD就绪 + 环境变量正常 + 59测试全过**
+> 最后更新：2026-06-17 | 状态：**✅ 全部完成 — 十审修正 + Kimi k2.6上线 + CI/CD就绪 + 环境变量正常 + 59测试全过**
 
 ---
 
@@ -307,3 +307,35 @@ python verify_dedup.py
 | `COUNCIL_JUDGE_MODEL` | 裁决模型名（默认 deepseek-v4-pro） | 可选 |
 
 所有 Key **已迁移至 Windows 系统环境变量**（`setx` 永久保存），`.env` 备份为 `.env.bak` 不再使用。读取优先级：系统环境变量 > .env 文件 > models.json 默认值。
+
+---
+
+## 七、十审修正（展示方案 + 实施效果审查，2026-06-17）
+
+对 Council Skill 的展示方案（SKILL.md/实施报告）和实际运行效果进行了交叉审查，发现并修复以下问题：
+
+### 修复记录
+
+| # | 严重度 | 问题 | 修正 |
+|---|--------|------|------|
+| F18 | 🔴 严重 | **SKILL.md 耗时/费用数据严重过时**：fast 写 ~75s 实测 ~12-22s（5x 偏差），debate 写 ~150s 实测 ~30s（5x 偏差），deep 写 ~200s 实测 ~112s | SKILL.md 三种模式表格 + 命令示例全部更新为实施报告实测值 |
+| F19 | 🔴 严重 | **JSON 解析失败时数据静默丢失**：`extract_json` 失败后 `raw_text` 被截断到 800 tokens，`extract_json_fields_regex` 仅提取标题行，丢失 severity/detail/evidence/fix_suggestion | 重写 `extract_json_fields_regex`：从 JSON-like raw_text 中用大括号配对提取结构化 issue（含所有字段）；raw_text 截断阈值从 800 tokens → 16000 chars；新增 `_extract_json_objects` 和 `_parse_issue_block` 辅助函数 |
+| F20 | 🔴 严重 | **门控 JSON/MD 不一致**：`extract_gate_from_report` 提取失败时 fallback 到 `evaluate_gate()`，导致 Chairman 报告说 REVISE 但 JSON 输出 BLOCK | 增强 `extract_gate_from_report`：4 层策略（精确匹配→宽泛匹配→摘要区搜索）；fallback 时输出 ⚠️ 警告日志 |
+| F21 | 🟠 高 | **推荐模型组合四处不一致**：SKILL.md 推荐 `deepseek+minimax`，默认 `deepseek,kimi,mimo`；council_call.py 默认 `deepseek,kimi,mimo`；实施报告推荐 `deepseek,kimi` | 统一所有默认值为 `deepseek,kimi`（实测最稳定组合）；SKILL.md 推荐改为 `deepseek+kimi` |
+| F22 | 🟠 高 | **DeepSeek 架构师用 Flash 模型**：`models.json` 中 `default_model: deepseek-v4-flash`，承担 Architect 角色却用轻量模型 | `default_model` 改为 `deepseek-v4-pro`（config.py fallback 同步修改） |
+| F23 | 🟠 高 | **config.py 内置 fallback 缺少 MiniMax**：仅含 deepseek/kimi/mimo，models.json 损坏时 MiniMax 静默消失 | fallback 补全 minimax 配置项 |
+| F24 | 🟡 中 | **定价与实际 API 价格偏差 ~3x**：models.json 中 deepseek 定价 `input: 1.0, output: 4.0`，官方实际为 `3.15/6.31` | 更新所有模型定价为官方实际值（来源：api-docs.deepseek.com + TokenLens 定价表） |
+| F25 | 🟡 中 | **`run_round1` 内联 `_call_one` 与 `_call_one_r1` 重复**：相同逻辑维护两份 | `run_round1` 改用 `_call_one_r1`，消除重复代码 |
+| F26 | 🟢 低 | `parse_failed` 日志无提取量信息：用户看到 ⚠️ 但不知道正则兜底救回了多少数据 | 新增日志：`⚠️ JSON 解析失败，正则提取到 N 个 issue（regex/regex_titles）`；流水线 R1 状态也展示提取量 |
+
+### 修改的文件
+
+| 文件 | 修改内容 |
+|------|---------|
+| `skills/council/SKILL.md` | 耗时/费用更新、推荐组合统一、默认模型改为 deepseek,kimi |
+| `skills/council/models.json` | DeepSeek 默认升 Pro、全部定价更新为官方实际值 |
+| `skills/council/scripts/config.py` | fallback 补全 MiniMax、DeepSeek 默认升 Pro、定价更新 |
+| `skills/council/scripts/api_client.py` | 重写 `extract_json_fields_regex`（结构化提取）、raw_text 截断阈值提升、新增 `_extract_json_objects`/`_parse_issue_block` |
+| `skills/council/scripts/utils.py` | 增强 `extract_gate_from_report`（4 层策略）|
+| `skills/council/scripts/council_call.py` | 默认模型改为 deepseek,kimi、`run_round1` 消除重复代码、门控一致性增强、parse_failed 日志增强 |
+| `council-skill-implementation-report.md` | 新增十审修正记录 |

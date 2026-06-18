@@ -36,6 +36,7 @@ MODE_CONFIG = {
 
 # 默认超时
 DEFAULT_TIMEOUT = 120
+KIMI_TIMEOUT = 180
 MIMO_TIMEOUT = 180
 
 # Mimo 专用：大方案截断阈值
@@ -81,23 +82,28 @@ def _load_models_json() -> dict:
             log_progress(f"models.json 解析失败，使用内置默认值: {e}", "error")
     # 内置默认值
     return {
-        "supported_models": ["deepseek", "kimi", "mimo"],
+        "supported_models": ["deepseek", "kimi", "mimo", "minimax"],
         "model_registry": {
             "deepseek": {"persona": "The Architect", "prefix": "DS",
                 "api_key_env": "DEEPSEEK_API_KEY", "base_url_env": "DEEPSEEK_BASE_URL",
-                "default_base_url": "https://api.deepseek.com/v1", "default_model": "deepseek-v4-flash",
-                "auth_header": "Bearer", "cost_per_1m": {"input": 1.0, "output": 4.0},
+                "default_base_url": "https://api.deepseek.com/v1", "default_model": "deepseek-v4-pro",
+                "auth_header": "Bearer", "cost_per_1m": {"input": 3.15, "output": 6.31},
                 "overrides": {"max_tokens": 4096}},
             "kimi": {"persona": "The Skeptic", "prefix": "K",
                 "api_key_env": "KIMI_API_KEY", "base_url_env": "KIMI_BASE_URL",
                 "default_base_url": "https://api.moonshot.cn/v1", "default_model": "kimi-k2.6",
-                "auth_header": "Bearer", "cost_per_1m": {"input": 2.0, "output": 8.0},
+                "auth_header": "Bearer", "cost_per_1m": {"input": 6.89, "output": 29.0},
                 "overrides": {"temperature": 1.0}},
             "mimo": {"persona": "The Pragmatist", "prefix": "M",
                 "api_key_env": "MIMO_CHAT_API_KEY", "base_url_env": "MIMO_CHAT_BASE_URL",
                 "default_base_url": "https://api.xiaomimimo.com/v1", "default_model": "mimo-v2.5-pro",
-                "auth_header": "api-key", "cost_per_1m": {"input": 1.0, "output": 4.0},
+                "auth_header": "api-key", "cost_per_1m": {"input": 3.15, "output": 6.31},
                 "overrides": {"max_tokens": 4096}},
+            "minimax": {"persona": "The Auditor", "prefix": "MM",
+                "api_key_env": "MINIMAX_API_KEY", "base_url_env": "MINIMAX_BASE_URL",
+                "default_base_url": "https://api.minimaxi.com/v1", "default_model": "MiniMax-M3",
+                "auth_header": "Bearer", "cost_per_1m": {"input": 2.1, "output": 8.4},
+                "overrides": {"thinking": {"type": "disabled"}}},
         },
         "judge_fallback_chain": [
             {"model": "deepseek-v4-pro", "api_key_env": "COUNCIL_JUDGE_API_KEY",
@@ -195,9 +201,18 @@ def load_config() -> dict:
 
     # 裁判模型配置
     judge_api_key = os.getenv("COUNCIL_JUDGE_API_KEY", os.getenv("DEEPSEEK_API_KEY", ""))
-    judge_model = os.getenv("COUNCIL_JUDGE_MODEL", "deepseek-v4-pro")
+    # 有专用 Judge Key 时默认用 glm-5.2（智谱），否则保持 deepseek 兼容
+    if judge_api_key and judge_api_key != os.getenv("DEEPSEEK_API_KEY", "") and not os.getenv("COUNCIL_JUDGE_MODEL"):
+        judge_model = "glm-5.2"
+    else:
+        judge_model = os.getenv("COUNCIL_JUDGE_MODEL", "deepseek-v4-pro")
+    # base_url 自动匹配模型厂商
+    if judge_model.startswith("glm-"):
+        default_judge_url = "https://open.bigmodel.cn/api/paas/v4"
+    else:
+        default_judge_url = "https://api.deepseek.com/v1"
     judge_base_url = os.getenv("COUNCIL_JUDGE_BASE_URL",
-                               os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com/v1"))
+                               os.getenv("DEEPSEEK_BASE_URL", default_judge_url))
     config["judge"] = {
         "api_key": judge_api_key,
         "base_url": judge_base_url,

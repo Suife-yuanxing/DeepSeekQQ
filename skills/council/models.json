@@ -11,9 +11,9 @@
       "api_key_env": "DEEPSEEK_API_KEY",
       "base_url_env": "DEEPSEEK_BASE_URL",
       "default_base_url": "https://api.deepseek.com/v1",
-      "default_model": "deepseek-v4-flash",
+      "default_model": "deepseek-v4-pro",
       "auth_header": "Bearer",
-      "cost_per_1m": { "input": 1.0, "output": 4.0 },
+      "cost_per_1m": { "input": 3.15, "output": 6.31 },
       "overrides": { "max_tokens": 4096 }
     },
     "kimi": {
@@ -24,7 +24,7 @@
       "default_base_url": "https://api.moonshot.cn/v1",
       "default_model": "kimi-k2.6",
       "auth_header": "Bearer",
-      "cost_per_1m": { "input": 2.0, "output": 8.0 },
+      "cost_per_1m": { "input": 6.89, "output": 29.0 },
       "overrides": {"temperature": 1.0}
     },
     "mimo": {
@@ -35,7 +35,7 @@
       "default_base_url": "https://api.xiaomimimo.com/v1",
       "default_model": "mimo-v2.5-pro",
       "auth_header": "api-key",
-      "cost_per_1m": { "input": 1.0, "output": 4.0 },
+      "cost_per_1m": { "input": 3.15, "output": 6.31 },
       "overrides": { "max_tokens": 4096 }
     },
     "minimax": {
@@ -53,14 +53,21 @@
 
   "judge_fallback_chain": [
     {
-      "model": "deepseek-v4-pro",
+      "model": "glm-5.2",
       "api_key_env": "COUNCIL_JUDGE_API_KEY",
       "base_url_env": "COUNCIL_JUDGE_BASE_URL",
       "auth_header": "Bearer",
-      "default_base_url": "https://api.deepseek.com/v1"
+      "default_base_url": "https://open.bigmodel.cn/api/paas/v4"
     },
     {
-      "model": "deepseek-v4-flash",
+      "model": "glm-4-plus",
+      "api_key_env": "COUNCIL_JUDGE_API_KEY",
+      "base_url_env": "COUNCIL_JUDGE_BASE_URL",
+      "auth_header": "Bearer",
+      "default_base_url": "https://open.bigmodel.cn/api/paas/v4"
+    },
+    {
+      "model": "deepseek-v4-pro",
       "api_key_env": "DEEPSEEK_API_KEY",
       "base_url_env": "DEEPSEEK_BASE_URL",
       "auth_header": "Bearer",
