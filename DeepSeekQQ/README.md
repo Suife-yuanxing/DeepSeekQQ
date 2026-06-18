@@ -71,7 +71,7 @@ python bot.py
 python -m pytest tests/ -v
 ```
 
-共 858 个测试，包含单元测试和集成测试。
+共 ~1030 个测试（62 个测试文件），包含单元测试和集成测试。
 
 测试分类标签：
 - `unit` — 纯逻辑，无 I/O
@@ -95,6 +95,8 @@ python -m pytest tests/ -v
 
 API 降级：DeepSeek 远程 → Ollama 本地模型（含熔断器保护）
 数据库：SQLite (WAL 模式) + 14版本迁移
+Pipeline 阶段：handler.py（42行入口） + stages/ 目录（22个独立阶段文件）
+辅助模块：error_reporter（错误上报）/ global_state（全局状态）/ token_tracker（Token统计）
 ```
 
 ## 部署
@@ -113,26 +115,38 @@ journalctl -u deepseek-bot -f    # 查看日志
 ```
 DeepSeekQQ/
 ├── bot.py                    # 入口
-├── plugins/deepseek/         # 核心插件（~60模块）
+├── plugins/deepseek/         # 核心插件（~134模块）
 │   ├── handler.py            # Pipeline 主处理器
+│   ├── stages/               # 22 个 Pipeline 阶段
 │   ├── api.py                # LLM API 调用层
 │   ├── prompt.py             # 系统提示词构建
 │   ├── memory.py             # 记忆系统
+│   ├── memory_embed.py       # 语义向量化检索
 │   ├── voice.py              # TTS 语音合成
 │   ├── share_parser.py       # 分享链接解析
-│   ├── ...                   # 其他模块
-│   └── plugins/              # 热加载插件目录
-├── tests/                    # 测试套件（~30文件/858测试）
+│   ├── time_validator.py     # 时间合理性校验
+│   ├── token_tracker.py      # API Token 用量追踪
+│   ├── error_reporter.py     # 错误收集上报
+│   ├── global_state.py       # 全局状态管理
+│   └── ...
+├── tests/                    # 测试套件（~62文件/~1030测试）
 ├── data/                     # 运行时数据
 │   ├── stickers/              # 表情包
 │   └── persona/              # 人设文件
-└── scripts/                  # 工具脚本
+├── scripts/                  # 工具脚本
+└── tools/
+    └── tokenlens/            # Token 用量可视化面板
 ```
 
 ## 已知限制
 
 - Web 管理后台为基础版本
-- 部分模块测试覆盖不足
+- 部分边缘场景仍需完善测试覆盖
+
+## 更新日志
+
+- **2026-06-18**: 完成实施计划全部 53 项，新增 9 个测试模块（172 测试），修复 time_validator 小时修正 bug
+- **2026-06-09**: 天气 API 迁移 Open-Meteo，修复重启循环问题，handler.py 拆分至 stages/
 
 ## License
 
