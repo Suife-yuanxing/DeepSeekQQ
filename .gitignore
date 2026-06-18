@@ -1,3 +1,40 @@
+# Python
 __pycache__/
 *.pyc
+*.py[cod]
+*.so
+.pytest_cache/
+.ruff_cache/
+
+# 环境变量（含密钥）
+.env
+.env.local
+
+# 数据文件（运行时生成）
+data/
+tmp/
+*.db
+*.sqlite
+*.sqlite3
+
+# 语音文件
+*.mp3
+*.ogg
+*.wav
+*.sil
+
+# 日志
+*.log
+logs/
+
+# 编辑器 / IDE
+.vscode/
+.idea/
+*.swp
+
+# 系统文件
+.DS_Store
+Thumbs.db
+
+# 敏感文件
 vpn-setup-report.md
