@@ -42,7 +42,7 @@ python -m pytest tests/ -v    # 1030 个测试（62 个测试文件）
 - **天气 API**: 已从和风天气切换到 Open-Meteo（免费无需 Key），2026-06-09 部署
 - **重启循环 (已修复)**: 2026-06-09 修复 3 个 crash bug（_http_session UnboundLocalError / sqlite3.Row.get / CancelledError）+ systemd RestartSec 10→60s + StartLimitBurst=5
 - **time_validator 小时修正 Bug (已修复)**: 2026-06-18 修复前缀 `都`/`已经` 导致小时数字重复拼接的问题
-- **测试覆盖 (已完成)**: 2026-06-18 新增 9 个测试模块（172 测试），覆盖率达到 53/53 实施项
+- **测试覆盖 (已完成)**: 2026-06-18 新增 9 个测试模块（172 测试），覆盖率达到 51/51 实施项
 
 ## 部署路径
 

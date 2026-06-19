@@ -145,7 +145,7 @@ DeepSeekQQ/
 
 ## 更新日志
 
-- **2026-06-18**: 完成实施计划全部 53 项，新增 9 个测试模块（172 测试），修复 time_validator 小时修正 bug
+- **2026-06-18**: 完成实施计划全部 51 项，新增 9 个测试模块（172 测试），修复 time_validator 小时修正 bug + CI working-directory
 - **2026-06-09**: 天气 API 迁移 Open-Meteo，修复重启循环问题，handler.py 拆分至 stages/
 
 ## License
