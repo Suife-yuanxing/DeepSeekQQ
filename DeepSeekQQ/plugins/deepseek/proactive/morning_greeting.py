@@ -16,14 +16,15 @@ from ..database import (
     has_proactive_today,
     has_user_message_today,
 )
+from ..db_proactive import get_morning_skip_state
+from ..db_proactive import set_morning_skip_state
 from .shared import (
     _generate_proactive_message,
     _get_proactive_targets,
     _send_proactive_message,
 )
 
-# 连续跳过追踪：{uid: consecutive_skip_count}
-_consecutive_morning_skips: dict = {}
+# 连续跳过追踪已持久化到 DB（真人化Q3）→ db_proactive.get/set_morning_skip_state
 
 
 async def _get_weather_alert_for_user(user_id: str) -> Optional[str]:
@@ -197,10 +198,11 @@ async def _should_send_morning(uid: str) -> dict:
         elif mood == "positive":
             context = "昨晚聊得开心，早安可以延续好心情"
 
-    # 连续跳过保护：已连续跳过2天 → 第3天强制发送
-    skip_count = _consecutive_morning_skips.get(uid, 0)
+    # 连续跳过保护：已连续跳过2天 → 第3天强制发送（持久化到DB，真人化Q3）
+    skip_state = await get_morning_skip_state(uid)
+    skip_count = skip_state["consecutive_skips"]
     if skip_count >= 2:
-        _consecutive_morning_skips[uid] = 0  # 重置计数器
+        await set_morning_skip_state(uid, 0, "")
         logger.info(f"[早安] 连续跳过{skip_count}天，今日强制发送 uid={uid[:6]}")
         return {"should_send": True, "reason": "连续跳过保护（强制发送）", "context": context}
 
@@ -208,11 +210,12 @@ async def _should_send_morning(uid: str) -> dict:
     is_weekend = now.weekday() >= 5
     forget_chance = 0.5 if is_weekend else 0.3
     if random.random() < forget_chance:
-        _consecutive_morning_skips[uid] = skip_count + 1
-        return {"should_send": False, "reason": f"随机跳过（连续跳过{skip_count + 1}天）", "context": ""}
+        new_skip_count = skip_count + 1
+        await set_morning_skip_state(uid, new_skip_count, "")
+        return {"should_send": False, "reason": f"随机跳过（连续跳过{new_skip_count}天）", "context": ""}
 
     # 成功发送，重置计数器
-    _consecutive_morning_skips[uid] = 0
+    await set_morning_skip_state(uid, 0, "")
     return {"should_send": True, "reason": "条件满足", "context": context}
 
 
@@ -262,3 +265,82 @@ async def _morning_greeting(bot):
             continue
         msg = await _generate_proactive_message("morning")
         await _send_proactive_message(bot, "group", str(gid), msg, scene="morning")
+
+
+# ═══════════════════════════════════════════════════════════════
+# 事件驱动早安 — 真人化 P1-4
+# ═══════════════════════════════════════════════════════════════
+
+async def _morning_event_driven(bot, user_id: str, trigger: str = "wake") -> bool:
+    """事件驱动早安（真人化 P1-4）。
+
+    trigger 类型：
+    - "wake": schedule sleeping→waking 后 5-30 分钟触发
+    - "user_morning": 用户先发早安 → 被动回复
+    - "first_today": 对方今天第一条消息 → 顺带说早
+
+    Returns:
+        True 如果发送了早安
+    """
+    session_id = f"private_{user_id}"
+
+    # 今天已发过，跳过
+    if await has_proactive_today(str(user_id), "morning") or \
+       await has_proactive_today(str(user_id), "morning_triggered"):
+        return False
+
+    # 获取虚拟时间（而非 datetime.now()）
+    try:
+        from ..causal_context import get_cc
+        cc = get_cc(session_id)
+        now = cc.virtual_time
+    except Exception:
+        from datetime import datetime
+        now = datetime.now()
+
+    # 只在早晨窗口触发（6:00-12:00）
+    if not (6 <= now.hour < 12):
+        return False
+
+    if trigger == "wake":
+        # 检查 schedule 状态是否刚 waking
+        try:
+            from ..causal_context import get_cc_safe
+            cc = get_cc_safe(session_id)
+            if cc and cc.schedule_period != "waking":
+                return False
+        except Exception:
+            pass
+        # 随机延迟 5-30 分钟后触发（由调用方控制）
+        import random as _random
+        delay_minutes = _random.randint(5, 30)
+        logger.info(
+            f"[早安事件] wake触发 {user_id[:6]} 延迟{delay_minutes}min "
+            f"虚拟时间={now.strftime('%H:%M')}"
+        )
+
+    elif trigger == "user_morning":
+        # 用户先发了早安 → 被动回复
+        logger.info(f"[早安事件] 被动回复 {user_id[:6]}")
+
+    elif trigger == "first_today":
+        # 今天第一条消息 → 自然带早安
+        logger.info(f"[早安事件] 首条消息顺带 {user_id[:6]}")
+
+    # 生成早安消息
+    msg = await _generate_proactive_message("morning", str(user_id))
+    await _send_proactive_message(bot, "private", str(user_id), msg, scene="morning")
+    logger.info(f"[早安事件] 发送 {user_id[:6]}: {msg[:30]}...")
+    return True
+
+
+async def handle_user_morning(bot, user_id: str, raw_msg: str) -> bool:
+    """处理用户主动早安（在 handler 中调用）。
+
+    如果用户先发早安，bot 被动回复，不再主动发送早安。
+    """
+    from ..handler_helpers import detect_greeting_type
+    greeting_type = detect_greeting_type(raw_msg, [])
+    if greeting_type == "morning":
+        return await _morning_event_driven(bot, user_id, trigger="user_morning")
+    return False

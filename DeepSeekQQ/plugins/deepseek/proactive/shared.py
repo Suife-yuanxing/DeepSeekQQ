@@ -100,7 +100,25 @@ async def _generate_proactive_message(scene: str, user_id: str = "", context: di
 
     scene: morning/night/sleep_nag/silence/holiday/checkin
     context: 沉默上下文（P1），包含 topic/summary/tags/hours_ago
+
+    真人化Q2：早晚安 90% 走模板，仅 10% 特殊场景走 LLM。
     """
+    # 真人化Q2：早晚安模板优先（90%概率直出，节省LLM调用）
+    if not _should_use_llm(scene, context):
+        if scene == "morning":
+            recent_morning = await get_recent_greetings(scene, 5)
+            # 排除最近用过的模板
+            available = [t for t in MORNING_TEMPLATES if t not in recent_morning]
+            if not available:
+                available = MORNING_TEMPLATES
+            return random.choice(available)
+        if scene == "night":
+            recent_night = await get_recent_greetings(scene, 5)
+            available = [t for t in NIGHT_TEMPLATES if t not in recent_night]
+            if not available:
+                available = NIGHT_TEMPLATES
+            return random.choice(available)
+
     # 获取好感度信息
     affection_info = ""
     if user_id:
@@ -234,7 +252,7 @@ async def _generate_proactive_message(scene: str, user_id: str = "", context: di
         "7. 不要称对方为\"主人\"——你是普通女生，不是仆人\n"
         "8. 如果适合，在末尾加 [sticker:情绪]，大约20%概率。情绪必须用英文：happy/angry/shy/sad/tsundere/cute/funny/love/speechless/excited\n"
         "9. 绝对不要输出 [doge]、[微笑] 等QQ内置表情标签\n"
-        "10. 情绪表达藏在字里行间，不要直接说\"我很想你\"\"我很难过\"，用语气表达\n"
+        "10. 情绪表达藏在字里行间，不要直接说'我很想你''我很难过'，用语气表达。但如果行为引擎要求直接表达情绪（如撒娇），遵守行为引擎的指令\n"
         "11. 默认是随意闲聊模式，不是客服"
     )
 
@@ -277,27 +295,152 @@ async def _generate_proactive_message(scene: str, user_id: str = "", context: di
     return random.choice(fallbacks.get(scene, ["喵~"]))
 
 
+# ---------- 真人化Q2：早晚安模板（90%模板 10% LLM）----------
+
+MORNING_TEMPLATES = [
+    # 慵懒起床系
+    "早呀~刚睡醒，还在被窝里赖着呢",
+    "喵~早安！你今天起得好早呀",
+    "早啊...我还在揉眼睛呢，让我缓一缓",
+    "早！我刚醒，头发还乱糟糟的",
+    "早呀~太阳都晒屁股了，虽然我也是刚起",
+    # 元气满满系
+    "早安！今天天气好好，心情也跟着好起来了",
+    "早~新的一天开始啦，你今天有什么计划呀？",
+    "早安！昨天晚上梦到你了嘿嘿",
+    "早呀~今天也要开开心心的哦",
+    "早安！我刚喝了杯豆浆，你吃早饭了吗？",
+    # 撒娇系
+    "早啊...懒得起床，你快来叫我~",
+    "喵早安~今天好想赖床啊，你来陪我嘛",
+    "早！还没睡够呢...你再陪我睡会",
+    "早呀~今天周末诶，你怎么起这么早，不能多睡会吗",
+    "早安...其实我昨晚熬夜刷手机了，现在困死了",
+    # 调皮系
+    "早~我还以为你要睡到中午呢",
+    "早安！终于醒了？我还以为你冬眠了",
+    "早呀~今天起这么早，是不是太阳打西边出来了",
+    "早！你今天居然比我早，不敢相信",
+    "早安~迟到没？不会又在赶地铁吧",
+    # 关心系
+    "早呀~昨晚睡得好吗？",
+    "早安！今天外面有点凉，出门多穿点哦",
+    "早~你昨晚好像睡挺晚的，今天别太累了",
+    "早安！你昨天熬夜了吧，黑眼圈重不重？",
+    "早呀~记得吃早饭，别又像上次一样胃疼",
+    # 日常碎碎念
+    "早！今天早上食堂的豆浆挺好喝的",
+    "早安~刚看到窗外的猫在晒太阳，好可爱",
+    "早呀~今天课好多，已经在去教室的路上了",
+    "早安！今天终于没早课，幸福地赖了个床",
+    "早~刚在宿舍群里看到个好笑的事，等下跟你说",
+    # 周末特别
+    "早呀~周末不用早起的感觉真好",
+    "早安！周末诶，今天准备干嘛？",
+    "早~周末终于可以慢慢吃早饭了",
+    "早安！周末就是用来赖床的，你也别太早起啊",
+    "早呀~周末的早上总是格外美好呢",
+]
+
+NIGHT_TEMPLATES = [
+    # 关心催促系
+    "都几点了还不睡？明天又该困了",
+    "快去睡觉啦！熬夜对身体不好",
+    "早点睡吧，明天还要早起呢",
+    "你看看表，都几点了，赶紧睡！",
+    "不准熬夜了，快去睡觉！",
+    # 温柔道别系
+    "晚安呀~做个好梦",
+    "晚安，明天见~",
+    "睡啦睡啦，困得眼睛都睁不开了",
+    "晚安喵~梦里有我哦",
+    "好梦~明天再聊",
+    # 撒娇挽留系
+    "那你睡吧...我明天等你",
+    "晚安，虽然还想跟你再聊会，但你该睡了",
+    "睡吧睡吧~明天第一个找我聊天哦",
+    "晚安~不许偷偷找别人聊天",
+    "好吧你睡吧，我也准备躺下了",
+    # 次日约定系
+    "晚安！明天记得告诉我做什么梦了",
+    "睡吧~明天我要是起晚了你要叫我",
+    "晚安，明天有个好玩的事跟你说",
+    "好梦~明天起来第一个发消息给你",
+    "晚安晚安，明天继续聊",
+]
+
+
+def _should_use_llm(scene: str, context: dict = None) -> bool:
+    """判断是否应该使用 LLM 生成（真人化Q2）。
+
+    90% 的场景走模板，仅 10% 的特殊场景使用 LLM。
+    特殊场景包括：节日、久未聊、情绪波动大、或概率命中。
+    """
+    if scene in ("holiday", "silence", "sleep_nag", "checkin"):
+        return True  # 这些场景内容变化大，始终用 LLM
+    if context:
+        if context.get("holiday"):
+            return True  # 节日场景
+        if context.get("mood_hint") and any(kw in context.get("mood_hint", "") for kw in
+                                            ["情绪不好", "负面", "难过", "生气", "波动大", "不开心"]):
+            return True  # 情绪波动大
+    # 10% 概率走 LLM（给模板增加偶尔的新鲜感）
+    if random.random() < 0.10:
+        return True
+    return False
+
+
 # ---------- Phase 7：主动消息增强 ----------
 
 async def _get_proactive_targets() -> list:
-    """动态获取主动消息目标用户列表（Phase 7）。
+    """动态获取主动消息目标用户列表（Phase 7 + 真人化Q1）。
 
     从最近活跃的私聊会话中自动发现目标，而非硬编码 MY_QQ。
-    只对好感度 >= 20（认识的人）的用户发送，最多 10 人。
+    只对好感度 >= 200（重要的人）且周互动>=3天的用户发送，按好感度降序，最多 5 人。
     """
     try:
         from ..database import get_active_sessions
         from ..database import get_affection as _get_affection
+        from ..database import get_db
+        import time as _time
+
         active = await get_active_sessions(hours=168)  # 最近一周
+        now = _time.time()
+        week_ago = now - 7 * 86400
+
         targets = []
+        db = await get_db()
         for sid in active:
             if not sid.startswith("private_"):
                 continue
             user_id = sid.replace("private_", "")
             aff = await _get_affection(user_id)
-            if aff.get("score", 0) >= 20:
-                targets.append(user_id)
-        logger.info(f"[主动消息] 自动发现 {len(targets)} 个目标用户")
-        return targets[:10]
+            score = aff.get("score", 0)
+            if score < 200:
+                continue
+
+            # 周互动天数 >= 3（过去7天至少3天有消息）
+            try:
+                async with db.execute(
+                    """SELECT COUNT(DISTINCT DATE(timestamp, 'unixepoch')) as active_days
+                       FROM memories WHERE session_id = ? AND role = 'user'
+                       AND timestamp >= ?""",
+                    (sid, week_ago)
+                ) as cursor:
+                    row = await cursor.fetchone()
+                    weekly_active_days = row["active_days"] if row else 0
+            except Exception:
+                weekly_active_days = 0
+
+            if weekly_active_days < 3:
+                continue
+
+            targets.append((user_id, score))
+
+        # 按好感度降序排列，最多5人
+        targets.sort(key=lambda x: x[1], reverse=True)
+        user_ids = [t[0] for t in targets[:5]]
+        logger.info(f"[主动消息] 自动发现 {len(user_ids)} 个目标用户（好感度≥200 + 周互动≥3天）")
+        return user_ids
     except (OSError, ValueError, TypeError):
         return [str(MY_QQ)] if MY_QQ else []

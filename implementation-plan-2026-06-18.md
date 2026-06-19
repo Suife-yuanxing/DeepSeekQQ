@@ -593,19 +593,19 @@ jobs:
 |------|-------------|---------|------|
 | `handler.py` + `pipeline.py` | `test_pipeline.py` | 3h | ✅（已有） |
 | `reminder.py` | `test_reminder.py` | 2h | ✅ 23 tests |
-| `search.py` | `test_search.py` | 2h | ✅ 22 tests |
-| `token_tracker.py` | `test_token_tracker.py` | 1.5h | ✅ 17 tests |
-| `time_validator.py` | `test_time_validator.py` | 1.5h | ✅ 19 tests |
-| `world_context.py` | `test_world_context.py` | 1.5h | ✅ 27 tests |
-| `video_parser.py` | `test_video_parser.py` | 2h | ✅ 19 tests |
+| `search.py` | `test_search.py` | 2h | ✅ 16 tests |
+| `token_tracker.py` | `test_token_tracker.py` | 1.5h | ✅ 16 tests |
+| `time_validator.py` | `test_time_validator.py` | 1.5h | ✅ 13 tests |
+| `world_context.py` | `test_world_context.py` | 1.5h | ✅ 34 tests |
+| `video_parser.py` | `test_video_parser.py` | 2h | ✅ 20 tests |
 
 **数据库测试补强**：
 
 | 模块 | 新建测试文件 | 预估工时 | 状态 |
 |------|-------------|---------|------|
-| `db_core.py` | `test_db_core.py` | 1h | ✅ 12 tests |
+| `db_core.py` | `test_db_core.py` | 1h | ✅ 7 tests |
 | `db_memories.py` | `test_db_memories.py` | 2h | ✅ 20 tests |
-| `memory_embed.py` | `test_memory_embed.py` | 1.5h | ✅ 25 tests |
+| `memory_embed.py` | `test_memory_embed.py` | 1.5h | ✅ 23 tests |
 
 **合计**：~18 小时 | **172 个新测试全部通过**
 

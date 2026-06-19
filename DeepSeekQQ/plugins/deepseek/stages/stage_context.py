@@ -165,6 +165,29 @@ async def _run_batch1_queries(ctx: ChatContext):
     if ctx.bot_mood_result.get("contagion"):
         ctx.contagion_result = ctx.bot_mood_result["contagion"]
 
+    # 真人化 P1-2：情绪隐藏引擎 — 决定是否表达/微表达/隐藏
+    try:
+        from ..emotion_deep import apply_emotion_expression
+        bot_dominant = ctx.bot_mood_result.get("dominant", "平静")
+        bot_intensity = ctx.bot_mood_result.get("intensity", ctx.analysis.emotion.confidence if ctx.analysis else 0)
+        aff_score = ctx.affection.get("score", 0)
+        if bot_dominant != "平静" and bot_intensity > 0.1:
+            expr = apply_emotion_expression(bot_dominant, bot_intensity, aff_score)
+            ctx.emotion_expression = expr
+            # 同步到 CausalContext
+            try:
+                from ..causal_context import get_cc
+                cc = get_cc(ctx.session_id)
+                cc.emotion_hidden = (expr["style"] in ("hidden", "none"))
+            except Exception:
+                pass
+            logger.debug(
+                f"[情绪隐藏] {bot_dominant}({bot_intensity:.2f}) → "
+                f"style={expr['style']} express={expr['should_express']}"
+            )
+    except Exception as e:
+        logger.debug(f"[情绪隐藏] 引擎跳过: {e}")
+
     # 情绪因果链：最近情绪变化趋势
     from ..context_analyzer import get_emotion_cause_chain
     cause_chain = await get_emotion_cause_chain(ctx.user_id)
@@ -181,11 +204,20 @@ async def _run_batch1_queries(ctx: ChatContext):
 def _run_sync_computations(ctx: ChatContext) -> str:
     """同步计算：作息、对话节奏、行为模式。返回 bot_mood_dominant。"""
     from ..schedule import get_schedule_state
-    ctx.schedule = get_schedule_state()
+    # 真人化 P1-1：传入 session_id 以同步到 CausalContext
+    ctx.schedule = get_schedule_state(session_id=ctx.session_id)
 
     # 当前活动状态（activity_sim）
     from ..activity_sim import get_activity_hint
-    ctx.activity_hint = get_activity_hint()
+    from ..activity_sim import get_current_activity
+    # 真人化 P1-1：传入 session_id 以同步到 CausalContext
+    ctx.activity_hint = get_activity_hint(session_id=ctx.session_id)
+    # 真人化Q6：活动是否可中断
+    try:
+        current_act = get_current_activity(session_id=ctx.session_id)
+        ctx.can_interrupt = current_act.can_interrupt
+    except Exception:
+        ctx.can_interrupt = True
     bot_mood_dominant = ctx.bot_mood_result.get("dominant", "平静") if ctx.bot_mood_result else "平静"
 
     # 对话节奏：话题桥接/过渡
@@ -340,13 +372,38 @@ async def _run_batch2_queries(ctx: ChatContext, bot_mood_dominant: str):
 
 
 async def _run_fatigue_and_gap(ctx: ChatContext, bot_mood_dominant: str):
-    """对话疲劳感知 + 已读不回感知。"""
+    """对话疲劳感知 + 已读不回感知 + 非语言信号分析（真人化 P1-5）。"""
     from ..conversation_fatigue import analyze_conversation_fatigue
     fatigue_result = analyze_conversation_fatigue(ctx.recent_memories, ctx.raw_msg, ctx.schedule)
     ctx.fatigue_level = fatigue_result["level"]
     ctx.fatigue_hint = fatigue_result["hint"]
     if ctx.fatigue_level >= 2:
         logger.info(f"[疲劳感知] level={ctx.fatigue_level} score={fatigue_result['score']} signals={fatigue_result['signals']}")
+
+    # 真人化 P1-1：同步疲劳状态到 CausalContext
+    try:
+        from ..causal_context import get_cc
+        cc = get_cc(ctx.session_id)
+        cc.update_fatigue(
+            level=ctx.fatigue_level,
+            is_ending=(ctx.fatigue_level >= 3),
+        )
+        cc.conversation_depth = len(ctx.recent_memories) // 2
+    except Exception:
+        pass
+
+    # 真人化 P1-5 + audit-2-2：非语言信号分析 → 情绪反馈
+    try:
+        from ..nonverbal_signals import analyze_nonverbal, get_nonverbal_hint
+        ctx.nonverbal_signals = analyze_nonverbal(
+            ctx.session_id, ctx.recent_memories, ctx.raw_msg
+        )
+        if ctx.nonverbal_signals and ctx.nonverbal_signals.has_any_signal():
+            ctx.nonverbal_hint = get_nonverbal_hint(ctx.nonverbal_signals)
+            logger.debug(f"[非语言信号] 检测到信号: signal_count={ctx.nonverbal_signals.signal_count}")
+    except Exception:
+        ctx.nonverbal_signals = None
+        ctx.nonverbal_hint = ""
 
     # 已读不回感知
     import time as _time
@@ -365,8 +422,9 @@ async def _run_personality_drift(ctx: ChatContext):
     try:
         from ..personality_drift import get_personality_drift_hints, maybe_learn_catchphrase
 
-        # 兴趣漂移提示
-        drift_hints = await get_personality_drift_hints(ctx.user_id)
+        # 兴趣漂移提示（真人化 P3-4.3：事件驱动检测）
+        from ..personality_drift import get_event_drift_hints
+        drift_hints = await get_event_drift_hints(ctx.user_id)
         if drift_hints:
             ctx.personality_drift_hints = drift_hints
 
@@ -376,6 +434,16 @@ async def _run_personality_drift(ctx: ChatContext):
         if aff_score >= CATCHPHRASE_LEARN_AFFECTION_MIN:
             from ..utils import safe_task
             safe_task(maybe_learn_catchphrase(ctx.user_id, aff_score))
+
+        # 真人化 P3-4.4：检测口头禅双向影响
+        if aff_score >= 100:  # 至少熟悉以上才检测
+            from ..personality_drift import get_catchphrase_influence_hint
+            try:
+                influence = await get_catchphrase_influence_hint(ctx.user_id)
+                if influence:
+                    ctx.catchphrase_influence_hint = influence
+            except Exception:
+                pass
     except Exception as e:
         logger.debug(f"[人设演化] 跳过（非关键路径）: {e}")
 

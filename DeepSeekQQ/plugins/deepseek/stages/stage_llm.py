@@ -97,6 +97,7 @@ async def _stage_llm(ctx: ChatContext) -> Optional[str]:
             interest_hint=ctx.interest_hint or None,
             growth_hint=ctx.growth_hint or None,
             catchphrase_hint=ctx.catchphrase_hint or None,
+            catchphrase_influence_hint=ctx.catchphrase_influence_hint or None,
             reply_gap_hint=ctx.reply_gap_hint or None,
             bot_emotion_memory_hint=ctx.bot_emotion_memory_hint or None,
             fatigue_hint=ctx.fatigue_hint or None,
@@ -128,6 +129,29 @@ async def _stage_llm(ctx: ChatContext) -> Optional[str]:
         bot_mood_dom = ctx.bot_mood_result.get("dominant", "平静") if ctx.bot_mood_result else "平静"
         verbosity = get_verbosity_modifier(schedule_period, bot_mood_dom,
                                            affection_score=ctx.affection.get("score", 0))
+        # 真人化Q6：不可中断活动时回复更短（可能"没看到消息"）
+        if not ctx.can_interrupt:
+            verbosity *= 0.6
+        # 真人化 P1-1/P1-3：CausalContext 活动强度 → 回复速度/长度 + 活动过渡
+        try:
+            from ..causal_context import get_cc_safe
+            cc = get_cc_safe(ctx.session_id)
+            if cc and cc.activity_intensity > 0.7:
+                verbosity *= 0.7  # 高投入活动 → 回复更短
+                ctx.activity_intensity_high = True
+            if cc and cc.is_absent:
+                verbosity *= 0.5  # 缺席状态 → 大幅缩短
+            # 活动过渡事件：最近一次活动切换可能作为聊天话题
+            if cc:
+                recent_activity_events = [
+                    e for e in cc.get_recent_events(5)
+                    if e.source == "activity_sim"
+                ]
+                if recent_activity_events:
+                    latest = recent_activity_events[-1]
+                    ctx.activity_transition = latest.cause
+        except Exception:
+            pass
         length_info["target_lines"] = max(1, round(length_info["target_lines"] * verbosity))
         ep = ctx.emotion_params
         if ep["temperature"] >= 1.0:
@@ -164,6 +188,7 @@ async def _stage_llm(ctx: ChatContext) -> Optional[str]:
             interest_hint=ctx.interest_hint or None,
             growth_hint=ctx.growth_hint or None,
             catchphrase_hint=ctx.catchphrase_hint or None,
+            catchphrase_influence_hint=ctx.catchphrase_influence_hint or None,
             reply_gap_hint=ctx.reply_gap_hint or None,
             bot_emotion_memory_hint=ctx.bot_emotion_memory_hint or None,
             fatigue_hint=ctx.fatigue_hint or None,
@@ -308,6 +333,23 @@ async def _stage_llm(ctx: ChatContext) -> Optional[str]:
                 elif emotional:
                     image_prompt += "\n用户在分享有趣/好看的内容，附和一下就好，不用分析。"
                 sys_prompt += f"\n{image_prompt}"
+
+        # 真人化 P1-5/P1-2：非语言信号 + 情绪表达提示
+        try:
+            nvh = getattr(ctx, 'nonverbal_hint', None)
+            if nvh:
+                sys_prompt += f"\n\n{nvh}"
+        except Exception:
+            pass
+        try:
+            expr = getattr(ctx, 'emotion_expression', None)
+            if expr and expr.get("should_express"):
+                if expr["style"] == "explicit":
+                    sys_prompt += f"\n\n【情绪表达】{expr['hint']}"
+                elif expr["style"] == "micro":
+                    sys_prompt += f"\n\n【微表达】{expr['hint']}"
+        except Exception:
+            pass
 
         if ctx.scratchpad:
             sys_prompt += f"\n\n【当前对话状态】{ctx.scratchpad}"

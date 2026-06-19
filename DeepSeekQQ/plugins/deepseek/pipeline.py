@@ -90,6 +90,8 @@ class ChatContext:
     interest_hint: str = ""
     growth_hint: str = ""
     catchphrase_hint: str = ""
+    # 真人化 P3-4.4：口头禅双向影响
+    catchphrase_influence_hint: str = ""
     # 真人化优化
     complexity: str = "normal"        # simple / normal / complex
     # 已读不回感知
@@ -108,6 +110,7 @@ class ChatContext:
     user_profile_summary: str = ""
     # 当前活动状态（activity_sim模块）
     activity_hint: str = ""
+    can_interrupt: bool = True  # 真人化Q6：当前活动是否可中断回复
     # 人设演化提示
     personality_drift_hints: list = field(default_factory=list)
     # 价值体系：bot的立场/三观

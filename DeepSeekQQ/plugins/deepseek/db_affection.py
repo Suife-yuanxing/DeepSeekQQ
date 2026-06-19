@@ -1,4 +1,10 @@
-"""affection 表操作 — 好感度、等级、里程碑、衰减。"""
+"""affection 表操作 — 好感度、等级、里程碑、衰减。
+
+真人化 P3-4.5：get_affection() 是好感度的唯一数据源。
+所有模块通过此函数获取好感度，保证数据一致性。
+内置短时缓存（2秒TTL），确保同一时刻不同模块查询结果一致。
+"""
+import time as _time
 from datetime import datetime
 from datetime import timedelta
 from typing import Any
@@ -11,24 +17,56 @@ from nonebot import logger
 from .config import AFFECTION_LEVELS
 from .db_core import get_db
 
+# 真人化4.5：好感度短时缓存（确保跨模块一致性）
+# TTL=2秒，足够覆盖一次请求内所有模块的查询
+_AFFECTION_CACHE: Dict[str, tuple] = {}  # user_id -> (data, expiry_timestamp)
+_AFFECTION_CACHE_TTL = 2.0  # 秒
+
+
+def _invalidate_affection_cache(user_id: str = None):
+    """清除好感度缓存（更新好感度后调用）。"""
+    global _AFFECTION_CACHE
+    if user_id:
+        _AFFECTION_CACHE.pop(str(user_id), None)
+    else:
+        _AFFECTION_CACHE.clear()
+
 
 async def get_affection(user_id: str) -> Dict[str, Any]:
+    """获取用户好感度（唯一数据源）。
+
+    真人化4.5：所有模块统一通过此函数获取好感度。
+    内置2秒缓存确保同一请求内多次查询结果一致（AC-4.5-2）。
+    """
+    uid = str(user_id)
+    now = _time.monotonic()
+
+    # 检查缓存
+    if uid in _AFFECTION_CACHE:
+        data, expiry = _AFFECTION_CACHE[uid]
+        if now < expiry:
+            return data.copy()  # 返回副本防止外部修改污染缓存
+
     db = await get_db()
     async with db.execute(
         "SELECT score, level, title, total_chats, streak_days, first_interaction FROM affection WHERE user_id = ?",
-        (str(user_id),)
+        (uid,)
     ) as cursor:
         row = await cursor.fetchone()
         if not row:
-            return {"score": 0, "level": 1, "title": "陌生人", "total_chats": 0, "streak_days": 0, "first_interaction": 0}
-        return {
-            "score": row["score"],
-            "level": row["level"],
-            "title": row["title"],
-            "total_chats": row["total_chats"],
-            "streak_days": row["streak_days"],
-            "first_interaction": row["first_interaction"] or 0,
-        }
+            result = {"score": 0, "level": 1, "title": "陌生人", "total_chats": 0, "streak_days": 0, "first_interaction": 0}
+        else:
+            result = {
+                "score": row["score"],
+                "level": row["level"],
+                "title": row["title"],
+                "total_chats": row["total_chats"],
+                "streak_days": row["streak_days"],
+                "first_interaction": row["first_interaction"] or 0,
+            }
+        # 写入缓存
+        _AFFECTION_CACHE[uid] = (result.copy(), now + _AFFECTION_CACHE_TTL)
+        return result
 
 
 async def update_affection(user_id: str, delta: float = 1.0):
@@ -72,6 +110,8 @@ async def update_affection(user_id: str, delta: float = 1.0):
                 (new_score, new_level, new_title, now.timestamp(), new_total, new_streak, today, str(user_id))
             )
         await db.commit()
+        # 真人化4.5：好感度更新后清除缓存
+        _invalidate_affection_cache(str(user_id))
     except Exception:
         await db.rollback()
         raise

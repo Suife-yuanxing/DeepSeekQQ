@@ -349,6 +349,13 @@ async def init_db():
         "CREATE INDEX IF NOT EXISTS idx_proactive_user_type_ts ON proactive_log(user_id, type, timestamp)"
     )
     await db.execute("""
+        CREATE TABLE IF NOT EXISTS morning_skip_state (
+            user_id TEXT PRIMARY KEY,
+            consecutive_skips INTEGER DEFAULT 0,
+            last_morning_date TEXT DEFAULT ''
+        )
+    """)
+    await db.execute("""
         CREATE TABLE IF NOT EXISTS user_mood (
             user_id TEXT PRIMARY KEY,
             valence REAL DEFAULT 0,
@@ -629,6 +636,34 @@ async def init_db():
             created_at REAL,
             last_mentioned REAL,
             UNIQUE(user_id, person_name)
+        )
+    """)
+
+    # 真人化 P2-1：微事件发送历史（持久化冷却期追踪）
+    await db.execute("""
+        CREATE TABLE IF NOT EXISTS micro_event_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id TEXT NOT NULL,
+            event_key TEXT NOT NULL,
+            event_text TEXT NOT NULL,
+            sent_at REAL NOT NULL
+        )
+    """)
+    await db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_micro_event_user_key "
+        "ON micro_event_log(user_id, event_key, sent_at)"
+    )
+
+    # 真人化 P2-2：用户回复风格基线（疲劳检测基线学习）
+    await db.execute("""
+        CREATE TABLE IF NOT EXISTS fatigue_baselines (
+            user_id TEXT PRIMARY KEY,
+            sample_count INTEGER DEFAULT 0,
+            avg_reply_length REAL DEFAULT 0,
+            avg_reply_gap REAL DEFAULT 0,
+            sticker_rate REAL DEFAULT 0,
+            question_rate REAL DEFAULT 0,
+            last_updated REAL DEFAULT 0
         )
     """)
     await db.commit()

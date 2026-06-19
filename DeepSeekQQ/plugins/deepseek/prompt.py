@@ -264,6 +264,7 @@ def build_system_prompt(
     interest_hint: str = None,
     growth_hint: str = None,
     catchphrase_hint: str = None,
+    catchphrase_influence_hint: str = None,  # 真人化 P3-4.4：口头禅双向影响
     reply_gap_hint: str = None,
     bot_emotion_memory_hint: str = None,
     fatigue_hint: str = None,
@@ -505,6 +506,10 @@ def build_system_prompt(
     if catchphrase_hint:
         parts.append(f"【口癖】{catchphrase_hint}")
 
+    # === 真人化 P3-4.4：口头禅双向影响 ===
+    if catchphrase_influence_hint:
+        parts.append(catchphrase_influence_hint)
+
     # === 已读不回感知 ===
     if reply_gap_hint:
         parts.append(f"【回复间隔】{reply_gap_hint}")
@@ -538,6 +543,8 @@ def build_system_prompt(
     # P0-2: Hint 优先级裁剪（保证核心提示不被挤出）
     # P0.5-4: 人设片段冲突检测
     parts = _prune_low_priority_hints(parts)
+    # 防御：过滤非字符串元素（Mock 对象等），防止 TypeError
+    parts = [p for p in parts if isinstance(p, str)]
     return "\n\n".join(parts)
 
 

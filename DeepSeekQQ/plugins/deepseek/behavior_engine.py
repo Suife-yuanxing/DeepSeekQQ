@@ -543,6 +543,17 @@ def get_holiday_behavior(trigger_chance: float = 0.15) -> Optional[str]:
 _hot_topic_cache: List[Tuple[str, float]] = []  # [(topic_title, timestamp), ...]
 _HOT_CACHE_TTL = 1800  # 30分钟
 
+# 真人化 P1-3：注册到全局状态表
+try:
+    from .global_state import register as _gs_reg
+    from .global_state import register_snapshot as _gs_snap
+    _gs_reg("behavior._hot_topic_cache", [], namespace="behavior")
+    _gs_reg("behavior._cached_special_dates", None, namespace="behavior")
+    _gs_reg("behavior._cached_special_dates_year", 0, namespace="behavior")
+except ImportError:
+    _gs_reg = None
+    _gs_snap = None
+
 
 def update_hot_topic_cache(topics: list):
     """由 hot_topics 模块调用，更新热点话题缓存。
@@ -619,7 +630,7 @@ def get_scroll_behavior(trigger_chance: float = 0.12) -> Optional[str]:
 
 
 # ============================================================
-# "刚发生"微事件池（Task 6 Layer 3）
+# "刚发生"微事件池（真人化 P2-1：动态生成 + 冷却期 + 持久化）
 # ============================================================
 
 _MICRO_EVENTS: List[str] = [
@@ -645,6 +656,16 @@ _MICRO_EVENTS: List[str] = [
     "刚才点了个外卖，好慢啊",
 ]
 
+# 真人化 P2-1：微事件冷却追踪
+# {event_key: [(user_id, timestamp), ...]}
+_MICRO_EVENT_HISTORY: Dict[str, List[tuple]] = {}
+_MICRO_EVENT_COOLDOWN = 86400 * 30  # 30 天冷却
+
+# 微事件 LLM 生成缓存（避免频繁调用 LLM）
+_LLM_MICRO_EVENT_CACHE: List[str] = []
+_LLM_MICRO_EVENT_CACHE_EXPIRY: float = 0.0
+_LLM_MICRO_EVENT_CACHE_TTL = 86400  # 1 天
+
 
 def register_micro_events(events: List[str]):
     """允许其他模块追加微事件。
@@ -656,17 +677,352 @@ def register_micro_events(events: List[str]):
     logger.debug(f"[行为引擎] 微事件池已扩展至 {len(_MICRO_EVENTS)} 个")
 
 
-def get_micro_event_behavior(trigger_chance: float = 0.02) -> Optional[str]:
-    """随机微事件（2%概率）。"""
+def _is_micro_event_in_cooldown(event_text: str, user_id: str) -> bool:
+    """检查微事件对该用户是否在冷却期内（同步，仅检查内存缓存）。
+
+    真人化 P2-1：同一事件对同一用户 30 天内不重复。
+    对于完整检查，请使用 async 版本 `is_micro_event_available()`。
+    """
+    # 用事件的前 10 个字作为简易 key（避免完全相同才命中）
+    event_key = event_text[:10]
+    if event_key not in _MICRO_EVENT_HISTORY:
+        return False
+
+    now = time.time()
+    for uid, ts in _MICRO_EVENT_HISTORY[event_key]:
+        if uid == user_id and (now - ts) < _MICRO_EVENT_COOLDOWN:
+            return True
+    return False
+
+
+def _record_micro_event_sent(event_text: str, user_id: str):
+    """记录微事件已发送给某用户（同步，仅内存缓存）。
+
+    真人化 P2-1：同时尝试写入 DB（fire-and-forget），持久化确保重启后冷却期不丢失。
+    """
+    event_key = event_text[:10]
+    if event_key not in _MICRO_EVENT_HISTORY:
+        _MICRO_EVENT_HISTORY[event_key] = []
+    _MICRO_EVENT_HISTORY[event_key].append((user_id, time.time()))
+
+    # 清理旧记录（超过冷却期的）
+    now = time.time()
+    _MICRO_EVENT_HISTORY[event_key] = [
+        (uid, ts) for uid, ts in _MICRO_EVENT_HISTORY[event_key]
+        if (now - ts) < _MICRO_EVENT_COOLDOWN
+    ]
+
+    # 限制历史大小
+    if len(_MICRO_EVENT_HISTORY) > 500:
+        # 删除最老的 key
+        oldest_key = min(_MICRO_EVENT_HISTORY, key=lambda k: min(
+            (ts for _, ts in _MICRO_EVENT_HISTORY[k]), default=0
+        ))
+        del _MICRO_EVENT_HISTORY[oldest_key]
+
+    # 真人化 P2-1：fire-and-forget 写入 DB（异步持久化）
+    try:
+        import asyncio as _asyncio
+        # 尝试获取当前事件循环——如果在运行中，创建 task
+        loop = _asyncio.get_event_loop()
+        if loop.is_running():
+            loop.create_task(_save_micro_event_to_db(user_id, event_text))
+        else:
+            _asyncio.run(_save_micro_event_to_db(user_id, event_text))
+    except RuntimeError:
+        pass  # 无事件循环时静默降级
+
+
+async def _save_micro_event_to_db(user_id: str, event_text: str):
+    """异步将微事件写入 DB（fire-and-forget 使用）。"""
+    try:
+        from . import db_proactive
+        await db_proactive.save_micro_event_sent(user_id, event_text)
+    except Exception:
+        pass
+
+
+async def is_micro_event_available(user_id: str, event_text: str) -> bool:
+    """检查微事件对该用户是否可用（异步，综合检查内存+DB）。
+
+    真人化 P2-1：先检查内存缓存（快），再检查 DB（准确）。
+    """
+    # 1. 先查内存缓存
+    if _is_micro_event_in_cooldown(event_text, user_id):
+        return False
+
+    # 2. 再查 DB（持久化记录，防重启丢失）
+    try:
+        from . import db_proactive
+        if await db_proactive.is_micro_event_in_cooldown(user_id, event_text):
+            # 同步到内存缓存（避免后续重复查 DB）
+            event_key = event_text[:10]
+            if event_key not in _MICRO_EVENT_HISTORY:
+                _MICRO_EVENT_HISTORY[event_key] = []
+            _MICRO_EVENT_HISTORY[event_key].append((user_id, time.time()))
+            return False
+    except Exception:
+        pass
+
+    return True
+
+
+async def generate_micro_event(user_id: str) -> Optional[str]:
+    """LLM 动态生成微事件（真人化 P2-1）。
+
+    优先从 LLM 生成缓存取，缓存过期后使用模板池。
+    返回 None 表示所有可用事件都在冷却期。
+
+    注意：LLM 生成是异步的——首次缓存填充后，后续生成在后台进行。
+    """
+    # 1. 检查 LLM 缓存
+    global _LLM_MICRO_EVENT_CACHE, _LLM_MICRO_EVENT_CACHE_EXPIRY
+    now = time.time()
+    if _LLM_MICRO_EVENT_CACHE and now < _LLM_MICRO_EVENT_CACHE_EXPIRY:
+        # 从缓存中选择一个未对该用户冷却的事件
+        available = [
+            e for e in _LLM_MICRO_EVENT_CACHE
+            if await is_micro_event_available(user_id, e)
+        ]
+        if available:
+            event = random.choice(available)
+            _record_micro_event_sent(event, user_id)
+            return event
+
+    # 2. Fallback: 从模板池选择（确保至少有一个可用）
+    available_templates = [
+        e for e in _MICRO_EVENTS
+        if await is_micro_event_available(user_id, e)
+    ]
+    if available_templates:
+        event = random.choice(available_templates)
+        _record_micro_event_sent(event, user_id)
+        return event
+
+    # 3. 所有事件都在冷却期 → 触发 LLM 后台生成新事件
+    _schedule_llm_micro_event_generation()
+
+    # 4. 如果有新生成的 LLM 缓存事件可用（即使冷却未完全过期）
+    if _LLM_MICRO_EVENT_CACHE:
+        event = random.choice(_LLM_MICRO_EVENT_CACHE)
+        _record_micro_event_sent(event, user_id)
+        return event
+
+    return None
+
+
+def _schedule_llm_micro_event_generation():
+    """调度 LLM 后台生成微事件（不阻塞主流程）。"""
+    try:
+        import asyncio as _asyncio
+        loop = _asyncio.get_event_loop()
+        if loop.is_running():
+            loop.create_task(_generate_micro_events_via_llm())
+        else:
+            _asyncio.run(_generate_micro_events_via_llm())
+    except RuntimeError:
+        pass
+
+
+async def _generate_micro_events_via_llm(count: int = 10) -> list:
+    """使用 LLM 生成新的微事件（真人化 P2-1）。
+
+    调用本地 LLM 生成自然、生活化的微事件描述，
+    生成结果写入 _LLM_MICRO_EVENT_CACHE 并在 24h 内复用。
+
+    Args:
+        count: 要生成的事件数量（默认 10）
+
+    Returns:
+        生成的事件文本列表
+    """
+    global _LLM_MICRO_EVENT_CACHE, _LLM_MICRO_EVENT_CACHE_EXPIRY
+
+    # 防止重复触发：如果缓存还新鲜，不生成
+    now = time.time()
+    if _LLM_MICRO_EVENT_CACHE and now < _LLM_MICRO_EVENT_CACHE_EXPIRY:
+        return _LLM_MICRO_EVENT_CACHE
+
+    # 构建 prompt
+    existing_sample = random.sample(_MICRO_EVENTS, min(5, len(_MICRO_EVENTS)))
+    prompt = (
+        "你是一个日常生活丰富的真人。请生成一些「刚刚发生的小事」，语气自然、生活化，"
+        "像是随口一提的感觉。\n\n"
+        f"参考风格（不要照抄）：\n" + "\n".join(f"- {e}" for e in existing_sample) +
+        f"\n\n请生成 {count} 条不同的微事件，每行一条，每条 10-25 字，用中文。"
+        "不要机械重复参考样本的内容，要有新意。"
+        "事件类型可以五花八门：意外/发现/感想/动作/环境/物品/身体/心情。"
+    )
+
+    new_events = []
+
+    try:
+        # 使用本地 LLM 生成
+        from .local_llm import query_local_llm
+        result = await query_local_llm(
+            prompt=prompt,
+            max_tokens=500,
+            temperature=0.9,  # 高创造性
+        )
+        if result:
+            # 解析生成结果：每行一条
+            for line in result.strip().split("\n"):
+                line = line.strip()
+                # 去掉可能的编号前缀（如 "1. " 或 "1、"）
+                if line and len(line) >= 8:
+                    # 尝试去掉编号
+                    import re
+                    cleaned = re.sub(r'^[\d]+[\.\、\s]+', '', line)
+                    if len(cleaned) >= 8:
+                        new_events.append(cleaned)
+                    elif len(line) >= 8:
+                        new_events.append(line)
+    except Exception:
+        logger.debug("[行为引擎] LLM 微事件生成失败，使用模板池")
+
+    # 如果生成成功，更新缓存
+    if len(new_events) >= 3:
+        _LLM_MICRO_EVENT_CACHE = new_events
+        _LLM_MICRO_EVENT_CACHE_EXPIRY = now + _LLM_MICRO_EVENT_CACHE_TTL
+        logger.info(f"[行为引擎] LLM 生成 {len(new_events)} 条新微事件")
+
+    return new_events
+
+
+async def refresh_micro_event_cache():
+    """手动刷新 LLM 微事件缓存（供外部定时调用）。"""
+    return await _generate_micro_events_via_llm(count=10)
+
+
+def get_micro_event_behavior(trigger_chance: float = 0.02,
+                              user_id: str = "") -> Optional[str]:
+    """随机微事件（真人化 P2-1：含冷却期检查）。
+
+    Args:
+        trigger_chance: 触发概率
+        user_id: 用户 ID（用于冷却期检查，空字符串则跳过冷却检查）
+    """
     if not _MICRO_EVENTS:
         return None
     if random.random() > trigger_chance:
         return None
+
+    # 真人化 P2-1：冷却期过滤（内存检查，同步）
+    if user_id:
+        available = [
+            e for e in _MICRO_EVENTS
+            if not _is_micro_event_in_cooldown(e, user_id)
+        ]
+        if not available:
+            return None
+        event = random.choice(available)
+        _record_micro_event_sent(event, user_id)
+        return event
+
     return random.choice(_MICRO_EVENTS)
 
 
+async def get_micro_event_behavior_async(trigger_chance: float = 0.02,
+                                          user_id: str = "") -> Optional[str]:
+    """随机微事件（异步版本，含 DB 冷却期检查）。
+
+    比同步版本更准确：综合检查内存缓存 + DB 持久化记录。
+    推荐在异步上下文中使用此版本。
+
+    Args:
+        trigger_chance: 触发概率
+        user_id: 用户 ID
+    """
+    if not _MICRO_EVENTS:
+        return None
+    if random.random() > trigger_chance:
+        return None
+
+    if user_id:
+        # 真人化 P2-1：综合检查（内存 + DB）
+        available = []
+        for e in _MICRO_EVENTS:
+            if await is_micro_event_available(user_id, e):
+                available.append(e)
+        if not available:
+            return None
+        event = random.choice(available)
+        _record_micro_event_sent(event, user_id)
+        return event
+
+    return random.choice(_MICRO_EVENTS)
+
+
+def get_micro_event_history() -> Dict[str, List[tuple]]:
+    """获取微事件发送历史（用于测试和调试）。"""
+    return dict(_MICRO_EVENT_HISTORY)
+
+
+def clear_micro_event_history():
+    """清除所有微事件历史（用于测试重置）。"""
+    global _MICRO_EVENT_HISTORY
+    _MICRO_EVENT_HISTORY = {}
+
+
 # ============================================================
-# 综合现实世界行为生成（Task 6 多层优先级链）
+# 行为优先级定义（真人化 P2-4）
+# ============================================================
+
+BEHAVIOR_PRIORITY = {
+    "weather": 7,
+    "seasonal": 6,
+    "holiday": 5,
+    "scroll_feed": 4,
+    "hot_topic": 3,
+    "micro_event": 2,
+    "random": 1,
+}
+
+# 优先级对应的概率权重（高优先级更大概率胜出，但不是绝对的）
+_BEHAVIOR_PRIORITY_WEIGHTS = {
+    7: 0.35,   # weather
+    6: 0.20,   # seasonal
+    5: 0.15,   # holiday
+    4: 0.12,   # scroll_feed
+    3: 0.08,   # hot_topic
+    2: 0.06,   # micro_event
+    1: 0.04,   # random
+}
+
+
+def _select_by_priority(candidates: list) -> Optional[str]:
+    """按优先级选择一个行为（概率性地，高优先级更易胜出）。
+
+    真人化 P2-4：替代随机 sample N 个合并的旧逻辑。
+    每次只输出 1 个行为提示，避免「天气+节日+微事件」同时出现的生硬拼接。
+    """
+    if not candidates:
+        return None
+
+    if len(candidates) == 1:
+        return candidates[0][1]  # (priority, text)
+
+    # 按优先级排序（高→低）
+    sorted_candidates = sorted(candidates, key=lambda x: x[0], reverse=True)
+    max_priority = sorted_candidates[0][0]
+
+    # 概率性地选择：最高优先级大概率胜出，但不绝对
+    # 这样有时也会出现低优先级行为（更有"突然想到"的感觉）
+    weights = [_BEHAVIOR_PRIORITY_WEIGHTS.get(p, 0.05) for p, _ in sorted_candidates]
+    total = sum(weights)
+    probs = [w / total for w in weights]
+    idx = random.choices(range(len(sorted_candidates)), weights=probs, k=1)[0]
+
+    selected_priority, selected_text = sorted_candidates[idx]
+    logger.debug(
+        f"[行为] 优先级选择: 候选{len(candidates)}个 "
+        f"(最高优先级={max_priority}) → 选中优先级={selected_priority}"
+    )
+    return selected_text
+
+
+# ============================================================
+# 综合现实世界行为生成（真人化 P2-4 优先级链）
 # ============================================================
 
 def get_real_world_behavior(
@@ -677,69 +1033,68 @@ def get_real_world_behavior(
     city: str = "",
     affection_score: float = 0.0,
     is_lightweight: bool = False,
+    user_id: str = "",
 ) -> Optional[str]:
-    """综合现实世界行为生成（累积模式——收集所有命中行为，随机选最多2个）。
+    """综合现实世界行为生成（真人化 P2-4 优先级链）。
 
-    各行为独立判断，不短路。最多随机选出 BEHAVIOR_MAX_COMBINED 个，
-    用"；"分隔。轻量模式下使用更高的微事件概率。
+    各行为独立判断命中与否，然后按优先级链概率性选择 1 个。
+    高优先级（天气/季节）有更大概率胜出，但不绝对——
+    低优先级行为偶尔也会出现，保持「突然想到」的自然感。
+
+    替代旧版「累积模式随机选 N 个合并」的逻辑。
     """
-    candidates: list = []
+    candidates: list = []  # [(priority, text), ...]
 
-    # 1. 天气反应
+    # 1. 天气反应 (priority=7)
     weather_hint = get_weather_behavior(
         weather_condition, weather_temp,
         trigger_chance=config.BEHAVIOR_WEATHER_CHANCE, city=city
     )
     if weather_hint:
         city_prefix = f"（用户在{city}）" if city else ""
-        candidates.append(f"你对天气的自然反应{city_prefix}：{weather_hint}。可以自然地表达出来。")
+        candidates.append((BEHAVIOR_PRIORITY["weather"],
+            f"你对天气的自然反应{city_prefix}：{weather_hint}。可以自然地表达出来。"))
 
-    # 2. 节假日/特殊日期
-    holiday = get_holiday_behavior(trigger_chance=config.BEHAVIOR_HOLIDAY_CHANCE)
-    if holiday:
-        candidates.append(f"今天是特殊的日子：{holiday}。自然地提及，不要刻意。")
-
-    # 3. 刷手机Feed引用
-    scroll_feed = get_scroll_behavior(trigger_chance=config.BEHAVIOR_SCROLL_CHANCE)
-    if scroll_feed:
-        candidates.append(scroll_feed)
-
-    # 4. 热点话题
-    hot_topic = get_hot_topic_behavior(trigger_chance=config.BEHAVIOR_HOT_TOPIC_CHANCE)
-    if hot_topic:
-        candidates.append(f"你刚看到：{hot_topic}。可以随口提一下。")
-
-    # 5. 季节愿望
+    # 2. 季节愿望 (priority=6)
     seasonal = get_seasonal_wish(trigger_chance=config.BEHAVIOR_SEASONAL_CHANCE)
     if seasonal:
-        candidates.append(f"你突然想到：{seasonal}。自然地流露出来。")
+        candidates.append((BEHAVIOR_PRIORITY["seasonal"],
+            f"你突然想到：{seasonal}。自然地流露出来。"))
 
-    # 6. 微事件
+    # 3. 节假日/特殊日期 (priority=5)
+    holiday = get_holiday_behavior(trigger_chance=config.BEHAVIOR_HOLIDAY_CHANCE)
+    if holiday:
+        candidates.append((BEHAVIOR_PRIORITY["holiday"],
+            f"今天是特殊的日子：{holiday}。自然地提及，不要刻意。"))
+
+    # 4. 刷手机Feed引用 (priority=4)
+    scroll_feed = get_scroll_behavior(trigger_chance=config.BEHAVIOR_SCROLL_CHANCE)
+    if scroll_feed:
+        candidates.append((BEHAVIOR_PRIORITY["scroll_feed"], scroll_feed))
+
+    # 5. 热点话题 (priority=3)
+    hot_topic = get_hot_topic_behavior(trigger_chance=config.BEHAVIOR_HOT_TOPIC_CHANCE)
+    if hot_topic:
+        candidates.append((BEHAVIOR_PRIORITY["hot_topic"],
+            f"你刚看到：{hot_topic}。可以随口提一下。"))
+
+    # 6. 微事件 (priority=2, 真人化 P2-1：含冷却期)
     micro_chance = config.BEHAVIOR_LIGHT_MICRO_EVENT_CHANCE if is_lightweight else config.BEHAVIOR_MICRO_EVENT_CHANCE
-    micro = get_micro_event_behavior(trigger_chance=micro_chance)
+    micro = get_micro_event_behavior(trigger_chance=micro_chance, user_id=user_id)
     if micro:
-        candidates.append(f"刚刚发生了一个小事：{micro}。随口提一句，不超过一句话。")
+        candidates.append((BEHAVIOR_PRIORITY["micro_event"],
+            f"刚刚发生了一个小事：{micro}。随口提一句，不超过一句话。"))
 
-    # 7. 随机行为
+    # 7. 随机行为 (priority=1)
     random_behavior = get_random_behavior(
         schedule_period, bot_mood_dominant,
         trigger_chance=config.BEHAVIOR_RANDOM_CHANCE, affection_score=affection_score
     )
     if random_behavior:
-        candidates.append(f"你突然{random_behavior['type']}：{random_behavior['text']}。")
+        candidates.append((BEHAVIOR_PRIORITY["random"],
+            f"你突然{random_behavior['type']}：{random_behavior['text']}。"))
 
-    if not candidates:
-        return None
-
-    # 随机选最多 BEHAVIOR_MAX_COMBINED 个
-    if len(candidates) > config.BEHAVIOR_MAX_COMBINED:
-        candidates = random.sample(candidates, config.BEHAVIOR_MAX_COMBINED)
-
-    if len(candidates) == 1:
-        return candidates[0]
-
-    logger.debug(f"[行为] 累积模式命中 {len(candidates)} 个行为: {[c[:30] for c in candidates]}")
-    return "；".join(candidates)
+    return _select_by_priority(candidates)
 
 
 # ============================================================
@@ -753,16 +1108,18 @@ def get_behavior_hint(
     bot_mood_dominant: str = "平静",
     city: str = "",
     affection_score: float = 0.0,
+    user_id: str = "",
 ) -> Optional[str]:
     """综合生成行为模式提示，供 prompt 注入。
 
-    委托给 get_real_world_behavior() 提供多层级优先级（累积模式）。
+    委托给 get_real_world_behavior() 提供多层级优先级链。
     """
     return get_real_world_behavior(
         weather_condition, weather_temp,
         schedule_period, bot_mood_dominant, city,
         affection_score=affection_score,
         is_lightweight=False,
+        user_id=user_id,
     )
 
 
@@ -779,37 +1136,29 @@ def get_lightweight_behavior_hint(
 ) -> Optional[str]:
     """短消息轻量行为注入——不跑全量分析但给一点生活感。
 
-    三层独立判断：
-    - 微事件 15%（短消息随口提一句最自然）
-    - 天气反应 10%（用 WEATHER_CITY 兜底）
-    - 季节愿望 5%
-    - 约 60% 累积命中率
+    真人化 P2-4：使用优先级选择替代 random.choice。
+    三层独立判断后按优先级链（天气 > 季节 > 微事件）概率性选择 1 个。
 
     返回最多 1 个行为提示（短消息不宜信息过载）。
     """
-    candidates: list = []
+    candidates: list = []  # [(priority, text), ...]
 
-    # 微事件（短消息最合适的自然流露）
-    micro = get_micro_event_behavior(trigger_chance=config.BEHAVIOR_LIGHT_MICRO_EVENT_CHANCE)
-    if micro:
-        candidates.append(f"随口一提：{micro}")
-
-    # 天气反应（有数据才触发）
+    # 天气反应 (priority=7, 最高)
     weather = get_weather_behavior(
         weather_condition, weather_temp,
         trigger_chance=config.BEHAVIOR_LIGHT_WEATHER_CHANCE, city=city
     )
     if weather:
-        candidates.append(f"天气感受：{weather}")
+        candidates.append((BEHAVIOR_PRIORITY["weather"], f"天气感受：{weather}"))
 
-    # 季节愿望
+    # 季节愿望 (priority=6)
     seasonal = get_seasonal_wish(trigger_chance=config.BEHAVIOR_LIGHT_SEASONAL_CHANCE)
     if seasonal:
-        candidates.append(f"突然想到：{seasonal}")
+        candidates.append((BEHAVIOR_PRIORITY["seasonal"], f"突然想到：{seasonal}"))
 
-    if not candidates:
-        return None
+    # 微事件 (priority=2, 短消息最合适的自然流露)
+    micro = get_micro_event_behavior(trigger_chance=config.BEHAVIOR_LIGHT_MICRO_EVENT_CHANCE)
+    if micro:
+        candidates.append((BEHAVIOR_PRIORITY["micro_event"], f"随口一提：{micro}"))
 
-    hint = random.choice(candidates)
-    logger.debug(f"[行为] 轻量行为触发: {hint[:50]}")
-    return hint
+    return _select_by_priority(candidates)

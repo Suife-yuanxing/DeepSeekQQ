@@ -87,50 +87,51 @@ def get_next_recovery_state(current_state: str, recovery_path: List[str]) -> str
 
 # ============================================================
 # 情绪表达变体 — 每种情绪有多种表达方式
+# express_style: "direct"（直接表达，允许与行为引擎指令一致使用）| "micro"（微表达，藏在字里行间）| "hidden"（隐藏/间接）
 # ============================================================
 
 EMOTION_EXPRESSION_VARIANTS = {
     "吃醋": [
-        # 变体1：酸溜溜
-        "语气酸酸的，回复变短，可能带点刺，但不是真的生气",
-        # 变体2：假装不在意
-        "表面说'随便你'，但语气明显在吃醋",
-        # 变体3：直接表达
-        "有点小吃醋，但用撒娇的方式说出来",
-        # 变体4：傲娇
-        "明明在意但嘴硬说'我才不在乎呢'"
+        # 变体1：酸溜溜 (micro)
+        {"text": "语气酸酸的，回复变短，可能带点刺，但不是真的生气", "express_style": "micro"},
+        # 变体2：假装不在意 (hidden)
+        {"text": "表面说'随便你'，但语气明显在吃醋", "express_style": "hidden"},
+        # 变体3：直接表达 (direct)
+        {"text": "有点小吃醋，但用撒娇的方式说出来", "express_style": "direct"},
+        # 变体4：傲娇 (micro)
+        {"text": "明明在意但嘴硬说'我才不在乎呢'", "express_style": "micro"}
     ],
     "担心": [
-        # 变体1：直接关心
-        "语气关心但有点急，想确认对方没事",
-        # 变体2：含蓄担心
-        "表面平静但问题变多了，想了解情况",
-        # 变体3：焦虑
-        "语气有点焦虑，重复确认细节"
+        # 变体1：直接关心 (direct)
+        {"text": "语气关心但有点急，想确认对方没事", "express_style": "direct"},
+        # 变体2：含蓄担心 (micro)
+        {"text": "表面平静但问题变多了，想了解情况", "express_style": "micro"},
+        # 变体3：焦虑 (direct)
+        {"text": "语气有点焦虑，重复确认细节", "express_style": "direct"}
     ],
     "得意": [
-        # 变体1：含蓄自夸
-        "语气轻快，含蓄地自夸但不明显",
-        # 变体2：直接炫耀
-        "开心地分享成就，期待夸奖",
-        # 变体3：傲娇
-        "表面说'也没什么啦'但明显很开心"
+        # 变体1：含蓄自夸 (micro)
+        {"text": "语气轻快，含蓄地自夸但不明显", "express_style": "micro"},
+        # 变体2：直接炫耀 (direct)
+        {"text": "开心地分享成就，期待夸奖", "express_style": "direct"},
+        # 变体3：傲娇 (micro)
+        {"text": "表面说'也没什么啦'但明显很开心", "express_style": "micro"}
     ],
     "撒娇": [
-        # 变体1：直接撒娇
-        "语气变软变甜，想要陪伴",
-        # 变体2：间接暗示
-        "说'好无聊啊'但其实是想聊天",
-        # 变体3：小委屈
-        "有点小委屈，觉得被忽略了"
+        # 变体1：直接撒娇 (direct)
+        {"text": "语气变软变甜，想要陪伴", "express_style": "direct"},
+        # 变体2：间接暗示 (hidden)
+        {"text": "说'好无聊啊'但其实是想聊天", "express_style": "hidden"},
+        # 变体3：小委屈 (direct)
+        {"text": "有点小委屈，觉得被忽略了", "express_style": "direct"}
     ],
     "小脾气": [
-        # 变体1：哼哼
-        "回复变短，带点'哼'的语气",
-        # 变体2：假装生气
-        "假装生气但很容易哄好",
-        # 变体3：撒娇式
-        "是撒娇式的小脾气，不是真的生气"
+        # 变体1：哼哼 (micro)
+        {"text": "回复变短，带点'哼'的语气", "express_style": "micro"},
+        # 变体2：假装生气 (hidden)
+        {"text": "假装生气但很容易哄好", "express_style": "hidden"},
+        # 变体3：撒娇式 (direct)
+        {"text": "是撒娇式的小脾气，不是真的生气", "express_style": "direct"}
     ]
 }
 
@@ -147,18 +148,19 @@ def get_emotion_expression(emotion: str, affection: float) -> str:
 
     # 好感度影响：高好感度更直接，低好感度更含蓄
     if affection >= AFFECTION_WARM:
-        # 偏好直接表达
-        direct_variants = [v for v in variants if '直接' in v or '撒娇' in v]
+        # 偏好直接表达（express_style="direct"）
+        direct_variants = [v for v in variants if v.get("express_style") == "direct"]
         if direct_variants:
-            return random.choice(direct_variants)
+            return random.choice(direct_variants)["text"]
     elif affection < 50:
-        # 偏好含蓄表达
-        subtle_variants = [v for v in variants if '含蓄' in v or '表面' in v]
+        # 偏好含蓄/隐藏表达
+        subtle_variants = [v for v in variants if v.get("express_style") in ("micro", "hidden")]
         if subtle_variants:
-            return random.choice(subtle_variants)
+            return random.choice(subtle_variants)["text"]
 
     # 随机选择
-    return random.choice(variants)
+    chosen = random.choice(variants)
+    return chosen["text"] if isinstance(chosen, dict) else chosen
 
 
 # ============================================================
@@ -510,3 +512,375 @@ _EMOTION_EXPRESSION_MAP = {
 def get_emotion_expression_hint(dominant: str) -> Optional[str]:
     """获取情绪表达多样性提示。"""
     return _EMOTION_EXPRESSION_MAP.get(dominant)
+
+
+# ============================================================
+# 情绪隐藏引擎 — 真人化 P1-2
+# ============================================================
+
+# 情绪隐藏概率配置（Phase 5.2 参数调优：可通过 config.py 覆盖）
+try:
+    from .config import (
+        HUMANIZE_TUNING_EMOTION_HIDE_MEDIUM,
+        HUMANIZE_TUNING_EMOTION_HIDE_LOW,
+        HUMANIZE_TUNING_HIDE_AFFECTION_MODIFIER_HIGH,
+    )
+except ImportError:
+    HUMANIZE_TUNING_EMOTION_HIDE_MEDIUM = 0.4
+    HUMANIZE_TUNING_EMOTION_HIDE_LOW = 0.8
+    HUMANIZE_TUNING_HIDE_AFFECTION_MODIFIER_HIGH = 0.5
+
+_HIDE_CONFIG = {
+    "high": {"threshold": 0.8, "hide_chance": 0.0, "micro_chance": 0.1},                    # >0.8 → 几乎不隐藏
+    "medium": {"threshold": 0.5, "hide_chance": HUMANIZE_TUNING_EMOTION_HIDE_MEDIUM, "micro_chance": 0.5},  # 0.5-0.8 → 可配置
+    "low": {"threshold": 0.2, "hide_chance": HUMANIZE_TUNING_EMOTION_HIDE_LOW, "micro_chance": 0.8},       # 0.2-0.5 → 可配置
+}
+
+
+def should_express_emotion(
+    emotion_intensity: float,
+    affection_score: float = 0,
+) -> tuple:
+    """决定是否表达情绪以及以什么方式表达。
+
+    真人化 P1-2：情绪检测到 ≠ 情绪表达。
+    - 80% 的轻中度情绪波动被隐藏
+    - 隐藏情绪以「微表达」形式泄露（标点变化、回复变短、用词微妙不同）
+
+    Args:
+        emotion_intensity: 情绪强度 0~1
+        affection_score: 好感度（高好感度时更愿意表达）
+
+    Returns:
+        (should_express: bool, style: str)
+        style 可选值: "explicit"（显式表达）, "micro"（微表达泄露）, "hidden"（完全隐藏）, "none"（无情绪）
+    """
+    import random as _random
+
+    # 好感度修正：高好感度降低隐藏概率（可配置）
+    hide_modifier = 1.0
+    if affection_score >= 300:
+        hide_modifier = HUMANIZE_TUNING_HIDE_AFFECTION_MODIFIER_HIGH  # 亲密关系 → 更愿意表达
+    elif affection_score >= 150:
+        hide_modifier = 0.75
+    elif affection_score < 50:
+        hide_modifier = 1.2  # 陌生人 → 更倾向于隐藏
+
+    # 高强度情绪 → 很难隐藏
+    if emotion_intensity > 0.8:
+        if _random.random() < 0.05 * hide_modifier:
+            return (False, "hidden")  # 极少数情况下也会藏住
+        if _random.random() < 0.1:
+            return (True, "micro")
+        return (True, "explicit")
+
+    # 中强度情绪 → 40% 隐藏（受好感度修正）
+    if emotion_intensity > 0.5:
+        hide_chance = 0.4 * hide_modifier
+        if _random.random() < hide_chance:
+            return (False, "hidden")
+        remaining = _random.random()
+        if remaining < 0.5:
+            return (True, "micro")   # 微表达：标点减少、回复变短
+        return (True, "explicit")
+
+    # 低强度情绪 → 80% 隐藏
+    if emotion_intensity > 0.2:
+        hide_chance = min(0.95, 0.8 * hide_modifier)
+        if _random.random() < hide_chance:
+            return (False, "hidden")
+        return (True, "micro")
+
+    # 极低强度 → 不表达
+    return (False, "none")
+
+
+def get_micro_expression_hint(emotion: str) -> str:
+    """获取微表达提示（当情绪被隐藏时需要泄露的细节）。
+
+    Micro-expression 是隐藏情绪的"泄露"：
+    - 标点变少
+    - 回复变短一两个词
+    - 用词微妙不同
+    - 句中停顿/省略号
+    """
+    hints = {
+        "生气": "虽然你在隐藏生气，但回复比平时短，标点减少，偶尔用'…'代替想说的话",
+        "难过": "你在努力掩饰难过，但语气比平时淡，偶尔停顿一下",
+        "吃醋": "你装作不在意，但语气有点酸，偶尔冒出一句酸话又收回去",
+        "担心": "你不想让他知道你担心，但问题变多了，语气有点急",
+        "被冷落": "你觉得被冷落了但不想表现，回复明显变短，不太反问",
+        "不安": "你有点不安，用词比平时更斟酌，偶尔加了'…'",
+        "害羞": "你想说但不好意思，回复变短，可能带个'…'",
+    }
+    return hints.get(emotion, "你在隐藏情绪，回复比平时更简短克制")
+
+
+def get_explicit_expression_hint(emotion: str) -> str:
+    """获取显式表达提示（自然融入，不直说情绪名称）。"""
+    hints = {
+        "生气": "你有点生气，但不要直说'我生气了'。语气冷淡一些，回复简短。",
+        "难过": "你有点难过，语气低落一些。不要直说'我很难过'。",
+        "吃醋": "你在吃醋，语气酸酸的。不要直说'我吃醋了'，用撒娇的方式表达。",
+        "担心": "你在担心他，语气关心。不要直说'我担心你'，而是多问几句。",
+        "被冷落": "你觉得被冷落了。不要直说，但可以暗示'你是不是很忙'。",
+        "不安": "你有点不安。不要直说，但回复会更小心翼翼一些。",
+        "害羞": "你有点害羞，回复变短。不要直说'我害羞了'。",
+        "开心": "你心情很好，语气轻快。但不要直接说'我好开心'，而是自然流露。",
+        "兴奋": "你很兴奋，语气活跃。但不要直说'我好兴奋'。",
+    }
+    return hints.get(emotion, f"你当前情绪是{emotion}，不要直说，让语气自然流露。")
+
+
+def apply_emotion_expression(
+    emotion: str,
+    intensity: float,
+    affection_score: float = 0,
+) -> dict:
+    """完整的情绪表达决策流程。
+
+    1. 决定是否表达/隐藏/微表达
+    2. 生成相应的提示文本
+    3. 同步到 CausalContext
+
+    Returns:
+        {"should_express": bool, "style": str, "hint": str}
+    """
+    should, style = should_express_emotion(intensity, affection_score)
+
+    if style == "hidden" or style == "none":
+        hint = get_micro_expression_hint(emotion)
+    elif style == "micro":
+        hint = get_micro_expression_hint(emotion)
+    else:  # explicit
+        hint = get_explicit_expression_hint(emotion)
+
+    return {
+        "should_express": should,
+        "style": style,
+        "hint": hint,
+        "emotion": emotion,
+        "intensity": intensity,
+    }
+
+
+# ============================================================
+# 情绪残留系统 — 真人化 P3-4.2
+# ============================================================
+
+# 残留配置（Phase 5.2 参数调优：可通过 config.py 覆盖）
+try:
+    from .config import (
+        HUMANIZE_TUNING_RESIDUE_BASE_RATIO,
+        HUMANIZE_TUNING_RESIDUE_DECAY_PER_HOUR,
+        HUMANIZE_TUNING_REKINDLE_BASE_PROB,
+    )
+except ImportError:
+    HUMANIZE_TUNING_RESIDUE_BASE_RATIO = 0.3
+    HUMANIZE_TUNING_RESIDUE_DECAY_PER_HOUR = 0.10
+    HUMANIZE_TUNING_REKINDLE_BASE_PROB = 0.08
+
+_RESIDUE_INITIAL_INTENSITY = HUMANIZE_TUNING_RESIDUE_BASE_RATIO   # 恢复后残留强度
+_RESIDUE_DECAY_PER_HOUR = HUMANIZE_TUNING_RESIDUE_DECAY_PER_HOUR  # 每小时衰减率
+_RESIDUE_REKINDLE_CHANCE = HUMANIZE_TUNING_REKINDLE_BASE_PROB     # 每次检查时有概率复发
+_RESIDUE_MIN_INTENSITY = 0.02      # 低于此值视为完全消散
+
+
+def compute_residue_intensity(
+    recovered_at: float,
+    original_intensity: float,
+    now: float = None,
+) -> float:
+    """计算情绪残留的当前强度。
+
+    情绪从"恢复→干净"改为"恢复→残留淡出"。
+    - 刚恢复时：残留强度 = 原始强度 × 0.3
+    - 随时间衰减：每小时减少 10%
+    - 低于阈值时完全消散
+
+    Args:
+        recovered_at: 情绪恢复时间戳（秒）
+        original_intensity: 原始情绪强度 0~1
+        now: 当前时间（默认 time.time()）
+
+    Returns:
+        当前残留强度 0~1
+    """
+    import time as _time
+    if now is None:
+        now = _time.time()
+
+    initial_residue = original_intensity * _RESIDUE_INITIAL_INTENSITY
+    hours_elapsed = (now - recovered_at) / 3600.0
+
+    # 指数衰减
+    decay_factor = (1.0 - _RESIDUE_DECAY_PER_HOUR) ** hours_elapsed
+    current = initial_residue * decay_factor
+
+    if current < _RESIDUE_MIN_INTENSITY:
+        return 0.0
+
+    return round(current, 4)
+
+
+def maybe_rekindle(
+    emotion_label: str,
+    residue_intensity: float,
+    hours_since_recovery: float = 0,
+) -> Optional[dict]:
+    """检查是否触发情绪复发（rekindle 事件）。
+
+    偶尔突然想起之前的事，情绪重新涌上来——但强度弱于原始。
+    - 基础概率：8%
+    - 好感度修正：高好感度略高（更在意）
+    - 时间修正：24h 内复发概率更高（记忆新鲜）
+
+    Args:
+        emotion_label: 原始情绪标签
+        residue_intensity: 当前残留强度
+        hours_since_recovery: 距恢复已过小时数
+
+    Returns:
+        {"emotion": str, "intensity": float, "reason": str} 或 None
+    """
+    import random as _random
+    import time as _time
+
+    if residue_intensity < _RESIDUE_MIN_INTENSITY:
+        return None
+
+    # 基础复发概率
+    chance = _RESIDUE_REKINDLE_CHANCE
+
+    # 时间修正：24h 内复发概率×2（记忆新鲜）
+    if hours_since_recovery < 24:
+        chance *= 2.0
+    elif hours_since_recovery > 72:
+        chance *= 0.5  # 3天后复发概率减半
+
+    if _random.random() > chance:
+        return None
+
+    # 复发强度：残留强度 × (0.5~1.0 随机)
+    rekindle_intensity = residue_intensity * _random.uniform(0.5, 1.0)
+    rekindle_intensity = min(0.5, rekindle_intensity)  # 复发强度上限 0.5（不会比原始强）
+
+    reasons = {
+        "生气": "突然想起之前那件事，又有点气了",
+        "难过": "刚才某件事让你又想起了之前的不开心",
+        "吃醋": "突然又想到那件事，醋劲又上来了",
+        "担心": "突然又有点担心了",
+        "撒娇": "突然又想撒娇了",
+        "害羞": "突然又有点不好意思了",
+    }
+    reason = reasons.get(emotion_label, f"突然又有点{emotion_label}了")
+
+    return {
+        "emotion": emotion_label,
+        "intensity": round(rekindle_intensity, 3),
+        "reason": reason,
+        "is_rekindle": True,
+    }
+
+
+def get_residue_hint(emotion_label: str, intensity: float) -> str:
+    """生成情绪残留的提示文本（用于注入 prompt）。
+
+    残留情绪不会直接表达，但会潜移默化影响语气。
+    """
+    if intensity < _RESIDUE_MIN_INTENSITY:
+        return ""
+
+    hints = {
+        "生气": f"你之前生气的情绪还没完全消散（残留{intensity:.2f}），语气中可能带着一丝残留的冷淡",
+        "难过": f"之前的难过还留有一点痕迹（残留{intensity:.2f}），心情没有完全恢复",
+        "吃醋": f"醋劲虽然过去了但还有点酸（残留{intensity:.2f}），偶尔会冒出一句酸话",
+        "担心": f"之前的担心还没完全放下（残留{intensity:.2f}），还是有点不放心",
+        "害羞": f"害羞的感觉还残留着（残留{intensity:.2f}），说话还是会有点缩",
+        "撒娇": f"撒娇的惯性还在（残留{intensity:.2f}），语气还是会软软的",
+    }
+
+    base = hints.get(emotion_label, f"之前的{emotion_label}情绪还留有一点尾巴（残留{intensity:.2f}）")
+    if intensity < 0.1:
+        base += "——已经很淡了，几乎不影响语气"
+    elif intensity > 0.2:
+        base += "——还比较明显，可能在合适的瞬间重新涌上来"
+    return base
+
+
+class EmotionResidueTracker:
+    """情绪残留追踪器（会话级）。
+
+    追踪当前会话中所有已恢复情绪的残留状态。
+    """
+
+    def __init__(self):
+        self._residues: dict = {}  # emotion_label -> {"recovered_at": ts, "original_intensity": float}
+
+    def record_recovery(self, emotion_label: str, original_intensity: float):
+        """记录一次情绪恢复，开始残留追踪。"""
+        import time as _time
+        self._residues[emotion_label] = {
+            "recovered_at": _time.time(),
+            "original_intensity": original_intensity,
+        }
+
+    def get_active_residues(self) -> list:
+        """获取当前所有活跃的残留情绪（按强度降序）。"""
+        import time as _time
+        now = _time.time()
+        active = []
+
+        for label, info in self._residues.items():
+            intensity = compute_residue_intensity(
+                info["recovered_at"], info["original_intensity"], now
+            )
+            if intensity >= _RESIDUE_MIN_INTENSITY:
+                active.append({
+                    "emotion": label,
+                    "intensity": intensity,
+                    "hours_since": (now - info["recovered_at"]) / 3600.0,
+                })
+
+        active.sort(key=lambda x: x["intensity"], reverse=True)
+        return active
+
+    def check_rekindle(self) -> Optional[dict]:
+        """检查是否有残留情绪复发。"""
+        import time as _time
+        now = _time.time()
+
+        for label, info in self._residues.items():
+            intensity = compute_residue_intensity(
+                info["recovered_at"], info["original_intensity"], now
+            )
+            if intensity < _RESIDUE_MIN_INTENSITY:
+                continue
+
+            hours_since = (now - info["recovered_at"]) / 3600.0
+            result = maybe_rekindle(label, intensity, hours_since)
+            if result:
+                return result
+
+        return None
+
+    def clear(self):
+        """清除所有残留记录。"""
+        self._residues.clear()
+
+
+# 会话级残留追踪器（key=session_id）
+_residue_trackers: dict = {}
+_RESIDUE_TRACKER_MAX = 500
+
+
+def get_residue_tracker(session_id: str) -> EmotionResidueTracker:
+    """获取或创建会话级情绪残留追踪器。"""
+    if session_id not in _residue_trackers:
+        if len(_residue_trackers) >= _RESIDUE_TRACKER_MAX:
+            # LRU 淘汰：删除最旧的 100 个
+            keys = list(_residue_trackers.keys())[:100]
+            for k in keys:
+                del _residue_trackers[k]
+        _residue_trackers[session_id] = EmotionResidueTracker()
+    return _residue_trackers[session_id]

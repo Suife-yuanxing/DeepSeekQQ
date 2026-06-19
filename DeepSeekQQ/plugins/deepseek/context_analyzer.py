@@ -390,48 +390,122 @@ async def get_emotion_cause_chain(user_id: str, lookback: int = 10) -> str:
 # ============================================================
 
 def emotion_to_prompt_hint(emotion: EmotionState) -> str:
-    """将 VA 情绪状态转化为 prompt 中的语气提示"""
+    """将 VA 情绪状态转化为 prompt 中的语气提示。
+
+    真人化 P3-4.1：VA→LLM 混合情绪模型。
+    VA 模型不再直接分配离散标签，而是提供连续的情绪趋势描述。
+    移除 14 种硬编码标签映射，改为自然语言描述情绪质量，
+    让 LLM 自由诠释而非被限制在模板化的情绪框里。
+
+    描述原则：
+    - 不说「你现在是XXX」，而是描述情绪氛围和质量
+    - 基于 VA 坐标生成连续、细腻的描述
+    - 复合情绪有层次感，单一情绪有微妙变化
+    """
     if emotion.confidence < 0.4:
         return ""  # 置信度太低不注入
 
-    v, a = emotion.valence, emotion.arousal
+    v = emotion.valence   # -1(消极) ~ +1(积极)
+    a = emotion.arousal   # 0(平静) ~ 1(激动)
+    intensity = emotion.intensity  # 0~1
     dominant = emotion.dominant
 
-    # Phase 3：复合情绪提示
+    # 构建自然语言情绪描述
+    parts = []
+
+    # === 1. 情绪氛围（基于VA连续空间） ===
+    # 效价描述
+    if v > 0.6:
+        v_desc = "心情很好"
+    elif v > 0.3:
+        v_desc = "心情不错"
+    elif v > 0.1:
+        v_desc = "心情还行"
+    elif v > -0.1:
+        v_desc = "心情中性"
+    elif v > -0.3:
+        v_desc = "心情一般"
+    elif v > -0.6:
+        v_desc = "心情不太好"
+    else:
+        v_desc = "心情很差"
+
+    # 唤醒度描述
+    if a > 0.8:
+        a_desc = "情绪很强烈"
+    elif a > 0.6:
+        a_desc = "情绪比较激动"
+    elif a > 0.4:
+        a_desc = "情绪中等"
+    elif a > 0.2:
+        a_desc = "情绪平和"
+    else:
+        a_desc = "情绪很平静"
+
+    # 综合氛围
+    if a > 0.6 and v > 0.3:
+        atmosphere = "兴奋雀跃，话会变多语调变活泼"
+    elif a > 0.6 and v < -0.3:
+        atmosphere = "情绪激动但偏负面，可能有点不耐烦或赌气"
+    elif a > 0.4 and v > 0.2:
+        atmosphere = "轻松愉快，有点想调侃人"
+    elif a > 0.4 and v < -0.2:
+        atmosphere = "有点低落但不算严重，回复偏短偶尔嘴硬"
+    elif a < 0.25 and v < -0.15:
+        atmosphere = "懒洋洋的提不起劲，回复偏简短"
+    elif a < 0.25 and v > 0.15:
+        atmosphere = "安安静静地开心，不张扬但心里是暖的"
+    elif abs(v) < 0.15 and a < 0.3:
+        atmosphere = "平静中性，像日常闲聊"
+    else:
+        atmosphere = f"{v_desc}，{a_desc}"
+
+    parts.append(atmosphere)
+
+    # === 2. 情绪倾向（基于主导标签的自然描述） ===
+    # 真人化4.1：不直接输出标签名，而是描述情绪质量
+    emotion_quality_map = {
+        "开心": "带着一点开心的底色",
+        "兴奋": "有点按捺不住的兴奋感",
+        "害羞": "有点不好意思，说话会略微扭捏",
+        "傲娇": "嘴硬心软的傲娇感，表面冷淡心里在意",
+        "难过": "带点淡淡的难过，不是大哭那种，就是提不起劲",
+        "生气": "有点生气但没爆发，语气中能感觉到冷淡",
+        "担心": "心里有点放不下，会多问几句",
+        "害怕": "有点不安，回复会更小心",
+        "嫌弃": "嘴上嫌弃但其实没那么讨厌",
+        "期待": "心里有点小期待，等着对方说什么",
+        "感动": "被触动到了，语气会变温柔",
+        "无语": "有点无奈，但又懒得较真",
+        "无聊": "无聊想找点乐子，可能会主动找话题",
+        "吃醋": "有点小吃醋，语气会酸酸的但不直说",
+    }
+
+    if dominant and dominant in emotion_quality_map:
+        quality = emotion_quality_map[dominant]
+        parts.append(quality)
+
+    # === 3. 复合情绪层次感 ===
     if emotion.is_compound and emotion.secondary:
         compound_key = f"{dominant}但{emotion.secondary}" if "但" not in emotion.secondary else emotion.secondary
         blend = COMPOUND_EMOTION_BLENDS.get(compound_key)
         if blend:
-            return f"你现在是复合情绪：{compound_key}——{blend[2]}。语气要有层次感。"
+            parts.append(f"情绪有层次感：{blend[2]}")
 
-    v, a = emotion.valence, emotion.arousal
-    dominant = emotion.dominant
+    # === 4. 强度调节 ===
+    if intensity > 0.8:
+        parts.append("这种感受很明显，不需要刻意压制")
+    elif intensity > 0.5:
+        parts.append("感受中等，不需要刻意强调")
+    else:
+        parts.append("感受比较淡，自然流露即可")
 
-    # 高唤醒度情绪
-    if a > 0.7:
-        if v > 0.3:
-            return "你现在很兴奋，话比较多，语气活泼轻快。"
-        elif v < -0.3:
-            return "你现在情绪有点激动，可能不太耐烦。"
-        else:
-            return "你现在精神很好，聊天比较活跃。"
+    # 组装
+    hint = "情绪氛围：" + "；".join(parts) + "。"
+    # 关键：不给出「你应该怎样」的指令，让 LLM 根据情绪氛围自由表达
+    hint += "不要直接说出情绪名称，让语气自然反映以上氛围。"
 
-    # 中等唤醒度
-    if a > 0.35:
-        if v > 0.3:
-            return "你现在心情不错，语气轻快，可能会主动调侃。"
-        elif v < -0.3:
-            return "你现在有点低落，回复偏简短，偶尔嘴硬。"
-        else:
-            return "你现在有点傲娇，嘴硬心软。"
-
-    # 低唤醒度（平静/无聊）
-    if v < -0.2:
-        return "你现在有点懒洋洋的，回复偏简短冷淡。"
-    if dominant == "害羞":
-        return "你现在有点害羞，说话会稍微扭捏。"
-
-    return ""
+    return hint
 
 
 def emotion_to_mood_label(emotion: EmotionState) -> Dict[str, Any]:
@@ -550,7 +624,11 @@ async def update_bot_emotion(user_msg: str, user_emotion: EmotionState, user_id:
 
     # 自然衰减：超过持续时间后回归平静（渐进恢复）
     if dt > duration and old_mood["dominant"] != "平静":
+        old_emotion = old_mood["dominant"]
+        old_intensity = abs(old_mood.get("valence", 0.5))
         await update_bot_mood(0.0, 0.2, "平静", "自然消退")
+        # 真人化 P3-4.2：记录情绪残留
+        _record_emotion_recovery(old_emotion, old_intensity)
         logger.info(f"[Bot情绪] 自然消退: {old_mood['dominant']} -> 平静 (过了{int(dt)}秒)")
         result = {"dominant": "平静", "reason": "自然消退"}
         # 情绪传染：平静后也可能被用户情绪影响
@@ -567,7 +645,11 @@ async def update_bot_emotion(user_msg: str, user_emotion: EmotionState, user_id:
         new_v = old_mood["valence"] * decay_ratio
         new_a = old_mood["arousal"] * decay_ratio
         if abs(new_v) < 0.15:
+            old_emotion_name = old_mood["dominant"]
+            old_intensity = abs(old_mood.get("valence", 0.5))
             await update_bot_mood(0.0, 0.2, "平静", "被安抚了")
+            # 真人化 P3-4.2：记录情绪残留
+            _record_emotion_recovery(old_emotion_name, old_intensity)
             logger.info(f"[Bot情绪] 被安抚消退: {old_mood['dominant']} -> 平静")
             return {"dominant": "平静", "reason": "被安抚了"}
         else:
@@ -576,7 +658,8 @@ async def update_bot_emotion(user_msg: str, user_emotion: EmotionState, user_id:
             logger.info(f"[Bot情绪] 被安抚减弱: {old_mood['dominant']} -> {new_dominant}")
             return {"dominant": new_dominant, "reason": "被安抚了"}
 
-    # 检查是否触发新情绪（只有当旧情绪已衰减或平静时才触发新情绪）
+    # 真人化 P1-1：关键词匹配降级为「仅记录不切换」，从累加器获取情绪状态
+    # 消除 audit-2-1 的双重计算（关键词+LLM）
     triggered = None
     if old_mood["dominant"] == "平静" or dt > duration * 0.5:
         for emotion_name, trigger in _BOT_EMOTION_TRIGGERS.items():
@@ -586,9 +669,70 @@ async def update_bot_emotion(user_msg: str, user_emotion: EmotionState, user_id:
 
     if triggered:
         emotion_name, trigger = triggered
-        await update_bot_mood(trigger["valence"], trigger["arousal"], emotion_name, trigger["reason"])
-        logger.info(f"[Bot情绪] 触发新情绪: {emotion_name} ({trigger['reason']})")
-        return {"dominant": emotion_name, "reason": trigger["reason"]}
+        # 真人化 P1-1：关键词匹配改为喂入情绪累加器，不直接触发状态切换
+        try:
+            from .emotion_accumulator import quick_check_to_unit, get_accumulator
+            from .database import get_session_id_for_user
+
+            # 尝试获取 session_id
+            acc_session_id = f"private_{user_id}" if user_id else ""
+            if acc_session_id:
+                unit = quick_check_to_unit(user_msg)
+                accumulator = get_accumulator(acc_session_id)
+                acc_result = accumulator.feed(unit)
+                if acc_result:
+                    # 累加器触发 → 切换到新情绪
+                    new_emotion = acc_result["emotion"]
+                    new_valence = acc_result["valence"]
+                    new_arousal = acc_result["arousal"]
+                    await update_bot_mood(new_valence, new_arousal, new_emotion, trigger["reason"])
+                    logger.info(
+                        f"[Bot情绪] 累加器触发: {emotion_name} → {new_emotion} "
+                        f"(immediate={acc_result.get('immediate', False)})"
+                    )
+                    return {"dominant": new_emotion, "reason": trigger["reason"]}
+                else:
+                    # 累积中，暂不触发 → 保持当前状态
+                    logger.debug(
+                        f"[Bot情绪] 关键词命中但累积中: {emotion_name} "
+                        f"(buffer={accumulator.buffer_size})"
+                    )
+            else:
+                # 无 session_id，回退到直接触发
+                await update_bot_mood(trigger["valence"], trigger["arousal"], emotion_name, trigger["reason"])
+                logger.info(f"[Bot情绪] 触发新情绪（回退模式）: {emotion_name} ({trigger['reason']})")
+                return {"dominant": emotion_name, "reason": trigger["reason"]}
+        except Exception as e:
+            # 累加器不可用时回退到直接触发
+            logger.debug(f"[Bot情绪] 累加器不可用，回退直接触发: {e}")
+            await update_bot_mood(trigger["valence"], trigger["arousal"], emotion_name, trigger["reason"])
+            logger.info(f"[Bot情绪] 触发新情绪（降级模式）: {emotion_name} ({trigger['reason']})")
+            return {"dominant": emotion_name, "reason": trigger["reason"]}
+
+    # 检查累加器是否有待表现的延迟情绪（即使没有新关键词触发）
+    if user_id:
+        try:
+            from .emotion_accumulator import get_accumulator
+            acc_session_id = f"private_{user_id}"
+            accumulator = get_accumulator(acc_session_id)
+            if accumulator.is_pending:
+                # 喂入一个 neutral unit 推进倒计时
+                from .emotion_accumulator import EmotionUnit
+                tick_unit = EmotionUnit(
+                    label="neutral", valence=0.0, arousal=0.1,
+                    intensity=0.05, confidence=0.1, source="tick",
+                )
+                acc_result = accumulator.feed(tick_unit)
+                if acc_result:
+                    new_emotion = acc_result["emotion"]
+                    await update_bot_mood(
+                        acc_result["valence"], acc_result["arousal"],
+                        new_emotion, f"延迟情绪表现: {new_emotion}"
+                    )
+                    logger.info(f"[Bot情绪] 延迟情绪表现: {new_emotion}")
+                    return {"dominant": new_emotion, "reason": f"延迟情绪: {new_emotion}"}
+        except Exception:
+            pass
 
     # 没有触发新情绪，返回当前状态（衰减后的）
     if old_mood["dominant"] != "平静":
@@ -613,7 +757,11 @@ async def update_bot_emotion(user_msg: str, user_emotion: EmotionState, user_id:
         decayed_v = old_mood["valence"] * (1 - progress)
         decayed_a = old_mood["arousal"] * (1 - progress)
         if abs(decayed_v) < 0.1:
+            old_emotion_name = old_mood["dominant"]
+            old_intensity = abs(old_mood.get("valence", 0.5))
             await update_bot_mood(0.0, 0.2, "平静", "自然消退")
+            # 真人化 P3-4.2：记录情绪残留
+            _record_emotion_recovery(old_emotion_name, old_intensity)
             result = {"dominant": "平静", "reason": "自然消退"}
             await _try_apply_contagion(result, user_emotion, old_mood, user_id)
             return result
@@ -621,7 +769,7 @@ async def update_bot_emotion(user_msg: str, user_emotion: EmotionState, user_id:
         await _try_apply_contagion(result, user_emotion, old_mood, user_id)
         return result
 
-    # 平静状态：检查随机波动 + 情绪传染
+    # 平静状态：检查随机波动 + 情绪复发 + 情绪传染
     # B4 fix: 查询真实好感度，而非硬编码 0（修复高好感 mood 永不触发的问题）
     real_affection = 0
     if user_id:
@@ -635,9 +783,100 @@ async def update_bot_emotion(user_msg: str, user_emotion: EmotionState, user_id:
         await update_bot_mood(swing["valence"], swing["arousal"], swing["dominant"], swing["reason"])
         return {"dominant": swing["dominant"], "reason": swing["reason"], "swing_hint": swing.get("hint", "")}
 
+    # 真人化 P3-4.2：检查情绪复发（rekindle）
+    rekindle = _check_residue_rekindle()
+    if rekindle:
+        await update_bot_mood(
+            rekindle.get("valence", 0), rekindle.get("arousal", 0.3),
+            rekindle["emotion"], rekindle.get("reason", "情绪复发")
+        )
+        logger.info(f"[Bot情绪] 情绪复发: {rekindle['emotion']} (intensity={rekindle.get('intensity', 0):.2f})")
+        return {"dominant": rekindle["emotion"], "reason": rekindle.get("reason", ""),
+                "is_rekindle": True, "intensity": rekindle.get("intensity", 0)}
+
     result = {"dominant": "平静", "reason": ""}
+    # 真人化 P3-4.2：附加残留提示
+    residue_hint = _get_active_residue_hint()
+    if residue_hint:
+        result["residue_hint"] = residue_hint
     await _try_apply_contagion(result, user_emotion, old_mood, user_id)
     return result
+
+
+# ============================================================
+# 真人化 P3-4.2：情绪残留追踪（模块级，bot 全局情绪）
+# ============================================================
+
+# bot 情绪残留记录
+_bot_residue_record: dict = {
+    "emotion": "",           # 原始情绪标签
+    "recovered_at": 0.0,     # 恢复时间戳
+    "original_intensity": 0.0,  # 原始强度
+}
+
+
+def _record_emotion_recovery(emotion_label: str, original_intensity: float):
+    """记录一次情绪恢复，开始残留追踪。"""
+    import time as _time
+    if emotion_label and emotion_label != "平静":
+        _bot_residue_record["emotion"] = emotion_label
+        _bot_residue_record["recovered_at"] = _time.time()
+        _bot_residue_record["original_intensity"] = min(1.0, max(0.1, original_intensity))
+        logger.debug(f"[情绪残留] 记录恢复: {emotion_label} (intensity={original_intensity:.2f})")
+
+
+def _check_residue_rekindle() -> Optional[dict]:
+    """检查 bot 是否有残留情绪复发。
+
+    Returns:
+        {"emotion": str, "valence": float, "arousal": float, "intensity": float, "reason": str} 或 None
+    """
+    from .emotion_deep import compute_residue_intensity, maybe_rekindle
+    import time as _time
+
+    if not _bot_residue_record["emotion"]:
+        return None
+
+    residue = compute_residue_intensity(
+        _bot_residue_record["recovered_at"],
+        _bot_residue_record["original_intensity"],
+        _time.time(),
+    )
+
+    if residue < 0.02:
+        return None
+
+    hours_since = (_time.time() - _bot_residue_record["recovered_at"]) / 3600.0
+    result = maybe_rekindle(_bot_residue_record["emotion"], residue, hours_since)
+    if not result:
+        return None
+
+    # 添加 VA 坐标
+    from .context_analyzer import EMOTION_VA_MAP
+    va = EMOTION_VA_MAP.get(result["emotion"], (0.0, 0.3))
+    result["valence"] = va[0] * result["intensity"]
+    result["arousal"] = va[1] * result["intensity"]
+    return result
+
+
+def _get_active_residue_hint() -> str:
+    """获取当前活跃的残留情绪提示文本。"""
+    from .emotion_deep import compute_residue_intensity, get_residue_hint
+    import time as _time
+
+    if not _bot_residue_record["emotion"]:
+        return ""
+
+    residue = compute_residue_intensity(
+        _bot_residue_record["recovered_at"],
+        _bot_residue_record["original_intensity"],
+        _time.time(),
+    )
+
+    if residue < 0.02:
+        return ""
+
+    return get_residue_hint(_bot_residue_record["emotion"], residue)
 
 
 async def _try_apply_contagion(result: dict, user_emotion: EmotionState, old_mood: dict, user_id: str = ""):

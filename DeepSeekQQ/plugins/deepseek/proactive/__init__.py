@@ -111,15 +111,15 @@ async def register_proactive_jobs(bot):
 
     mg = PROACTIVE_CONFIG["morning_greeting"]
     if mg["enabled"]:
-        # 智能早安：在多个时间点检查，增加随机性
-        # 8:30, 9:30, 10:30 各检查一次，由 _should_send_morning 决定是否发送
+        # 双轨运行（真人化 P1-4）：事件驱动为主，cron 为 fallback
+        # 事件驱动路径在 handler 中调用 handle_user_morning() / _morning_event_driven()
         _scheduler.add_job(_morning_greeting, 'cron', hour=8, minute=30, args=[bot], id="morning_1", replace_existing=True, jitter=300)
         _scheduler.add_job(_morning_greeting, 'cron', hour=9, minute=30, args=[bot], id="morning_2", replace_existing=True, jitter=300)
         _scheduler.add_job(_morning_greeting, 'cron', hour=10, minute=30, args=[bot], id="morning_3", replace_existing=True, jitter=300)
 
     ng = PROACTIVE_CONFIG["night_greeting"]
     if ng["enabled"]:
-        # 多时段晚安：00:00 / 00:30 / 01:00 各检查一次
+        # 双轨运行（真人化 P1-4）：事件驱动为主（check_night_event），cron 为 fallback
         _scheduler.add_job(_night_greeting, 'cron', hour=0, minute=0, args=[bot], id="night_0", replace_existing=True, jitter=300)
         _scheduler.add_job(_night_greeting, 'cron', hour=0, minute=30, args=[bot], id="night_30", replace_existing=True, jitter=300)
         _scheduler.add_job(_night_greeting, 'cron', hour=1, minute=0, args=[bot], id="night_60", replace_existing=True, jitter=300)

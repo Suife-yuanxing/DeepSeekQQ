@@ -113,11 +113,15 @@ class TestAnalysisMode:
                    return_value=shares):
             with patch("plugins.deepseek.stages.stage_llm.call_deepseek_api",
                        AsyncMock(return_value="喵~")):
-                from plugins.deepseek.stages.stage_llm import _stage_llm
-                ctx = _make_ctx(raw_msg="你好")
-                await _stage_llm(ctx)
-                # 无 crash 即通过
-                assert ctx.reply_text is not None
+                with patch("plugins.deepseek.database.get_last_farewell_time",
+                           AsyncMock(return_value=None)):
+                    with patch("plugins.deepseek.database.has_user_message_today",
+                               AsyncMock(return_value=False)):
+                        from plugins.deepseek.stages.stage_llm import _stage_llm
+                        ctx = _make_ctx(raw_msg="你好")
+                        await _stage_llm(ctx)
+                        # 无 crash 即通过
+                        assert ctx.reply_text is not None
 
     async def test_analysis_xiaoheike_triggers_skip(self):
         shares = [{"summary": "[小黑盒内容需要用户粘贴正文后才能分析]", "time": 100,
@@ -135,60 +139,77 @@ class TestAnalysisMode:
 class TestIntegrationSafety:
     """集成级安全测试：确保 stage_llm 在各边界条件下不崩溃。"""
 
+    @staticmethod
+    def _db_patches():
+        """真人化后 stage_llm 新增 farewell / first_today 等 DB 调用，测试需 mock。"""
+        return [
+            patch("plugins.deepseek.database.get_last_farewell_time",
+                  AsyncMock(return_value=None)),
+            patch("plugins.deepseek.database.has_user_message_today",
+                  AsyncMock(return_value=False)),
+        ]
+
     async def test_voice_mode_no_crash(self):
         with patch("plugins.deepseek.stages.stage_llm.call_deepseek_api",
                    AsyncMock(return_value="嗯嗯~")):
-            from plugins.deepseek.stages.stage_llm import _stage_llm
-            ctx = _make_ctx(voice_mode=True)
-            await _stage_llm(ctx)
-            assert ctx.reply_text is not None
+            with self._db_patches()[0], self._db_patches()[1]:
+                from plugins.deepseek.stages.stage_llm import _stage_llm
+                ctx = _make_ctx(voice_mode=True)
+                await _stage_llm(ctx)
+                assert ctx.reply_text is not None
 
     async def test_phone_keyword_no_crash(self):
         with patch("plugins.deepseek.stages.stage_llm.call_deepseek_api",
                    AsyncMock(return_value="截图...")):
-            from plugins.deepseek.stages.stage_llm import _stage_llm
-            ctx = _make_ctx(raw_msg="帮我截图微信")
-            await _stage_llm(ctx)
-            assert ctx.reply_text is not None
+            with self._db_patches()[0], self._db_patches()[1]:
+                from plugins.deepseek.stages.stage_llm import _stage_llm
+                ctx = _make_ctx(raw_msg="帮我截图微信")
+                await _stage_llm(ctx)
+                assert ctx.reply_text is not None
 
     async def test_long_message_no_crash(self):
         from plugins.deepseek.config import MAX_USER_MSG_CHARS
         long_msg = "x" * (MAX_USER_MSG_CHARS + 500)
         with patch("plugins.deepseek.stages.stage_llm.call_deepseek_api",
                    AsyncMock(return_value="aaa")):
-            from plugins.deepseek.stages.stage_llm import _stage_llm
-            ctx = _make_ctx(raw_msg=long_msg)
-            await _stage_llm(ctx)
-            assert ctx.reply_text is not None
+            with self._db_patches()[0], self._db_patches()[1]:
+                from plugins.deepseek.stages.stage_llm import _stage_llm
+                ctx = _make_ctx(raw_msg=long_msg)
+                await _stage_llm(ctx)
+                assert ctx.reply_text is not None
 
     async def test_short_message_no_crash(self):
         with patch("plugins.deepseek.stages.stage_llm.call_deepseek_api",
                    AsyncMock(return_value="喵~")):
-            from plugins.deepseek.stages.stage_llm import _stage_llm
-            ctx = _make_ctx(raw_msg="你好")
-            await _stage_llm(ctx)
-            assert ctx.reply_text is not None
+            with self._db_patches()[0], self._db_patches()[1]:
+                from plugins.deepseek.stages.stage_llm import _stage_llm
+                ctx = _make_ctx(raw_msg="你好")
+                await _stage_llm(ctx)
+                assert ctx.reply_text is not None
 
     async def test_scene_hint_no_crash(self):
         with patch("plugins.deepseek.stages.stage_llm.call_deepseek_api",
                    AsyncMock(return_value="喵~")):
-            from plugins.deepseek.stages.stage_llm import _stage_llm
-            ctx = _make_ctx(scenes=["greeting_mode"])
-            await _stage_llm(ctx)
-            assert ctx.reply_text is not None
+            with self._db_patches()[0], self._db_patches()[1]:
+                from plugins.deepseek.stages.stage_llm import _stage_llm
+                ctx = _make_ctx(scenes=["greeting_mode"])
+                await _stage_llm(ctx)
+                assert ctx.reply_text is not None
 
     async def test_first_message_today_no_crash(self):
         with patch("plugins.deepseek.stages.stage_llm.call_deepseek_api",
                    AsyncMock(return_value="你来啦~")):
-            from plugins.deepseek.stages.stage_llm import _stage_llm
-            ctx = _make_ctx(is_first_today=True, raw_msg="早")
-            await _stage_llm(ctx)
-            assert ctx.reply_text is not None
+            with self._db_patches()[0], self._db_patches()[1]:
+                from plugins.deepseek.stages.stage_llm import _stage_llm
+                ctx = _make_ctx(is_first_today=True, raw_msg="早")
+                await _stage_llm(ctx)
+                assert ctx.reply_text is not None
 
     async def test_api_error_fallback(self):
         with patch("plugins.deepseek.stages.stage_llm.call_deepseek_api",
                    AsyncMock(side_effect=RuntimeError("down"))):
-            from plugins.deepseek.stages.stage_llm import _stage_llm
-            ctx = _make_ctx()
-            await _stage_llm(ctx)
-            assert len(ctx.reply_text) > 0  # 降级回复非空
+            with self._db_patches()[0], self._db_patches()[1]:
+                from plugins.deepseek.stages.stage_llm import _stage_llm
+                ctx = _make_ctx()
+                await _stage_llm(ctx)
+                assert len(ctx.reply_text) > 0  # 降级回复非空

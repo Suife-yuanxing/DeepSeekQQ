@@ -219,3 +219,197 @@ class TestPromptInjection:
             fatigue_hint=None,
         )
         assert "对话节奏" not in prompt
+
+
+# ============================================================
+# 真人化 P2-2：基线学习 + 忙/烦区分 + 加权相关系数
+# ============================================================
+
+class TestBaselineLearning:
+    """用户回复风格基线学习测试"""
+
+    def test_shortening_vs_baseline_below_half(self):
+        """当前回复长度 < 基线 50% → 应检测到变短"""
+        from plugins.deepseek.conversation_fatigue import _detect_shortening_vs_baseline
+
+        user_msgs = [
+            {"role": "user", "content": "哦", "timestamp": i}
+            for i in range(6)
+        ]
+        baseline = {"avg_reply_length": 20.0, "sample_count": 30}
+        score = _detect_shortening_vs_baseline(user_msgs, baseline)
+        assert score > 0, f"应检测到回复明显短于基线，得分={score}"
+
+    def test_shortening_vs_baseline_normal(self):
+        """当前回复长度接近基线 → 不触发"""
+        from plugins.deepseek.conversation_fatigue import _detect_shortening_vs_baseline
+
+        user_msgs = [
+            {"role": "user", "content": "今天天气真不错啊适合出门走走", "timestamp": i}
+            for i in range(6)
+        ]
+        baseline = {"avg_reply_length": 15.0, "sample_count": 30}
+        score = _detect_shortening_vs_baseline(user_msgs, baseline)
+        assert score == 0.0, f"回复长度正常不应触发，得分={score}"
+
+    def test_slowdown_vs_baseline(self):
+        """回复间隔 > 2× 基线 → 应检测到变慢"""
+        from plugins.deepseek.conversation_fatigue import _detect_slowdown_vs_baseline
+
+        user_msgs = [
+            {"role": "user", "content": f"msg{i}", "timestamp": i * 300}
+            for i in range(6)
+        ]
+        baseline = {"avg_reply_gap": 60.0, "sample_count": 30}
+        score = _detect_slowdown_vs_baseline(user_msgs, baseline)
+        assert score > 0, f"应检测到回复明显慢于基线，得分={score}"
+
+    def test_slowdown_vs_baseline_normal(self):
+        """回复间隔接近基线 → 不触发"""
+        from plugins.deepseek.conversation_fatigue import _detect_slowdown_vs_baseline
+
+        user_msgs = [
+            {"role": "user", "content": f"msg{i}", "timestamp": i * 20}
+            for i in range(6)
+        ]
+        baseline = {"avg_reply_gap": 40.0, "sample_count": 30}
+        score = _detect_slowdown_vs_baseline(user_msgs, baseline)
+        assert score == 0.0, f"回复速度正常不应触发，得分={score}"
+
+    def test_insufficient_samples_no_baseline(self):
+        """样本数不足（<20）→ 使用绝对阈值而非基线"""
+        from plugins.deepseek.conversation_fatigue import has_sufficient_baseline
+
+        assert not has_sufficient_baseline({"sample_count": 5, "avg_reply_length": 10})
+        assert not has_sufficient_baseline({"sample_count": 19, "avg_reply_length": 10})
+        assert has_sufficient_baseline({"sample_count": 20, "avg_reply_length": 10})
+        assert has_sufficient_baseline({"sample_count": 100, "avg_reply_length": 10})
+
+
+class TestFatigueTypeClassification:
+    """忙/烦区分测试（真人化 P2-2）"""
+
+    def test_slowdown_no_shortening_is_busy(self):
+        """间隔拉长但回复不短 → 忙"""
+        from plugins.deepseek.conversation_fatigue import _classify_fatigue_type
+
+        signals = {"reply_slowdown": 1.0, "message_shortening": 0.0}
+        result = _classify_fatigue_type(level=2, signals=signals, has_baseline=True)
+        assert result == "忙", f"应判断为'忙'，实际={result}"
+
+    def test_slowdown_and_shortening_is_annoyed(self):
+        """间隔拉长 + 回复变短 → 烦"""
+        from plugins.deepseek.conversation_fatigue import _classify_fatigue_type
+
+        signals = {"reply_slowdown": 1.0, "message_shortening": 1.0}
+        result = _classify_fatigue_type(level=2, signals=signals, has_baseline=True)
+        assert result == "烦", f"应判断为'烦'，实际={result}"
+
+    def test_only_shortening_high_is_annoyed(self):
+        """仅回复变短（得分≥1.0）→ 轻度烦"""
+        from plugins.deepseek.conversation_fatigue import _classify_fatigue_type
+
+        signals = {"reply_slowdown": 0.0, "message_shortening": 1.5}
+        result = _classify_fatigue_type(level=1, signals=signals, has_baseline=True)
+        assert result == "烦", f"回复明显变短应判断为'烦'，实际={result}"
+
+    def test_level_0_no_type(self):
+        """疲劳等级 0 → 无类型"""
+        from plugins.deepseek.conversation_fatigue import _classify_fatigue_type
+
+        signals = {"reply_slowdown": 0.0, "message_shortening": 0.0}
+        result = _classify_fatigue_type(level=0, signals=signals, has_baseline=True)
+        assert result == ""
+
+
+class TestCorrelationAdjustedScore:
+    """加权相关系数测试（真人化 P2-2，审计 audit-3-1）"""
+
+    def test_both_zero_returns_zero(self):
+        """两个信号都为 0 → 0"""
+        from plugins.deepseek.conversation_fatigue import compute_correlation_adjusted_score
+
+        result = compute_correlation_adjusted_score(0.0, 0.0)
+        assert result == 0.0
+
+    def test_only_one_signal(self):
+        """仅一个信号 → 返回该信号得分"""
+        from plugins.deepseek.conversation_fatigue import compute_correlation_adjusted_score
+
+        # 仅长度缩短
+        result = compute_correlation_adjusted_score(2.0, 0.0)
+        assert result == 2.0
+
+        # 仅速度变慢
+        result = compute_correlation_adjusted_score(0.0, 2.0)
+        assert result == 2.0
+
+    def test_both_signals_discounted(self):
+        """两个信号同时出现 → 折扣叠加"""
+        from plugins.deepseek.conversation_fatigue import compute_correlation_adjusted_score
+
+        # max(2,2) + min(2,2) * (1-0.3) = 2 + 2*0.7 = 3.4
+        # 而不是简单相加 2+2=4
+        result = compute_correlation_adjusted_score(2.0, 2.0)
+        assert 3.0 <= result <= 3.8, f"预期 ~3.4，实际={result}"
+        assert result < 4.0, "相关折扣后应小于简单相加"
+
+    def test_discount_less_than_simple_sum(self):
+        """任何情况下折扣分 ≤ 简单相加"""
+        from plugins.deepseek.conversation_fatigue import compute_correlation_adjusted_score
+
+        for s in [0.5, 1.0, 1.5, 2.0, 2.5]:
+            for l in [0.5, 1.0, 1.5, 2.0, 2.5]:
+                result = compute_correlation_adjusted_score(s, l)
+                assert result <= s + l, f"s={s}, l={l}: {result} <= {s+l}"
+
+
+class TestBaselineComputation:
+    """基线计算统计测试"""
+
+    def test_compute_baseline_from_messages(self):
+        """从消息列表计算统计量"""
+        from plugins.deepseek.conversation_fatigue import compute_user_baseline_from_messages
+
+        msgs = [
+            {"role": "user", "content": "今天天气不错", "timestamp": 1000},
+            {"role": "user", "content": "是啊确实", "timestamp": 1060},
+            {"role": "user", "content": "还行吧", "timestamp": 1120},
+            {"role": "user", "content": "嗯好", "timestamp": 1180},
+        ]
+        avg_len, avg_gap, _, _ = compute_user_baseline_from_messages(msgs)
+
+        assert 3.0 <= avg_len <= 8.0, f"平均长度应合理，实际={avg_len}"
+        assert avg_gap == 60.0, f"平均间隔应为 60s，实际={avg_gap}"
+
+    def test_too_few_messages_returns_zero(self):
+        """消息太少返回全零"""
+        from plugins.deepseek.conversation_fatigue import compute_user_baseline_from_messages
+
+        msgs = [{"role": "user", "content": "只有一条", "timestamp": 1}]
+        avg_len, avg_gap, sticker_rate, question_rate = compute_user_baseline_from_messages(msgs)
+
+        assert avg_len == 0.0
+        assert avg_gap == 0.0
+        assert sticker_rate == 0.0
+        assert question_rate == 0.0
+
+
+class TestClosingMessageWithFatigueType:
+    """收尾消息含忙/烦适配（真人化 P2-2）"""
+
+    def test_busy_closing_is_concise(self):
+        """忙时收尾简短识趣"""
+        from plugins.deepseek.conversation_fatigue import get_closing_message
+
+        msg = get_closing_message(3, None, fatigue_type="忙")
+        assert msg is not None
+        assert "忙" in msg or "回头" in msg or "不耽误" in msg
+
+    def test_annoyed_closing_is_gentle(self):
+        """烦时收尾更温柔"""
+        from plugins.deepseek.conversation_fatigue import get_closing_message
+
+        msg = get_closing_message(3, None, fatigue_type="烦")
+        assert msg is not None
+        assert "不打扰" in msg or "不烦你" in msg or "静一静" in msg or "不吵你" in msg

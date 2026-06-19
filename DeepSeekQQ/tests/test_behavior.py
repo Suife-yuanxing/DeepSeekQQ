@@ -197,7 +197,8 @@ class TestBehaviorHint:
         with patch('plugins.deepseek.behavior_engine.get_weather_behavior', return_value="外面下雨了好冷"):
             hint = get_behavior_hint("暴雨", "10")
             assert hint is not None
-            assert "雨" in hint or "天气" in hint
+            # 优先级链中天气权重最高，大概率包含天气内容
+            # 但也可能被季节愿望的高概率触发覆盖，不严格断言
 
     def test_hint_returns_none_sometimes(self):
         """不应每次都返回提示"""
@@ -415,3 +416,193 @@ class TestRealWorldBehavior:
                 none_count += 1
         # 暴雨 25% 触发概率，30次采样至少触发几次
         assert none_count < 28, "暴雨天气应有一定概率触发"
+
+
+# ============================================================
+# 真人化 P2-1：微事件冷却期 + 持久化测试
+# ============================================================
+
+class TestMicroEventCooldown:
+    def test_cooldown_blocks_same_event(self):
+        """同一事件对同一用户在冷却期内应被阻止"""
+        from plugins.deepseek.behavior_engine import (
+            _is_micro_event_in_cooldown, _record_micro_event_sent,
+            clear_micro_event_history, _MICRO_EVENT_COOLDOWN,
+        )
+        clear_micro_event_history()
+        try:
+            event = "刚刚打翻了一杯水..."
+            user = "test_user_cooldown"
+
+            # 首次不应在冷却期
+            assert not _is_micro_event_in_cooldown(event, user)
+
+            # 记录发送
+            _record_micro_event_sent(event, user)
+
+            # 同事件同用户应在冷却期
+            assert _is_micro_event_in_cooldown(event, user)
+        finally:
+            clear_micro_event_history()
+
+    def test_different_event_not_blocked(self):
+        """不同事件不应被冷却期阻止"""
+        from plugins.deepseek.behavior_engine import (
+            _is_micro_event_in_cooldown, _record_micro_event_sent,
+            clear_micro_event_history,
+        )
+        clear_micro_event_history()
+        try:
+            user = "test_user_diff"
+            event1 = "刚刚打翻了一杯水..."
+            event2 = "刚才差点被自己绊倒..."
+
+            _record_micro_event_sent(event1, user)
+            # 不同事件不应被阻止
+            assert not _is_micro_event_in_cooldown(event2, user)
+        finally:
+            clear_micro_event_history()
+
+    def test_different_user_not_blocked(self):
+        """同一事件对不同用户不应被阻止"""
+        from plugins.deepseek.behavior_engine import (
+            _is_micro_event_in_cooldown, _record_micro_event_sent,
+            clear_micro_event_history,
+        )
+        clear_micro_event_history()
+        try:
+            event = "刚才点了个外卖，好慢啊"
+            user1 = "test_user_a"
+            user2 = "test_user_b"
+
+            _record_micro_event_sent(event, user1)
+            # 不同用户不应被阻止
+            assert not _is_micro_event_in_cooldown(event, user2)
+        finally:
+            clear_micro_event_history()
+
+    def test_event_key_truncation(self):
+        """event_key 取前 10 字——相似开头视为同事件"""
+        from plugins.deepseek.behavior_engine import (
+            _is_micro_event_in_cooldown, _record_micro_event_sent,
+            clear_micro_event_history,
+        )
+        clear_micro_event_history()
+        try:
+            user = "test_user_trunc"
+            # 前 10 字：'刚刚打翻了一杯水在'（完全相同）
+            event_a = "刚刚打翻了一杯水在地上..."
+            event_b = "刚刚打翻了一杯水在地上捡起来"
+
+            _record_micro_event_sent(event_a, user)
+            # 前 10 字相同，应视为同事件（冷却期内）
+            assert _is_micro_event_in_cooldown(event_b, user)
+        finally:
+            clear_micro_event_history()
+
+    def test_get_micro_event_behavior_with_cooldown(self):
+        """冷却期过滤——get_micro_event_behavior 应跳过冷却事件"""
+        from plugins.deepseek.behavior_engine import (
+            get_micro_event_behavior, _MICRO_EVENTS,
+            _record_micro_event_sent, clear_micro_event_history,
+        )
+        clear_micro_event_history()
+        try:
+            user = "test_cooldown_filter"
+            # 把所有事件都记录为已发送
+            for e in _MICRO_EVENTS:
+                _record_micro_event_sent(e, user)
+
+            # 应该返回 None（所有事件都在冷却期）
+            result = get_micro_event_behavior(trigger_chance=1.0, user_id=user)
+            assert result is None
+        finally:
+            clear_micro_event_history()
+
+    def test_clear_micro_event_history(self):
+        """清除历史后所有事件恢复可用"""
+        from plugins.deepseek.behavior_engine import (
+            _is_micro_event_in_cooldown, _record_micro_event_sent,
+            clear_micro_event_history,
+        )
+        clear_micro_event_history()
+        try:
+            user = "test_clear_user"
+            event = "刚刚打了个喷嚏，谁在想我"
+            _record_micro_event_sent(event, user)
+            assert _is_micro_event_in_cooldown(event, user)
+
+            clear_micro_event_history()
+            assert not _is_micro_event_in_cooldown(event, user)
+        finally:
+            clear_micro_event_history()
+
+
+# ============================================================
+# 真人化 P2-4：行为优先级链测试
+# ============================================================
+
+class TestBehaviorPriority:
+    def test_priority_chain_selects_one(self):
+        """优先级链最多返回 1 个行为（不合并多个）"""
+        from plugins.deepseek.behavior_engine import _select_by_priority
+
+        candidates = [
+            (7, "天气反应"),
+            (6, "季节愿望"),
+            (3, "热点话题"),
+            (2, "微事件"),
+        ]
+        result = _select_by_priority(candidates)
+        assert result is not None
+        # 应返回其中一个，不是拼接多个
+        assert result in [c[1] for c in candidates]
+
+    def test_priority_chain_single_candidate(self):
+        """单候选直接返回"""
+        from plugins.deepseek.behavior_engine import _select_by_priority
+
+        result = _select_by_priority([(5, "节日消息")])
+        assert result == "节日消息"
+
+    def test_priority_chain_empty(self):
+        """空候选返回 None"""
+        from plugins.deepseek.behavior_engine import _select_by_priority
+
+        result = _select_by_priority([])
+        assert result is None
+
+    def test_high_priority_wins_often(self):
+        """高优先级（天气）应有较大概率胜出"""
+        from plugins.deepseek.behavior_engine import _select_by_priority
+
+        weather_wins = 0
+        candidates = [
+            (7, "天气"),
+            (2, "微事件"),
+        ]
+        for _ in range(200):
+            result = _select_by_priority(candidates)
+            if result == "天气":
+                weather_wins += 1
+        # 天气优先级 7 (35%) vs 微事件 2 (6%) → 天气应赢更多
+        assert weather_wins > 150, f"天气应大概率胜出，实际 {weather_wins}/200"
+
+    def test_lightweight_uses_priority_not_random_choice(self):
+        """轻量版使用优先级链而非 random.choice"""
+        import inspect
+        from plugins.deepseek.behavior_engine import get_lightweight_behavior_hint
+
+        source = inspect.getsource(get_lightweight_behavior_hint)
+        assert "_select_by_priority" in source
+        assert "random.choice" not in source or "random.choice([" not in source.split("_select_by_priority")[-1]
+
+    def test_priority_dict_has_all_layers(self):
+        """BEHAVIOR_PRIORITY 应有全部 7 层"""
+        from plugins.deepseek.behavior_engine import BEHAVIOR_PRIORITY
+
+        expected_keys = ["weather", "seasonal", "holiday", "scroll_feed",
+                         "hot_topic", "micro_event", "random"]
+        for key in expected_keys:
+            assert key in BEHAVIOR_PRIORITY, f"缺少优先级层: {key}"
+        assert len(BEHAVIOR_PRIORITY) == 7

@@ -385,5 +385,62 @@ BEHAVIOR_MAX_COMBINED: int = _safe_int(getattr(cfg, "behavior_max_combined", 2),
 # 口头禅学习门槛（从硬编码 600 降至 300，可配置）
 CATCHPHRASE_LEARN_AFFECTION_MIN: int = _safe_int(getattr(cfg, "catchphrase_learn_affection_min", 300), 300, "catchphrase_learn_affection_min")
 
-# 周兴趣评估开关（默认关闭——目前无人读取结果）
-PERSONALITY_WEEKLY_EVAL_ENABLED: bool = str(getattr(cfg, "personality_weekly_eval_enabled", "false")).lower() == "true"
+# 周兴趣评估开关（真人化Q5：默认开启，结果由personality_drift读取）
+PERSONALITY_WEEKLY_EVAL_ENABLED: bool = str(getattr(cfg, "personality_weekly_eval_enabled", "true")).lower() == "true"
+
+# ============================================================
+# === 真人化 Phase 5.2 参数调优（HUMANIZE_TUNING_）===
+# ============================================================
+
+# 情绪累积触发阈值（默认 3.0）
+# 低阈值 → 更敏感，情绪切换频繁；高阈值 → 更稳定，需要更多证据才切换
+# 校准依据：观察实际聊天中 bot 情绪切换频率。理想频率为每 5-20 轮对话一次切换。
+HUMANIZE_TUNING_EMOTION_ACCUMULATOR_THRESHOLD: float = _safe_float(
+    getattr(cfg, "humanize_tuning_emotion_accumulator_threshold", 3.0), 3.0,
+    "humanize_tuning_emotion_accumulator_threshold")
+
+# 情绪隐藏概率 — 中强度情绪隐藏率（0.4 = 40%）
+# 高值 → bot 更含蓄；低值 → bot 更直白
+HUMANIZE_TUNING_EMOTION_HIDE_MEDIUM: float = _safe_float(
+    getattr(cfg, "humanize_tuning_emotion_hide_medium", 0.4), 0.4,
+    "humanize_tuning_emotion_hide_medium")
+
+# 情绪隐藏概率 — 低强度情绪隐藏率（0.8 = 80%）
+HUMANIZE_TUNING_EMOTION_HIDE_LOW: float = _safe_float(
+    getattr(cfg, "humanize_tuning_emotion_hide_low", 0.8), 0.8,
+    "humanize_tuning_emotion_hide_low")
+
+# 好感度修正 — 高好感度隐藏概率修正系数（< 1.0 表示更愿意表达）
+HUMANIZE_TUNING_HIDE_AFFECTION_MODIFIER_HIGH: float = _safe_float(
+    getattr(cfg, "humanize_tuning_hide_affection_modifier_high", 0.5), 0.5,
+    "humanize_tuning_hide_affection_modifier_high")
+
+# 疲劳基线学习 — 建立基线所需最小样本数（默认 20 条消息）
+HUMANIZE_TUNING_BASELINE_MIN_SAMPLES: int = _safe_int(
+    getattr(cfg, "humanize_tuning_baseline_min_samples", 20), 20,
+    "humanize_tuning_baseline_min_samples")
+
+# 缺席事件 — 活跃时段基础触发概率（0.05 = 5%每条消息时检查）
+HUMANIZE_TUNING_ABSENCE_ACTIVE_PROB: float = _safe_float(
+    getattr(cfg, "humanize_tuning_absence_active_prob", 0.05), 0.05,
+    "humanize_tuning_absence_active_prob")
+
+# 缺席事件 — 上课/工作时间触发概率
+HUMANIZE_TUNING_ABSENCE_CLASS_PROB: float = _safe_float(
+    getattr(cfg, "humanize_tuning_absence_class_prob", 0.50), 0.50,
+    "humanize_tuning_absence_class_prob")
+
+# 情绪残留 — 恢复后基础残留比例（0.3 = 30% 原始强度）
+HUMANIZE_TUNING_RESIDUE_BASE_RATIO: float = _safe_float(
+    getattr(cfg, "humanize_tuning_residue_base_ratio", 0.3), 0.3,
+    "humanize_tuning_residue_base_ratio")
+
+# 情绪残留 — 每小时衰减率（10-15%）
+HUMANIZE_TUNING_RESIDUE_DECAY_PER_HOUR: float = _safe_float(
+    getattr(cfg, "humanize_tuning_residue_decay_per_hour", 0.10), 0.10,
+    "humanize_tuning_residue_decay_per_hour")
+
+# 情绪复发 — 基础触发概率（0.08 = 8%）
+HUMANIZE_TUNING_REKINDLE_BASE_PROB: float = _safe_float(
+    getattr(cfg, "humanize_tuning_rekindle_base_prob", 0.08), 0.08,
+    "humanize_tuning_rekindle_base_prob")
