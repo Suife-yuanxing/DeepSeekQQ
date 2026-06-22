@@ -3,6 +3,7 @@ import asyncio
 import json
 import random
 import re
+import time
 from collections import OrderedDict
 from typing import Any
 from typing import Dict
@@ -11,6 +12,67 @@ from typing import Optional
 from typing import Tuple
 
 from nonebot import logger
+
+
+# ═══════════════════════════════════════════════
+# Phase 1: 中文日期解析（消息搜索用）
+# ═══════════════════════════════════════════════
+
+def parse_chinese_date(date_str: str) -> float:
+    """解析中文日期字符串为时间戳（秒）。
+
+    支持格式：'2024-01-15', '2024-01', '2024', '今天', '昨天', '3天前', '上周', '上月'
+    失败时返回 0（不限制）。
+    """
+    now = time.time()
+    dt = now
+    s = date_str.strip()
+    if s == "今天":
+        dt = now
+    elif s == "昨天":
+        dt = now - 86400
+    elif s.endswith("天前"):
+        try:
+            days = int(s.replace("天前", ""))
+            dt = now - days * 86400
+        except ValueError:
+            pass
+    elif s == "上周":
+        dt = now - 7 * 86400
+    elif s == "上月":
+        dt = now - 30 * 86400
+    elif re.match(r"^\d{4}-\d{2}-\d{2}$", s):
+        try:
+            from datetime import datetime as _dt
+            dt = _dt.strptime(s, "%Y-%m-%d").timestamp()
+        except ValueError:
+            pass
+    elif re.match(r"^\d{4}-\d{2}$", s):
+        try:
+            from datetime import datetime as _dt
+            dt = _dt.strptime(s, "%Y-%m").timestamp()
+        except ValueError:
+            pass
+    elif re.match(r"^\d{4}$", s):
+        try:
+            from datetime import datetime as _dt
+            dt = _dt.strptime(s, "%Y").timestamp()
+        except ValueError:
+            pass
+    return dt
+
+
+# ═══════════════════════════════════════════════
+# Phase 0.9: 统一 session_id 生成
+# ═══════════════════════════════════════════════
+
+def generate_session_id(channel: str, id_val: str) -> str:
+    """统一 session_id 生成，替代所有 f"private_{x}" / f"group_{x}"。
+
+    与现有格式完全兼容：private_{qq} / group_{group_id}。
+    预留 channel="app" 格式：app_{user_id}。
+    """
+    return f"{channel}_{id_val}"
 
 # 后台任务 — 向后兼容重导出
 from .error_reporter import safe_task, pending_count  # noqa: F401

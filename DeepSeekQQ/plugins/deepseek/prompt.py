@@ -112,17 +112,14 @@ def _load_core_persona() -> str:
     return _interpolate_config(CORE_PERSONA_FALLBACK)
 
 
-def _interpolate_config(text: str) -> str:
-    """将人设文本中的 {KEY} 占位符替换为 config 中的实际值。
-
-    B17: 每次调用时从 config 模块读取最新值，支持运行时热重载。
-    """
+def _get_persona_defaults() -> dict:
+    """获取默认人设值（从 config.py 全局常量），每次调用热重载。"""
     from .config import (
         BOT_NAME, BOT_AGE, BOT_GENDER, BOT_HEIGHT, BOT_BIRTHDAY,
         BOT_ZODIAC, BOT_CITY, BOT_HOMETOWN, BOT_OCCUPATION,
         BOT_MAJOR, BOT_CAT_NAME,
     )
-    mapping = {
+    return {
         "BOT_NAME": BOT_NAME,
         "BOT_AGE": str(BOT_AGE),
         "BOT_GENDER": BOT_GENDER,
@@ -135,6 +132,16 @@ def _interpolate_config(text: str) -> str:
         "BOT_MAJOR": BOT_MAJOR,
         "BOT_CAT_NAME": BOT_CAT_NAME,
     }
+
+
+def _interpolate_config(text: str, persona: dict = None) -> str:
+    """将人设文本中的 {KEY} 占位符替换为人设值。
+
+    B17: 每次调用时从 config 读取最新值，支持运行时热重载。
+    Phase 0.4: 可选 persona dict（来自 multi_tenant.get_bot_persona），
+    无 persona 时回退到 config.py 全局值（向后兼容）。
+    """
+    mapping = persona if persona is not None else _get_persona_defaults()
     for key, value in mapping.items():
         text = text.replace(f"{{{key}}}", value)
     return text

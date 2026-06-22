@@ -50,9 +50,13 @@ class CausalContext:
 
     每个会话（session_id）一个实例，跨消息持久化。
     所有真人化模块通过此对象共享状态，消除模块间"独立决策"。
+    Phase 0.7a: 新增 last_access 字段，淘汰从 FIFO 改为真正 LRU。
     """
 
     session_id: str = ""
+
+    # Phase 0.7a: LRU 淘汰用最后访问时间
+    last_access: float = field(default_factory=lambda: _time.time())
 
     # ── 活动状态（来自 activity_sim）──
     current_activity: str = ""
@@ -298,8 +302,8 @@ class CausalContext:
 # 全局注册表：session_id → CausalContext
 _cc_registry: Dict[str, CausalContext] = {}
 
-# 最大缓存会话数（防止内存泄漏）
-_MAX_CACHED_SESSIONS = 500
+# 最大缓存会话数（Phase 0.7a: 500→2000，多租户下活跃 Bot 上下文不被新会话挤掉）
+_MAX_CACHED_SESSIONS = 2000
 
 # 默认虚拟时间提供者（可被测试 mock）
 _virtual_time_provider: Optional[callable] = None
@@ -327,13 +331,17 @@ def get_cc(session_id: str) -> CausalContext:
 
     每个会话（session_id）拥有独立的 CausalContext，
     跨消息持久化直到会话结束或被清理。
+
+    Phase 0.7a: 淘汰策略从 FIFO 改为真正 LRU（淘汰最久未访问），
+    上限 500→2000。每次访问更新 last_access。
     """
     if session_id not in _cc_registry:
-        # 防止内存泄漏：超过上限时清理最旧的会话
+        # LRU 淘汰：超过上限时淘汰最久未访问的会话（改 FIFO 为真正 LRU）
         if len(_cc_registry) >= _MAX_CACHED_SESSIONS:
-            oldest_key = next(iter(_cc_registry))
+            # 找 last_access 最小（最久未访问）的 key
+            oldest_key = min(_cc_registry.items(), key=lambda kv: getattr(kv[1], "last_access", 0.0))[0]
             del _cc_registry[oldest_key]
-            logger.debug(f"[CausalContext] 清理旧会话: {oldest_key}")
+            logger.debug(f"[CausalContext] LRU 淘汰: {oldest_key}")
 
         _cc_registry[session_id] = CausalContext(
             session_id=session_id,
@@ -342,6 +350,8 @@ def get_cc(session_id: str) -> CausalContext:
         logger.debug(f"[CausalContext] 新建会话: {session_id}")
 
     cc = _cc_registry[session_id]
+    # Phase 0.7a: 每次访问更新 last_access（LRU 追踪）
+    cc.last_access = _time.time()
     # 每次获取时更新虚拟时间
     cc.update_virtual_time(_get_virtual_now())
     return cc

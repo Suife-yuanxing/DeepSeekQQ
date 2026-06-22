@@ -7,7 +7,7 @@ from typing import Optional
 
 from nonebot import logger
 
-from ..config import MY_QQ
+from ..multi_tenant import get_owner_qq
 from ..config import PROACTIVE_CONFIG
 from ..database import (
     get_last_greeting_time,
@@ -18,6 +18,7 @@ from ..database import (
 )
 from ..db_proactive import get_morning_skip_state
 from ..db_proactive import set_morning_skip_state
+from ..utils import generate_session_id
 from .shared import (
     _generate_proactive_message,
     _get_proactive_targets,
@@ -152,7 +153,7 @@ async def _should_send_morning(uid: str) -> dict:
     Returns:
         {"should_send": bool, "reason": str, "context": str}
     """
-    session_id = f"private_{uid}"
+    session_id = generate_session_id("private", uid)
 
     # 已发过早安或已被感知式触发，跳过
     if await has_proactive_today(str(uid), "morning") or \
@@ -236,8 +237,9 @@ async def _morning_greeting(bot):
     # 多用户：从活跃会话自动发现目标
     target_users = await _get_proactive_targets()
     # 确保主人始终在列表中
-    if MY_QQ and str(MY_QQ) not in target_users:
-        target_users.insert(0, str(MY_QQ))
+    owner = await get_owner_qq()
+    if owner and owner not in target_users:
+        target_users.insert(0, owner)
 
     for uid in target_users:
         decision = await _should_send_morning(str(uid))
@@ -260,7 +262,7 @@ async def _morning_greeting(bot):
     for gid in cfg["target_groups"]:
         if await has_proactive_today(str(gid), "morning"):
             continue
-        session_id = f"group_{gid}"
+        session_id = generate_session_id("group", gid)
         if await has_user_message_today(session_id):
             continue
         msg = await _generate_proactive_message("morning")
@@ -282,7 +284,7 @@ async def _morning_event_driven(bot, user_id: str, trigger: str = "wake") -> boo
     Returns:
         True 如果发送了早安
     """
-    session_id = f"private_{user_id}"
+    session_id = generate_session_id("private", user_id)
 
     # 今天已发过，跳过
     if await has_proactive_today(str(user_id), "morning") or \

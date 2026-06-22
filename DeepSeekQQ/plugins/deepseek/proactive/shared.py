@@ -11,7 +11,8 @@ from nonebot.adapters.onebot.v11 import Message as OBMessage
 
 from ..api import call_deepseek_api
 from ..behavior_engine import get_behavior_hint
-from ..config import MY_QQ
+from ..config import MY_QQ  # Phase 0.8: 已降级为 fallback，优先用 get_owner_qq()
+from ..multi_tenant import get_owner_qq
 from ..config import PROACTIVE_CONFIG
 from ..database import get_affection
 from ..database import get_bot_mood
@@ -20,6 +21,7 @@ from ..memory import save_reply
 from ..schedule import get_schedule_state
 from ..sticker import parse_sticker_tag
 from ..utils import filter_novel_actions
+from ..utils import generate_session_id
 from ..world_context import get_weather
 
 
@@ -80,7 +82,7 @@ async def _send_proactive_message(bot, target_type: str, target_id: str, message
         if target_type == "private":
             await bot.send_private_msg(user_id=int(target_id), message=OBMessage(message))
             # 存入对话记忆
-            session_id = f"private_{target_id}"
+            session_id = generate_session_id("private", target_id)
             await save_reply(session_id, target_id, "[主动消息]", message)
             logger.info(f"[主动消息] 私聊 {target_id}: {message[:50]}...")
         elif target_type == "group":
@@ -443,4 +445,5 @@ async def _get_proactive_targets() -> list:
         logger.info(f"[主动消息] 自动发现 {len(user_ids)} 个目标用户（好感度≥200 + 周互动≥3天）")
         return user_ids
     except (OSError, ValueError, TypeError):
-        return [str(MY_QQ)] if MY_QQ else []
+        owner = await get_owner_qq()
+        return [str(owner)] if owner else []

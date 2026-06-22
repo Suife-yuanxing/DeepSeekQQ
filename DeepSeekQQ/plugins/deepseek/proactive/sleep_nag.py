@@ -3,10 +3,11 @@ from datetime import datetime
 
 from nonebot import logger
 
-from ..config import MY_QQ
+from ..multi_tenant import get_owner_qq
 from ..config import PROACTIVE_CONFIG
 from ..database import get_today_proactive_count_by_scene
 from ..database import has_recent_message
+from ..utils import generate_session_id
 from .shared import (
     _generate_proactive_message,
     _get_proactive_targets,
@@ -30,14 +31,15 @@ async def _sleep_nag(bot):
 
     # 多用户：从活跃会话自动发现目标
     target_users = await _get_proactive_targets()
-    if MY_QQ and str(MY_QQ) not in target_users:
-        target_users.insert(0, str(MY_QQ))
+    owner = await get_owner_qq()
+    if owner and owner not in target_users:
+        target_users.insert(0, owner)
 
     for uid in target_users:
         nag_count = await get_today_proactive_count_by_scene(str(uid), "sleep_nag", today)
         if nag_count >= max_nags:
             continue
-        session_id = f"private_{uid}"
+        session_id = generate_session_id("private", uid)
         if not await has_recent_message(session_id, minutes=30):
             continue
         msg = await _generate_proactive_message("sleep_nag", str(uid))

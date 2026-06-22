@@ -1,11 +1,45 @@
-"""统一配置读取，所有密钥从 NoneBot config / .env 获取，禁止硬编码。"""
+"""统一配置读取，所有密钥从 NoneBot config / .env 获取，禁止硬编码。
+
+惰性初始化：NoneBot 运行时从 driver.config 读；独立 FastAPI 8766 进程
+（api_platform.server）无 NoneBot 时从 os.environ 读，避免 get_driver() 炸。
+"""
+import os
 from typing import Optional
 
-from nonebot import get_driver
-from nonebot import logger as _logger
 
-driver = get_driver()
-cfg = driver.config
+class _EnvironConfig:
+    """os.environ 的 getattr 兼容包装（模拟 nonebot Config 接口）。
+
+    支持 getattr(cfg, "deepseek_api_key", "") → 读 os.environ["DEEPSEEK_API_KEY"]。
+    NoneBot config 属性是小写带下划线，env 变量是大写，自动转换。
+    """
+
+    def __getattr__(self, name: str):
+        env_key = name.upper()
+        return os.environ.get(env_key, None)
+
+    def get(self, name: str, default=None):
+        return os.environ.get(name.upper(), default)
+
+
+try:
+    from nonebot import get_driver
+    from nonebot import logger as _logger
+    try:
+        driver = get_driver()
+        cfg = driver.config
+        _HAS_NONEBOT = True
+    except Exception:
+        # NoneBot 未初始化（8766 独立进程）—— 降级到环境变量包装
+        cfg = _EnvironConfig()
+        _HAS_NONEBOT = False
+        import logging
+        _logger = logging.getLogger("config")
+except Exception:
+    cfg = _EnvironConfig()
+    _HAS_NONEBOT = False
+    import logging
+    _logger = logging.getLogger("config")
 
 
 def _safe_float(val, default: float, name: str = "") -> float:

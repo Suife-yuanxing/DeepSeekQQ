@@ -50,29 +50,44 @@ async def close_http_session():
 
 
 async def _call_deepseek_raw(messages: List[Dict[str, str]], temperature: float = 0.9,
-                             max_tokens: int = None) -> Optional[str]:
+                             max_tokens: int = None,
+                             api_config: dict = None) -> Optional[str]:
     """调用 DeepSeek 远程 API。成功返回内容，失败返回 None。
+
+    Phase 0.5: 可选 api_config dict 覆盖 API_KEY/MODEL/BASE_URL。
+    未提供时使用 config.py 全局值（向后兼容）。
 
     P0-9: 集成 CircuitBreaker，熔断时直接跳过远程调用。
     """
-    if not API_KEY:
+    # Phase 0.5: 动态 Key 路由
+    if api_config:
+        _api_key = api_config.get("api_key", API_KEY)
+        _base_url = api_config.get("base_url", BASE_URL)
+        _model = api_config.get("model", MODEL)
+    else:
+        _api_key = API_KEY
+        _base_url = BASE_URL
+        _model = MODEL
+
+    if not _api_key:
         logger.warning("[API] API密钥未配置")
         return None
 
     # P0-9: 检查熔断器状态
     from .circuit_breaker import get_breaker
     breaker = get_breaker("deepseek_api")
-    if breaker and breaker._is_open():
+    if breaker and breaker._is_open() and not api_config:
+        # 自带 Key 的使用者不触发全局熔断
         logger.warning("[API] DeepSeek API 已熔断，跳过远程调用")
         return None
 
-    url = f"{BASE_URL}/chat/completions"
+    url = f"{_base_url}/chat/completions"
     headers = {
-        "Authorization": f"Bearer {API_KEY}",
+        "Authorization": f"Bearer {_api_key}",
         "Content-Type": "application/json"
     }
     payload = {
-        "model": MODEL,
+        "model": _model,
         "messages": messages,
         "temperature": temperature,
         "max_tokens": max_tokens if max_tokens is not None else API_MAX_TOKENS,
@@ -196,8 +211,12 @@ async def _call_local_llm(messages: List[Dict[str, str]], temperature: float = 0
 
 
 async def call_deepseek_api(messages: List[Dict[str, str]], temperature: float = 0.9,
-                           task_type: str = "chat", max_tokens: int = None) -> str:
+                           task_type: str = "chat", max_tokens: int = None,
+                           api_config: dict = None) -> str:
     """统一 API 入口 - 二层降级 + 任务分级路由（对调用方完全透明）。
+
+    Phase 0.5: 可选 api_config dict（api_key/base_url/model），
+    支持每 Bot 动态 Key 路由。未提供时用 config.py 全局值。
 
     task_type 控制模型选择和 max_tokens：
     - "chat": 主聊天回复（默认，用配置模型，max_tokens=1500）
@@ -219,7 +238,7 @@ async def call_deepseek_api(messages: List[Dict[str, str]], temperature: float =
 
     # ===== 第1层：DeepSeek 远程 API =====
     api_start = time.time()
-    result = await _call_deepseek_raw(messages, temperature, max_tokens=max_tokens)
+    result = await _call_deepseek_raw(messages, temperature, max_tokens=max_tokens, api_config=api_config)
     api_duration = (time.time() - api_start) * 1000
 
     if result is not None:

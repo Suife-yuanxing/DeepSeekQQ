@@ -266,6 +266,11 @@ async def init_db():
         "INSERT OR IGNORE INTO catgirl_mood (id, mood, score, last_updated) VALUES (1, '平淡', 50, ?)",
         (datetime.now().timestamp(),)
     )
+    # Phase 0.2: 多租户 — catgirl_mood / bot_mood 加 bot_id 字段
+    try:
+        await db.execute("ALTER TABLE catgirl_mood ADD COLUMN bot_id INTEGER DEFAULT 1")
+    except Exception:
+        pass
     await db.execute("""
         CREATE TABLE IF NOT EXISTS bot_mood (
             id INTEGER PRIMARY KEY CHECK (id = 1),
@@ -282,6 +287,11 @@ async def init_db():
         "VALUES (1, 0.0, 0.2, '平静', '', 0, ?)",
         (datetime.now().timestamp(),)
     )
+    # Phase 0.2: 多租户 — bot_mood 加 bot_id 字段
+    try:
+        await db.execute("ALTER TABLE bot_mood ADD COLUMN bot_id INTEGER DEFAULT 1")
+    except Exception:
+        pass
     await db.execute("""
         CREATE TABLE IF NOT EXISTS memory_tags (
             id INTEGER PRIMARY KEY AUTOINCREMENT,

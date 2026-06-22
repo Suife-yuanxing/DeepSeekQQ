@@ -7,6 +7,7 @@ from typing import List
 from typing import Optional
 
 from .db_core import get_db
+from .utils import generate_session_id
 
 # ============================================================
 # 动态群聊梗冷却 — 根据梗的热度调整冷却时间
@@ -180,7 +181,7 @@ async def get_recent_group_messages(group_id: str, limit: int = 20) -> List[Dict
     async with db.execute(
         """SELECT role, content, timestamp FROM memories
            WHERE session_id = ? AND archived = 0 ORDER BY timestamp DESC LIMIT ?""",
-        (f"group_{group_id}", limit)
+        (generate_session_id("group", group_id), limit)
     ) as cursor:
         async for row in cursor:
             messages.append({

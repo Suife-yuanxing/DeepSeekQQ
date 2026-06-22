@@ -1,4 +1,7 @@
-"""mood 表操作 — bot 情绪、用户情绪、念念心情、情绪快照。"""
+"""mood 表操作 — bot 情绪、用户情绪、念念心情、情绪快照。
+
+Phase 0.2: catgirl_mood / bot_mood 加 bot_id 参数（默认 1，向后兼容）。
+"""
 import random
 import time
 from datetime import datetime
@@ -11,27 +14,31 @@ from .db_core import get_db
 
 
 # ---------- catgirl_mood ----------
-async def get_catgirl_mood() -> Dict[str, Any]:
+async def get_catgirl_mood(bot_id: int = 1) -> Dict[str, Any]:
     db = await get_db()
-    async with db.execute("SELECT mood, score FROM catgirl_mood WHERE id = 1") as cursor:
+    async with db.execute(
+        "SELECT mood, score FROM catgirl_mood WHERE id = 1 AND bot_id = ?",
+        (bot_id,)
+    ) as cursor:
         row = await cursor.fetchone()
         return {"mood": row["mood"], "score": row["score"]}
 
 
-async def update_catgirl_mood(user_msg: str) -> Dict[str, Any]:
+async def update_catgirl_mood(user_msg: str, bot_id: int = 1) -> Dict[str, Any]:
     happy = ["开心", "喜欢", "爱", "棒", "可爱", "喵", "亲", "抱", "摸摸", "乖", "嘿嘿", "哈哈"]
     sad = ["累", "难过", "伤心", "哭", "好烦", "烦死了", "滚", "讨厌", "傻", "笨", "坏", "丑"]
-    # Bug 10 修复：移除单字 '烦'，避免"麻烦你"等礼貌请求误判为负面
     delta = 5 if any(w in user_msg for w in happy) else -3 if any(w in user_msg for w in sad) else 0
     db = await get_db()
-    async with db.execute("SELECT score FROM catgirl_mood WHERE id = 1") as cursor:
+    async with db.execute(
+        "SELECT score FROM catgirl_mood WHERE id = 1 AND bot_id = ?", (bot_id,)
+    ) as cursor:
         row = await cursor.fetchone()
     new_score = max(0, min(100, row["score"] + delta + random.randint(-2, 2)))
     mood = "开心" if new_score > 70 else "平淡" if new_score > 40 else "傲娇" if new_score > 20 else "生气"
     try:
         await db.execute(
-            "UPDATE catgirl_mood SET mood = ?, score = ?, last_updated = ? WHERE id = 1",
-            (mood, new_score, datetime.now().timestamp())
+            "UPDATE catgirl_mood SET mood = ?, score = ?, last_updated = ? WHERE id = 1 AND bot_id = ?",
+            (mood, new_score, datetime.now().timestamp(), bot_id)
         )
         await db.commit()
     except Exception:
@@ -58,10 +65,11 @@ _BOT_MOOD_DURATION = {
 }
 
 
-async def get_bot_mood() -> Dict[str, Any]:
+async def get_bot_mood(bot_id: int = 1) -> Dict[str, Any]:
     db = await get_db()
     async with db.execute(
-        "SELECT valence, arousal, dominant, trigger_reason, trigger_time, last_updated FROM bot_mood WHERE id = 1"
+        "SELECT valence, arousal, dominant, trigger_reason, trigger_time, last_updated FROM bot_mood WHERE id = 1 AND bot_id = ?",
+        (bot_id,)
     ) as cursor:
         row = await cursor.fetchone()
         if not row:
@@ -79,11 +87,10 @@ async def get_bot_mood() -> Dict[str, Any]:
         dt = now - max(trigger_time, last_updated)
 
         if dt > duration:
-            # 已经过了足够久，自动恢复平静
             try:
                 await db.execute(
-                    "UPDATE bot_mood SET valence=0.0, arousal=0.2, dominant='平静', trigger_reason='自然消退', trigger_time=?, last_updated=? WHERE id=1",
-                    (now, now)
+                    "UPDATE bot_mood SET valence=0.0, arousal=0.2, dominant='平静', trigger_reason='自然消退', trigger_time=?, last_updated=? WHERE id = 1 AND bot_id = ?",
+                    (now, now, bot_id)
                 )
                 await db.commit()
             except Exception:
@@ -101,13 +108,13 @@ async def get_bot_mood() -> Dict[str, Any]:
     }
 
 
-async def update_bot_mood(valence: float, arousal: float, dominant: str, reason: str = ""):
+async def update_bot_mood(valence: float, arousal: float, dominant: str, reason: str = "", bot_id: int = 1):
     db = await get_db()
     now = datetime.now().timestamp()
     try:
         await db.execute(
-            "UPDATE bot_mood SET valence=?, arousal=?, dominant=?, trigger_reason=?, trigger_time=?, last_updated=? WHERE id=1",
-            (valence, arousal, dominant, reason, now, now)
+            "UPDATE bot_mood SET valence=?, arousal=?, dominant=?, trigger_reason=?, trigger_time=?, last_updated=? WHERE id = 1 AND bot_id = ?",
+            (valence, arousal, dominant, reason, now, now, bot_id)
         )
         await db.commit()
     except Exception:

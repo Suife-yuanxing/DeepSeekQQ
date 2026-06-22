@@ -1,11 +1,19 @@
-"""数据库连接池管理。全局单连接复用，aiosqlite 线程安全。"""
+"""数据库连接池管理。全局单连接复用，aiosqlite 线程安全。
+
+惰性 logger：NoneBot 运行时用 nonebot.logger，独立 FastAPI 8766 进程用 logging。
+"""
 import asyncio
 import os
 import stat
+import logging
 from typing import Optional
 
 import aiosqlite
-from nonebot import logger
+
+try:
+    from nonebot import logger
+except Exception:
+    logger = logging.getLogger("db_core")
 
 from .config import DB_PATH
 

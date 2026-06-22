@@ -1,10 +1,11 @@
 """晚安提醒模块：多时段检查 + 道别去重。"""
 from nonebot import logger
 
-from ..config import MY_QQ
+from ..multi_tenant import get_owner_qq
 from ..config import PROACTIVE_CONFIG
 from ..database import has_proactive_today
 from ..database import has_recent_message
+from ..utils import generate_session_id
 from .shared import (
     _generate_proactive_message,
     _get_proactive_targets,
@@ -24,11 +25,12 @@ async def _night_greeting(bot):
 
     # 多用户：从活跃会话自动发现目标
     target_users = await _get_proactive_targets()
-    if MY_QQ and str(MY_QQ) not in target_users:
-        target_users.insert(0, str(MY_QQ))
+    owner = await get_owner_qq()
+    if owner and owner not in target_users:
+        target_users.insert(0, owner)
 
     for uid in target_users:
-        session_id = f"private_{uid}"
+        session_id = generate_session_id("private", uid)
         if not await has_recent_message(session_id, minutes=30):
             continue
 
@@ -42,7 +44,7 @@ async def _night_greeting(bot):
         await _send_proactive_message(bot, "private", str(uid), msg, scene="night")
 
     for gid in cfg["target_groups"]:
-        session_id = f"group_{gid}"
+        session_id = generate_session_id("group", gid)
         if not await has_recent_message(session_id, minutes=30):
             continue
         if await has_proactive_today(str(gid), "night"):
@@ -67,7 +69,7 @@ async def _night_event_driven(bot, user_id: str) -> bool:
     Returns:
         True if night greeting was sent
     """
-    session_id = f"private_{user_id}"
+    session_id = generate_session_id("private", user_id)
 
     # 今天已道别，跳过
     if await has_proactive_today(str(user_id), "night") or \

@@ -37,7 +37,8 @@ from .emotion_deep import apply_emotional_contagion
 from .emotion_deep import get_gradual_recovery
 from .emotion_deep import maybe_trigger_mood_swing
 from .utils import clean_json_text
-from .utils import safe_task
+from .utils import generate_session_id
+from .error_reporter import safe_task
 
 # ============================================================
 # 数据结构
@@ -325,7 +326,7 @@ async def analyze_context_and_emotion(
         await update_user_mood(user_id, final_valence, final_arousal, emo_type)
 
         # Phase 3：异步记录情绪日志
-        safe_task(_log_emotion(user_id, "private_" + user_id, emo_type, final_valence, final_arousal, user_msg))
+        safe_task(_log_emotion(user_id, generate_session_id("private", user_id), emo_type, final_valence, final_arousal, user_msg))
 
         logger.info(
             f"[分析] 用户={user_id[:6]} 意图={context.user_intent} "
@@ -675,7 +676,7 @@ async def update_bot_emotion(user_msg: str, user_emotion: EmotionState, user_id:
             from .database import get_session_id_for_user
 
             # 尝试获取 session_id
-            acc_session_id = f"private_{user_id}" if user_id else ""
+            acc_session_id = generate_session_id("private", user_id) if user_id else ""
             if acc_session_id:
                 unit = quick_check_to_unit(user_msg)
                 accumulator = get_accumulator(acc_session_id)
@@ -713,7 +714,7 @@ async def update_bot_emotion(user_msg: str, user_emotion: EmotionState, user_id:
     if user_id:
         try:
             from .emotion_accumulator import get_accumulator
-            acc_session_id = f"private_{user_id}"
+            acc_session_id = generate_session_id("private", user_id)
             accumulator = get_accumulator(acc_session_id)
             if accumulator.is_pending:
                 # 喂入一个 neutral unit 推进倒计时

@@ -16,6 +16,7 @@ from nonebot import logger
 
 from .config import AFFECTION_LEVELS
 from .db_core import get_db
+from .utils import generate_session_id
 
 # 真人化4.5：好感度短时缓存（确保跨模块一致性）
 # TTL=2秒，足够覆盖一次请求内所有模块的查询
@@ -149,7 +150,7 @@ async def get_affection_decay_hint(user_id: str) -> str:
     now = _time.time()
     async with db.execute(
         "SELECT MAX(timestamp) as last_ts FROM memories WHERE session_id LIKE ? AND archived = 0",
-        (f"private_{user_id}",)
+        (generate_session_id("private", user_id),)
     ) as cursor:
         row = await cursor.fetchone()
         if not row or not row["last_ts"]:

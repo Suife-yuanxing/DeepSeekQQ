@@ -19,6 +19,7 @@ from ..database import (
     has_recent_message,
 )
 from ..memory import save_reply
+from ..utils import generate_session_id
 from .shared import (
     _generate_proactive_message,
     _get_mood_driven_boost,
@@ -157,7 +158,7 @@ async def _try_push_hot_topic(bot, user_id: str, ctx: dict = None) -> bool:
 
         # 发送
         await bot.send_private_msg(user_id=int(user_id), message=rich_msg)
-        session_id = f"private_{user_id}"
+        session_id = generate_session_id("private", user_id)
         memory_text = f"[热搜推送:{topic.category}] {topic.title}"
         await save_reply(session_id, user_id, "[热搜推送]", memory_text)
 
@@ -187,7 +188,7 @@ async def _check_silence_and_notify(bot):
                 continue
 
             # P2: 活跃检测 — 最近 1 小时有对话就不打扰
-            session_id = f"private_{user_id}"
+            session_id = generate_session_id("private", user_id)
             if await has_recent_message(session_id, minutes=60):
                 logger.debug(f"[主动消息] 用户{user_id[:6]} 最近1h活跃，跳过")
                 continue

@@ -9,6 +9,7 @@ from typing import Optional
 from nonebot import logger
 
 from .db_core import get_db
+from .utils import generate_session_id
 
 # B3: 全局 scratchpad 读写锁，防止快速连续消息时的竞态条件
 scratchpad_lock = asyncio.Lock()
@@ -85,7 +86,7 @@ async def get_active_sessions(hours: float = 24.0) -> List[str]:
 async def get_last_conversation_context(user_id: str) -> Optional[Dict[str, Any]]:
     """获取用户最近一次对话的上下文摘要。"""
     from .db_tags import get_relevant_memory_tags
-    session_id = f"private_{user_id}"
+    session_id = generate_session_id("private", user_id)
     try:
         state = await get_session_state(session_id)
         if not state or not state.get("last_topic"):

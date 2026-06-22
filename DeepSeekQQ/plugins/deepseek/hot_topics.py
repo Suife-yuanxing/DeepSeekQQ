@@ -31,6 +31,7 @@ from .config import MY_QQ
 from .config import PUSH_COOLDOWN_HOURS
 from .database import get_silent_private_users
 from .memory import save_reply
+from .utils import generate_session_id
 
 # ============================================================
 # 数据结构
@@ -603,7 +604,7 @@ async def check_and_push_topics(bot) -> None:
 
             await bot.send_private_msg(user_id=int(user_id), message=rich_msg)
             # 存入对话记忆
-            session_id = f"private_{user_id}"
+            session_id = generate_session_id("private", user_id)
             memory_text = f"[热搜推送:{topic.category}] {topic.title}"
             if topic.url:
                 memory_text += f" {topic.url}"
