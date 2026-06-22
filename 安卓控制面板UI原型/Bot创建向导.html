@@ -1,0 +1,548 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bot 创建向导 v2 — UI 原型</title>
+<link rel="stylesheet" href="shared/tokens.css">
+<link rel="stylesheet" href="shared/base.css">
+<link rel="stylesheet" href="shared/components.css">
+<link rel="stylesheet" href="shared/anime-cat.css">
+<link rel="stylesheet" href="shared/dark-mode.css">
+<link rel="stylesheet" href="shared/effects.css">
+<style>
+/* ===== Page-Specific: Bot 创建向导 v2 ===== */
+
+/* ===== Header (replaces standard title-bar) ===== */
+.header {
+  background: linear-gradient(135deg, #F472B6 0%, #F9A8D4 50%, #FFB0A0 100%);
+  color: #fff; padding: 48px 20px 14px; text-align: center; position: relative; overflow: hidden;
+}
+.header::after {
+  content: ''; position: absolute; bottom: 0; left: 0; width: 100%; height: 30px;
+  background: linear-gradient(to top, rgba(255,245,247,0.3), transparent);
+}
+.header .back {
+  position: absolute; top: 48px; left: 16px; cursor: pointer; z-index: 2;
+  display: flex; align-items: center; color: #fff; text-decoration: none;
+}
+.header .back svg { width: 20px; height: 20px; }
+.header h1 { font-size: 20px; font-weight: 700; position: relative; z-index: 1; }
+.header p { font-size: 13px; opacity: 0.9; margin-top: 4px; position: relative; z-index: 1; }
+.steps { display: flex; justify-content: center; gap: 8px; margin-top: 12px; position: relative; z-index: 1; }
+.step-dot {
+  width: 8px; height: 8px; border-radius: 50%; background: rgba(255,255,255,0.4);
+  transition: all 0.35s ease;
+}
+.step-dot.active { background: #fff; width: 28px; border-radius: 4px; }
+.step-dot.done { background: #fff; }
+
+/* ===== Scroll (uses shared .scroll-area) ===== */
+.scroll-area { padding: 20px; }
+.step-content { display: none; }
+.step-content.show { display: block; animation: fadeIn 0.4s ease; }
+@keyframes fadeIn { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+
+/* ===== Step 1 — 自定义性格（主打） ===== */
+.section-intro {
+  font-size: 15px; font-weight: 700; color: #3A2030; margin-bottom: 12px;
+  display: flex; align-items: center; gap: 8px;
+}
+.section-intro .icon { width: 24px; height: 24px; display: flex; align-items: center; }
+.section-intro .icon svg { width: 22px; height: 22px; }
+
+.custom-persona-box {
+  background: linear-gradient(135deg, #FFF0F3, #FFE8EE);
+  border: 2px solid #F472B6; border-radius: 18px;
+  padding: 18px; margin-bottom: 20px;
+}
+.custom-persona-box textarea {
+  width: 100%; border: 1.5px solid rgba(244, 114, 182,0.25); border-radius: 12px;
+  padding: 12px; font-size: 14px; font-family: inherit; background: rgba(255,255,255,0.8);
+  outline: none; transition: all 0.25s; color: #3A2030; min-height: 72px; resize: vertical;
+}
+.custom-persona-box textarea:focus {
+  border-color: #F472B6; background: #fff;
+  box-shadow: 0 0 0 3px rgba(244, 114, 182,0.08);
+}
+.custom-persona-box .hint {
+  font-size: 11px; color: #C090A0; margin-top: 8px;
+}
+.custom-persona-box .trait-tags {
+  display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px;
+}
+.trait-tag {
+  font-size: 12px; padding: 5px 12px; border-radius: 14px;
+  background: #fff; color: #F472B6; border: 1px solid rgba(244, 114, 182,0.2);
+  cursor: pointer; transition: all 0.2s; font-family: inherit;
+}
+.trait-tag:hover { background: #F472B6; color: #fff; border-color: #F472B6; }
+.trait-tag.selected { background: #F472B6; color: #fff; border-color: #F472B6; }
+
+/* ===== Step 1 — 快速模板（次要） ===== */
+.template-toggle {
+  display: flex; align-items: center; gap: 8px; font-size: 13px; color: #B090A0;
+  cursor: pointer; margin-bottom: 12px; padding: 6px 0;
+}
+.template-toggle svg { width: 16px; height: 16px; transition: transform 0.3s; }
+.template-toggle.open svg { transform: rotate(90deg); }
+.template-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; display: none; margin-bottom: 8px; }
+.template-grid.show { display: grid; }
+.template-mini {
+  background: rgba(255,255,255,0.7); border-radius: 14px; padding: 12px 8px 10px;
+  text-align: center; cursor: pointer;
+  border: 1.5px solid transparent; transition: all 0.25s;
+  box-shadow: 0 2px 8px rgba(244, 114, 182,0.04);
+}
+.template-mini:hover { border-color: #FFB347; transform: translateY(-1px); }
+.template-mini.selected { border-color: #F472B6; background: #FFF0F3; }
+.template-mini .avatar-cat-wrap { width: 52px; height: 52px; margin: 0 auto 6px; }
+.template-mini .avatar-cat-wrap .img-cat { width: 100%; height: 100%; }
+.template-mini .t-name { font-size: 12px; font-weight: 700; color: #3A2030; }
+.template-mini.selected .t-name { color: #F472B6; }
+
+/* ===== Step 2 表单 ===== */
+.form-group { margin-bottom: 16px; }
+.form-group label {
+  display: block; font-size: 13px; font-weight: 700; color: #6A5060; margin-bottom: 6px;
+}
+.form-group input, .form-group textarea, .form-group select {
+  width: 100%; border: 1.5px solid rgba(255,180,200,0.4); border-radius: 12px;
+  padding: 12px; font-size: 14px; font-family: inherit; background: rgba(255,255,255,0.7);
+  outline: none; transition: all 0.25s; color: #3A2030;
+}
+.form-group input:focus, .form-group textarea:focus, .form-group select:focus {
+  border-color: #F472B6; background: #fff;
+  box-shadow: 0 0 0 3px rgba(244, 114, 182,0.08);
+}
+.form-group textarea { height: 56px; resize: none; }
+.form-group select { appearance: none; cursor: pointer;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23C090A0' stroke-width='2' stroke-linecap='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 12px center; padding-right: 36px;
+}
+.form-row { display: flex; gap: 10px; }
+.form-row .form-group { flex: 1; }
+
+.preview-box {
+  background: linear-gradient(135deg, #FFF5F7, #FFF0F3); border-radius: 14px;
+  padding: 16px; margin-top: 12px; border: 1px solid rgba(244, 114, 182,0.15);
+}
+.preview-box .label { font-size: 11px; color: #F472B6; font-weight: 700; margin-bottom: 6px; }
+.preview-box .text { font-size: 13px; color: #6A5060; line-height: 1.6; }
+
+/* ===== Step 3 确认 ===== */
+.final-card {
+  text-align: center; padding: 28px 20px;
+  background: rgba(255,255,255,0.75); border-radius: 22px;
+  box-shadow: 0 8px 28px rgba(244, 114, 182,0.1); border: 1.5px solid rgba(255,255,255,0.8);
+}
+.final-card .avatar-wrap { width: 88px; height: 88px; margin: 0 auto 14px; }
+.final-card .name { font-size: 22px; font-weight: 800; color: #3A2030; }
+.final-card .p-tag {
+  display: inline-block; margin-top: 8px;
+  background: linear-gradient(135deg, #FFF0F3, #FFE0E8);
+  color: #F472B6; padding: 5px 16px; border-radius: 20px; font-size: 13px; font-weight: 600;
+}
+.final-card .trait-list { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; margin-top: 12px; }
+.final-card .trait-chip {
+  font-size: 11px; padding: 4px 10px; border-radius: 12px;
+  background: rgba(124,92,191,0.08); color: #C4B5FD;
+}
+.final-card .info { font-size: 13px; color: #8A7080; margin-top: 14px; line-height: 1.8; }
+.final-note { text-align: center; color: #C0A0B0; font-size: 12px; margin-top: 20px; }
+
+/* ===== 底部按钮 ===== */
+.bottom-bar {
+  padding: 12px 20px 18px; display: flex; gap: 10px;
+  background: rgba(255,255,255,0.5); backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border-top: 0.5px solid rgba(0,0,0,0.05);
+}
+.btn-wizard {
+  flex: 1; padding: 14px; border-radius: 14px; font-size: 15px; font-weight: 700;
+  cursor: pointer; border: none; transition: all 0.25s; font-family: inherit;
+}
+.btn-wizard.primary {
+  background: linear-gradient(135deg, #F472B6, #F9A8D4); color: #fff;
+  box-shadow: 0 4px 14px rgba(244, 114, 182,0.3);
+}
+.btn-wizard.primary:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(244, 114, 182,0.4); }
+.btn-wizard.outline { background: rgba(255,255,255,0.8); color: #F472B6; border: 2px solid #F472B6; }
+.btn-wizard.ghost { background: transparent; color: #B090A0; }
+
+/* ===== Dark Mode — page-specific ===== */
+.phone.dark-mode .section-intro { color: #D0C8E0; }
+.phone.dark-mode .custom-persona-box { background: linear-gradient(135deg, #1E1E3A, #222040); border-color: #F472B6; }
+.phone.dark-mode .custom-persona-box textarea {
+  background: #16213E; border-color: rgba(255,255,255,0.1); color: #E0D8E8;
+}
+.phone.dark-mode .custom-persona-box textarea:focus { background: #1A1A3E; }
+.phone.dark-mode .custom-persona-box .hint { color: #8078A0; }
+.phone.dark-mode .trait-tag { background: #16213E; color: #F9A8D4; border-color: rgba(244, 114, 182,0.2); }
+.phone.dark-mode .trait-tag:hover { background: #F472B6; color: #fff; border-color: #F472B6; }
+.phone.dark-mode .trait-tag.selected { background: #F472B6; color: #fff; border-color: #F472B6; }
+.phone.dark-mode .template-toggle { color: #8078A0; }
+.phone.dark-mode .template-mini {
+  background: #16213E; border-color: rgba(255,255,255,0.06);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+}
+.phone.dark-mode .template-mini.selected { background: rgba(244, 114, 182,0.12); border-color: #F472B6; }
+.phone.dark-mode .template-mini .t-name { color: #D0C8E0; }
+.phone.dark-mode .template-mini.selected .t-name { color: #F472B6; }
+.phone.dark-mode .form-group label { color: #B0A0C0; }
+.phone.dark-mode .form-group input,
+.phone.dark-mode .form-group textarea,
+.phone.dark-mode .form-group select {
+  background: #16213E; border-color: rgba(255,255,255,0.08); color: #E0D8E8;
+}
+.phone.dark-mode .form-group input:focus,
+.phone.dark-mode .form-group textarea:focus,
+.phone.dark-mode .form-group select:focus {
+  border-color: #F472B6; background: #1A1A3E;
+}
+.phone.dark-mode .preview-box { background: linear-gradient(135deg, #16213E, #1E1E3A); border-color: rgba(244, 114, 182,0.12); }
+.phone.dark-mode .preview-box .text { color: #B0A8C0; }
+.phone.dark-mode .final-card {
+  background: #16213E; border-color: rgba(255,255,255,0.06);
+  box-shadow: 0 8px 28px rgba(0,0,0,0.2);
+}
+.phone.dark-mode .final-card .name { color: #E0D8E8; }
+.phone.dark-mode .final-card .p-tag { background: rgba(244, 114, 182,0.12); color: #F9A8D4; }
+.phone.dark-mode .final-card .info { color: #9088A0; }
+.phone.dark-mode .final-note { color: #706878; }
+.phone.dark-mode .bottom-bar {
+  background: rgba(26,26,46,0.55);
+  border-top-color: rgba(255,255,255,0.06);
+}
+.phone.dark-mode .btn-wizard.outline { background: #16213E; color: #F472B6; }
+.phone.dark-mode .btn-wizard.ghost { color: #706878; }
+.phone.dark-mode .header::after {
+  background: linear-gradient(to top, rgba(26,26,46,0.5), transparent);
+}
+.phone.dark-mode .scroll-area { color: #E8E0F0; }
+.phone.dark-mode .step-dot { background: rgba(255,255,255,0.2); }
+.phone.dark-mode .step-dot.active, .phone.dark-mode .step-dot.done { background: #fff; }
+</style>
+</head>
+<body>
+
+<div class="phone">
+  <div class="header">
+    <a class="back" href="index.html">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M15 18l-6-6 6-6"/></svg>
+    </a>
+    <h1>创建你的 AI</h1>
+    <p id="stepTitle">第 1 步：定义性格</p>
+    <div class="steps">
+      <div class="step-dot active" id="dot1"></div>
+      <div class="step-dot" id="dot2"></div>
+      <div class="step-dot" id="dot3"></div>
+    </div>
+  </div>
+
+  <div class="scroll-area">
+    <!-- ===== Step 1: 自定义性格（主打） + 快速模板（次要） ===== -->
+    <div class="step-content show" id="step1">
+      <!-- 主打：自定义性格 -->
+      <div class="section-intro">
+        <span class="icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="#F472B6" stroke-width="2" stroke-linecap="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+        </span>
+        自定义性格
+      </div>
+      <div class="custom-persona-box">
+        <textarea id="customPersona" placeholder="用你自己的话描述 Bot 的性格...&#10;&#10;例如：&#10;她是一个外表高冷但内心温柔的大姐姐，说话带点傲娇，偶尔会毒舌吐槽但从不真的伤人。喜欢在深夜聊哲学，害怕打雷。对主人很忠诚，会默默记住主人说过的每一件小事。"></textarea>
+        <div class="hint">描述越详细，AI 越能精准地呈现你想要的性格。上面的 6 个模板只是参考，你完全可以自由发挥。</div>
+        <div style="font-size:12px;font-weight:700;color:#6A5060;margin-top:12px;">快速添加性格标签：</div>
+        <div class="trait-tags" id="traitTags">
+          <span class="trait-tag" onclick="toggleTrait(this)">傲娇</span>
+          <span class="trait-tag" onclick="toggleTrait(this)">温柔</span>
+          <span class="trait-tag" onclick="toggleTrait(this)">毒舌</span>
+          <span class="trait-tag" onclick="toggleTrait(this)">元气</span>
+          <span class="trait-tag" onclick="toggleTrait(this)">三无</span>
+          <span class="trait-tag" onclick="toggleTrait(this)">腹黑</span>
+          <span class="trait-tag" onclick="toggleTrait(this)">粘人</span>
+          <span class="trait-tag" onclick="toggleTrait(this)">高冷</span>
+          <span class="trait-tag" onclick="toggleTrait(this)">话痨</span>
+          <span class="trait-tag" onclick="toggleTrait(this)">懒惰</span>
+          <span class="trait-tag" onclick="toggleTrait(this)">病娇</span>
+          <span class="trait-tag" onclick="toggleTrait(this)">天然呆</span>
+        </div>
+      </div>
+
+      <!-- 次要：快速模板（折叠） -->
+      <div class="template-toggle" onclick="toggleTemplates()">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M6 3l6 5-6 5"/></svg>
+        或者从经典模板开始（可选）
+      </div>
+      <div class="template-grid" id="templateGrid">
+        <div class="template-mini" onclick="selectTemplate(this,'傲娇','tsundere','嘴硬心软，表面不承认关心你但其实很在意')">
+          <div class="avatar-cat-wrap"><div class="img-cat avatar img-md tsundere"><img src="shared/agnes-tsundere.png" alt="tsundere"></div></div>
+          <div class="t-name">傲娇</div>
+        </div>
+        <div class="template-mini" onclick="selectTemplate(this,'温柔','gentle','轻声细语的大姐姐，包容你的所有')">
+          <div class="avatar-cat-wrap"><div class="img-cat avatar img-md gentle"><img src="shared/agnes-gentle.png" alt="gentle"></div></div>
+          <div class="t-name">温柔</div>
+        </div>
+        <div class="template-mini" onclick="selectTemplate(this,'毒舌','sarcastic','吐槽犀利但内心善良，嘴上不饶人')">
+          <div class="avatar-cat-wrap"><div class="img-cat avatar img-md sarcastic"><img src="shared/agnes-sarcastic.png" alt="sarcastic"></div></div>
+          <div class="t-name">毒舌</div>
+        </div>
+        <div class="template-mini" onclick="selectTemplate(this,'元气','energetic','活力满满永远正能量，像小太阳')">
+          <div class="avatar-cat-wrap"><div class="img-cat avatar img-md energetic"><img src="shared/agnes-energetic.png" alt="energetic"></div></div>
+          <div class="t-name">元气</div>
+        </div>
+        <div class="template-mini" onclick="selectTemplate(this,'三无','emotionless','话少表情少，但偶尔的一句话很暖')">
+          <div class="avatar-cat-wrap"><div class="img-cat avatar img-md emotionless"><img src="shared/agnes-emotionless.png" alt="emotionless"></div></div>
+          <div class="t-name">三无</div>
+        </div>
+        <div class="template-mini" onclick="selectTemplate(this,'腹黑','sly','表面可爱实则心机，悄悄算计你')">
+          <div class="avatar-cat-wrap"><div class="img-cat avatar img-md sly"><img src="shared/agnes-sly.png" alt="sly"></div></div>
+          <div class="t-name">腹黑</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== Step 2: 自定义设定 ===== -->
+    <div class="step-content" id="step2">
+      <div class="form-group">
+        <label>名字</label>
+        <input type="text" id="botName" value="小咪" placeholder="给你的 Bot 起个名字" oninput="updatePreview()">
+      </div>
+      <div class="form-group">
+        <label>口头禅</label>
+        <input type="text" id="catchphrase" value="" placeholder="Bot 最常说的话（多条用逗号分隔）" oninput="updatePreview()">
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>年龄</label>
+          <input type="text" id="age" value="17" placeholder="年龄" oninput="updatePreview()">
+        </div>
+        <div class="form-group">
+          <label>说话风格</label>
+          <select id="speechStyle" oninput="updatePreview()">
+            <option value="自然口语">自然口语</option>
+            <option value="文雅书面">文雅书面</option>
+            <option value="二次元">二次元 / 日系</option>
+            <option value="网络用语多">网络用语多</option>
+            <option value="简洁利落">简洁利落</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>背景故事（选填）</label>
+        <textarea id="backstory" placeholder="Bot 的身世背景，帮助 AI 理解角色设定..." oninput="updatePreview()"></textarea>
+      </div>
+      <div class="form-group">
+        <label>特殊设定（选填）</label>
+        <textarea id="specialRules" placeholder="特殊规则，例如：&#10;· 每次回复结尾加「喵」&#10;· 提到钱的时候会变得很紧张&#10;· 晚上 10 点后说话更温柔&#10;· 喜欢用颜文字" oninput="updatePreview()"></textarea>
+      </div>
+      <div class="preview-box">
+        <div class="label">实时预览</div>
+        <div class="text" id="previewText">点击上方模板或输入自定义性格描述来预览效果~</div>
+      </div>
+    </div>
+
+    <!-- ===== Step 3: 确认 ===== -->
+    <div class="step-content" id="step3">
+      <div class="final-card">
+        <div class="avatar-wrap" id="finalAvatar">
+          <div class="img-cat hero img-lg tsundere"><img src="shared/agnes-tsundere.png" alt="tsundere"></div>
+        </div>
+        <div class="name" id="finalName">小咪</div>
+        <div class="p-tag" id="finalPersona">自定义</div>
+        <div class="trait-list" id="finalTraits"></div>
+        <div class="info" id="finalInfo"></div>
+      </div>
+      <p class="final-note">创建后随时可以在设置中修改</p>
+    </div>
+  </div>
+
+  <div class="bottom-bar">
+    <button class="btn-wizard ghost" id="btnBack" onclick="prevStep()" style="display:none;">← 上一步</button>
+    <button class="btn-wizard primary" id="btnNext" onclick="nextStep()">下一步 →</button>
+  </div>
+</div>
+
+<script src="shared/config.js"></script>
+<script src="shared/app.js"></script>
+<script src="shared/api.js"></script>
+<script>
+let step = 1;
+let personaClass = 'tsundere';
+let personaLabel = '自定义';
+let personaImage = 'shared/agnes-tsundere.png';
+let selectedTraits = new Set();
+
+function toggleTrait(el) {
+  el.classList.toggle('selected');
+  const t = el.textContent;
+  if (el.classList.contains('selected')) {
+    selectedTraits.add(t);
+  } else {
+    selectedTraits.delete(t);
+  }
+  updatePreview();
+}
+
+function toggleTemplates() {
+  const grid = document.getElementById('templateGrid');
+  const toggle = document.querySelector('.template-toggle');
+  grid.classList.toggle('show');
+  toggle.classList.toggle('open');
+}
+
+function selectTemplate(el, name, cls, desc) {
+  document.querySelectorAll('.template-mini').forEach(c => c.classList.remove('selected'));
+  el.classList.add('selected');
+  personaLabel = name;
+  personaClass = cls;
+  personaImage = 'shared/agnes-' + cls + '.png';
+  // 把模板描述填入自定义性格框
+  document.getElementById('customPersona').value = desc;
+  updatePreview();
+}
+
+function updatePreview() {
+  const name = document.getElementById('botName').value || '小咪';
+  const cp = document.getElementById('catchphrase').value || '';
+  const age = document.getElementById('age').value || '?';
+  const style = document.getElementById('speechStyle').value || '自然口语';
+  const custom = document.getElementById('customPersona').value || '';
+
+  let preview = '';
+  if (cp) preview += '口头禅：' + cp + '\n';
+  preview += '我叫' + name + '，今年' + age + '岁，说话风格偏' + style + '。';
+  if (custom) preview += '\n性格：' + custom.slice(0, 60) + (custom.length > 60 ? '...' : '');
+  else if (selectedTraits.size > 0) preview += '\n性格标签：' + Array.from(selectedTraits).join('、');
+
+  document.getElementById('previewText').textContent = preview || '点击上方模板或输入自定义性格描述来预览效果~';
+}
+
+function nextStep() {
+  if (step < 3) { step++; renderStep(); }
+  else {
+    // step 3：调真 API 创建 Bot
+    createBotAndFinish();
+  }
+}
+
+async function createBotAndFinish() {
+  // 未登录保护（直接打开向导页时）
+  if (!API.isLoggedIn()) {
+    showToast('请先登录');
+    setTimeout(function() { location.href = '登录页.html'; }, 600);
+    return;
+  }
+  var name = document.getElementById('botName').value.trim() || '小咪';
+  var cp = document.getElementById('catchphrase').value.trim();
+  var ageVal = document.getElementById('age').value.trim();
+  var style = document.getElementById('speechStyle').value || '自然口语';
+  var backstory = document.getElementById('backstory').value.trim();
+  var specialRules = document.getElementById('specialRules').value.trim();
+  var custom = document.getElementById('customPersona').value.trim();
+
+  var btn = document.getElementById('btnNext');
+  btn.disabled = true; btn.textContent = '创建中...';
+
+  // 构造 createBot payload（对齐后端 bots.py BotCreate）
+  var payload = {
+    name: name,
+    personality: personaClass,  // tsundere/gentle/...（selectTemplate 设置）
+    persona_description: custom || null,
+    traits: selectedTraits.size > 0 ? Array.from(selectedTraits) : null,
+    catchphrase: cp || null,
+    age: ageVal ? parseInt(ageVal, 10) : null,
+    speech_style: style || null,
+    backstory: backstory || null,
+    special_rules: specialRules || null,
+    avatar_template: personaClass,  // 用人格 class 作头像模板
+  };
+
+  try {
+    var bot = await API.createBot(payload);
+    API.setCurrentBotId(bot.id);
+    // 显示成功态
+    document.querySelector('.header h1').textContent = '创建成功！';
+    document.querySelector('.header p').textContent = '现在开始和你的 AI 聊天吧';
+    btn.textContent = '开始聊天';
+    btn.disabled = false;
+    btn.onclick = function() { location.href = '聊天页.html?bot_id=' + bot.id; };
+    document.getElementById('btnBack').style.display = 'none';
+    document.querySelectorAll('.step-dot').forEach(function(d) { d.classList.add('done'); });
+    showToast('Bot 创建成功');
+  } catch (e) {
+    showToast('创建失败: ' + (e.message || '未知错误'));
+    btn.disabled = false;
+    btn.textContent = '创建 Bot';
+  }
+}
+
+function prevStep() {
+  if (step > 1) { step--; renderStep(); }
+}
+
+function renderStep() {
+  document.querySelectorAll('.step-content').forEach(s => s.classList.remove('show'));
+  document.getElementById('step' + step).classList.add('show');
+
+  for (let i = 1; i <= 3; i++) {
+    const d = document.getElementById('dot' + i);
+    d.classList.remove('active', 'done');
+    if (i < step) d.classList.add('done');
+    if (i === step) d.classList.add('active');
+  }
+
+  const titles = ['第 1 步：定义性格', '第 2 步：自定义设定', '第 3 步：确认信息'];
+  document.getElementById('stepTitle').textContent = titles[step-1];
+
+  document.getElementById('btnBack').style.display = step > 1 ? '' : 'none';
+  document.getElementById('btnNext').textContent = step === 3 ? '创建 Bot' : '下一步 →';
+  document.getElementById('btnNext').onclick = nextStep;
+
+  if (step === 3) {
+    const name = document.getElementById('botName').value || '小咪';
+    const cp = document.getElementById('catchphrase').value;
+    const age = document.getElementById('age').value || '?';
+    const style = document.getElementById('speechStyle').value || '自然口语';
+    const backstory = document.getElementById('backstory').value;
+    const specialRules = document.getElementById('specialRules').value;
+    const custom = document.getElementById('customPersona').value;
+
+    document.getElementById('finalName').textContent = name;
+    document.getElementById('finalPersona').textContent = custom ? '自定义性格' : personaLabel;
+
+    let info = '';
+    if (cp) info += '口头禅：' + cp + '<br>';
+    info += '年龄：' + age + ' 岁<br>';
+    info += '说话风格：' + style;
+    if (backstory) info += '<br>背景：' + backstory.slice(0, 40) + (backstory.length > 40 ? '...' : '');
+    if (specialRules) info += '<br>特殊设定：' + specialRules.slice(0, 40) + (specialRules.length > 40 ? '...' : '');
+    document.getElementById('finalInfo').innerHTML = info;
+
+    // 性格标签
+    const traitsContainer = document.getElementById('finalTraits');
+    if (selectedTraits.size > 0) {
+      traitsContainer.innerHTML = Array.from(selectedTraits).map(t =>
+        '<span class="trait-chip">' + t + '</span>'
+      ).join('');
+    } else if (custom) {
+      // 从自定义描述提取关键词
+      const keywords = custom.match(/傲娇|温柔|毒舌|元气|三无|腹黑|粘人|高冷|话痨|懒惰|病娇|天然呆|大姐姐|小恶魔|治愈系/g);
+      traitsContainer.innerHTML = keywords ? keywords.slice(0, 5).map(k =>
+        '<span class="trait-chip">' + k + '</span>'
+      ).join('') : '';
+    } else {
+      traitsContainer.innerHTML = '<span class="trait-chip">' + personaLabel + '</span>';
+    }
+
+    // 更新确认页猫娘表情
+    const av = document.getElementById('finalAvatar');
+    av.innerHTML = '<div class="img-cat avatar img-lg '+personaClass+'"><img src="'+personaImage+'" alt="'+personaClass+'"></div>';
+  }
+}
+</script>
+
+<script src="shared/app.js"></script>
+</body>
+</html>

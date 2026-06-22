@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>登录页 — UI 原型</title>
+<link rel="stylesheet" href="shared/tokens.css">
+<link rel="stylesheet" href="shared/base.css">
+<link rel="stylesheet" href="shared/components.css">
+<link rel="stylesheet" href="shared/anime-cat.css">
+<link rel="stylesheet" href="shared/dark-mode.css">
+<link rel="stylesheet" href="shared/effects.css">
+<style>
+/* ===== 登录页 — 页面专属样式 ===== */
+.header { padding: 60px 20px 20px; text-align: center; }
+.img-cat.img-md { width: 64px; height: 64px; margin: 0 auto 14px; }
+h1 { font-size: 22px; font-weight: 800; color: #3A2030; }
+.greeting { font-size: 13px; color: #C090A0; margin-top: 4px; }
+
+.form-area { padding: 0 32px; flex: 1; }
+.input-group { margin-bottom: 16px; }
+.input-group label {
+  display: block; font-size: 12px; font-weight: 700; color: #6A5060; margin-bottom: 6px;
+}
+.phone-row { display: flex; gap: 8px; }
+.phone-row .input-field { flex: 1; }
+.code-btn {
+  padding: 14px 16px; border-radius: 16px; font-size: 13px; font-weight: 700;
+  background: rgba(244, 114, 182,0.08); color: #F472B6; border: 1.5px solid rgba(244, 114, 182,0.2);
+  cursor: pointer; white-space: nowrap; font-family: inherit; transition: all 0.2s;
+}
+.code-btn:hover { background: #F472B6; color: #fff; border-color: #F472B6; }
+
+/* Input shake on error */
+.input-group.error .input-field {
+  border-color: #FF4757 !important;
+  animation: input-shake 0.4s ease;
+  box-shadow: 0 0 0 3px rgba(255,71,87,0.08) !important;
+}
+.input-group.error::after {
+  content: attr(data-error);
+  display: block; font-size: 11px; color: #FF4757;
+  margin-top: 6px; padding-left: 4px;
+}
+
+.footer { padding: 20px 32px 40px; text-align: center; }
+.footer a { color: #F472B6; text-decoration: none; font-size: 13px; font-weight: 600; }
+.social-login { display: flex; gap: 16px; justify-content: center; margin-top: 16px; }
+.social-btn {
+  width: 48px; height: 48px; border-radius: 50%;
+  background: rgba(255,255,255,0.8); border: 1.5px solid rgba(244, 114, 182,0.1);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 12px; color: #C0A0B0; cursor: pointer; transition: all 0.2s;
+}
+.social-btn:hover { border-color: #F472B6; color: #F472B6; }
+.social-label { font-size: 10px; color: #C0A0B0; text-align: center; margin-top: 4px; }
+
+/* Dark mode */
+.phone.dark-mode h1 { color: #E8E0F0; }
+.phone.dark-mode .greeting { color: #9080A0; }
+.phone.dark-mode .input-group label { color: #A098B0; }
+.phone.dark-mode .code-btn { background: rgba(244, 114, 182,0.12); border-color: rgba(244, 114, 182,0.25); color: #F9A8D4; }
+.phone.dark-mode .code-btn:hover { background: #F472B6; color: #fff; }
+.phone.dark-mode .social-btn { background: rgba(42,42,62,0.8); border-color: rgba(255,255,255,0.06); color: #9080A0; }
+.phone.dark-mode .social-label { color: #9080A0; }
+.phone.dark-mode .footer a { color: #F9A8D4; }
+</style>
+</head>
+<body>
+<div class="phone">
+  <div class="header">
+    <div class="img-cat hero img-md"><img src="shared/agnes-cat.png" alt="猫娘"></div>
+    <h1>欢迎回来</h1>
+    <p class="greeting">登录你的林念念控制面板</p>
+  </div>
+  <div class="form-area">
+    <div class="input-group">
+      <label>手机号</label>
+      <input class="input-field" type="tel" placeholder="请输入手机号" value="">
+    </div>
+    <div class="input-group">
+      <label>验证码</label>
+      <div class="phone-row">
+        <input class="input-field" type="text" placeholder="6位验证码（开发期固定 1234）" maxlength="6">
+        <button class="code-btn" id="codeBtn" onclick="sendCode()">获取验证码</button>
+      </div>
+    </div>
+    <button class="btn-primary" id="loginBtn" onclick="handleLogin()">登 录</button>
+  </div>
+  <div class="footer">
+    <a href="注册页.html">还没有账号？去注册 →</a>
+    <div class="social-login">
+      <div style="text-align:center;">
+        <button class="social-btn" onclick="showToast('QQ登录 — 即将支持')" title="QQ登录">
+          <svg viewBox="0 0 48 48" fill="none">
+            <circle cx="24" cy="24" r="23" fill="#12B7F5"/>
+            <ellipse cx="24" cy="29" rx="11" ry="12" fill="white"/>
+            <circle cx="24" cy="17" r="8.5" fill="white"/>
+            <circle cx="20.5" cy="16" r="2" fill="#1A1A2E"/><circle cx="21" cy="15.5" r="0.7" fill="white"/>
+            <circle cx="27.5" cy="16" r="2" fill="#1A1A2E"/><circle cx="28" cy="15.5" r="0.7" fill="white"/>
+            <path d="M22.5 19l1.5 3 1.5-3z" fill="#FF8C00"/>
+            <path d="M16 22.5s4-2.5 8-2.5 8 2.5 8 2.5" stroke="#F472B6" stroke-width="2.2" fill="none" stroke-linecap="round"/>
+            <ellipse cx="19" cy="40" rx="3" ry="2" fill="#FF8C00"/>
+            <ellipse cx="29" cy="40" rx="3" ry="2" fill="#FF8C00"/>
+          </svg>
+        </button>
+        <div class="social-label">QQ</div>
+      </div>
+      <div style="text-align:center;">
+        <button class="social-btn" onclick="showToast('微信登录 — 即将支持')" title="微信登录">
+          <svg viewBox="0 0 48 48" fill="none">
+            <circle cx="24" cy="24" r="23" fill="#07C160"/>
+            <path d="M14 14c-3.5 0-6.5 2.5-6.5 6 0 1.8 1 3.5 2.5 4.5l-1 2.5 2.8-1.5c.7.2 1.4.3 2.2.3 3.5 0 6.5-2.5 6.5-6s-2.8-5.8-6.5-5.8z" fill="white"/>
+            <path d="M28 12c-4 0-7.5 2.8-7.5 6.5s3.5 6.5 7.5 6.5c.8 0 1.5-.1 2.2-.3l2.5 1.3-.8-2.3c1.5-1.2 2.6-3 2.6-5 0-3.7-3-6.7-6.5-6.7z" fill="white"/>
+            <circle cx="15.5" cy="19.5" r="1.5" fill="#07C160"/><circle cx="20.5" cy="19.5" r="1.5" fill="#07C160"/>
+          </svg>
+        </button>
+        <div class="social-label">微信</div>
+      </div>
+    </div>
+  </div>
+</div>
+<script src="shared/config.js"></script>
+<script src="shared/app.js"></script>
+<script src="shared/api.js"></script>
+<script>
+// 已登录则直接跳首页
+if (API.isLoggedIn()) {
+  location.replace('首页仪表盘.html');
+}
+
+async function sendCode() {
+  var btn = document.getElementById('codeBtn');
+  var phoneInput = document.querySelector('input[type="tel"]');
+  var phone = phoneInput.value.trim();
+  if (!phone || phone.length < 11) {
+    phoneInput.closest('.input-group').classList.add('error');
+    phoneInput.closest('.input-group').setAttribute('data-error', '请先输入正确的 11 位手机号');
+    return;
+  }
+  btn.disabled = true; btn.textContent = '发送中...';
+  try {
+    var d = await API.sendSms(phone);
+    showToast(d.dev_hint || '验证码已发送');
+    var s = 60;
+    btn.textContent = s + 's 后重发';
+    var t = setInterval(function() {
+      s--;
+      if (s <= 0) { clearInterval(t); btn.textContent = '获取验证码'; btn.disabled = false; }
+      else { btn.textContent = s + 's 后重发'; }
+    }, 1000);
+  } catch (e) {
+    showToast('发送失败: ' + e.message);
+    btn.textContent = '获取验证码'; btn.disabled = false;
+  }
+}
+
+async function handleLogin() {
+  var btn = document.getElementById('loginBtn');
+  var phoneInput = document.querySelector('input[type="tel"]');
+  var codeInput = document.querySelector('.phone-row input');
+  document.querySelectorAll('.input-group').forEach(function(g) { g.classList.remove('error'); g.removeAttribute('data-error'); });
+  var phone = phoneInput.value.trim();
+  var code = codeInput.value.trim();
+  var hasError = false;
+  if (!phone || phone.length < 11) {
+    phoneInput.closest('.input-group').classList.add('error');
+    phoneInput.closest('.input-group').setAttribute('data-error', '请输入正确的11位手机号');
+    hasError = true;
+  }
+  if (!code || code.length < 4) {
+    codeInput.closest('.input-group').classList.add('error');
+    codeInput.closest('.input-group').setAttribute('data-error', '验证码不能少于4位');
+    hasError = true;
+  }
+  if (hasError) return;
+  btn.classList.add('loading'); btn.textContent = '登录中...'; btn.disabled = true;
+  try {
+    await API.login(phone, code, null);  // 验证码登录（password=null）
+    showToast('登录成功');
+    // 登录后判断是否有 Bot → 有跳首页，无跳向导
+    try {
+      var bots = await API.listBots();
+      if (bots && bots.count > 0) {
+        API.setCurrentBotId(bots.bots[0].id);
+        setTimeout(function() { location.href = '首页仪表盘.html'; }, 300);
+      } else {
+        setTimeout(function() { location.href = 'Bot创建向导.html'; }, 300);
+      }
+    } catch (e) {
+      // listBots 失败不阻塞，默认跳首页
+      setTimeout(function() { location.href = '首页仪表盘.html'; }, 300);
+    }
+  } catch (e) {
+    var msg = e.message || '登录失败';
+    showToast(msg);
+    if (msg.indexOf('验证码') >= 0 || msg.indexOf('invalid_code') >= 0) {
+      codeInput.closest('.input-group').classList.add('error');
+      codeInput.closest('.input-group').setAttribute('data-error', msg);
+    } else {
+      phoneInput.closest('.input-group').classList.add('error');
+      phoneInput.closest('.input-group').setAttribute('data-error', msg);
+    }
+    btn.classList.remove('loading'); btn.textContent = '登 录'; btn.disabled = false;
+  }
+}
+document.querySelectorAll('.input-group input').forEach(function(input) {
+  input.addEventListener('input', function() {
+    var g = this.closest('.input-group');
+    g.classList.remove('error'); g.removeAttribute('data-error');
+  });
+});
+</script>
+</body>
+</html>

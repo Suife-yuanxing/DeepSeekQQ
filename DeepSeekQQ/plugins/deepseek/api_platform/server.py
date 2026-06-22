@@ -11,6 +11,7 @@ from typing import Optional
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from . import auth
 from . import bots
@@ -87,6 +88,18 @@ app.include_router(admin.router)
 app.include_router(stats.router)
 app.include_router(channels.router)
 app.include_router(api_keys.router)
+
+# ── 静态托管前端原型（APP 落地：浏览器调试 + 非 APK 访问）──
+# 必须在所有 include_router 之后，否则会吞掉 /api/v1/* 路由。
+# Capacitor 打包时 HTML 进 APK 本地加载，不走这里；这里供浏览器直接访问 8766 调试。
+# 路径相对 WorkingDirectory（双层 DeepSeekQQ/DeepSeekQQ）：../../安卓控制面板UI原型
+_PROTOTYPE_DIR = os.getenv("PLATFORM_PROTOTYPE_DIR", "../../安卓控制面板UI原型")
+if os.path.isdir(_PROTOTYPE_DIR):
+    app.mount("/", StaticFiles(directory=_PROTOTYPE_DIR, html=True), name="prototype")
+else:
+    @app.get("/")
+    async def _root():
+        return {"ok": True, "version": "1.0.0", "note": "前端原型目录未配置，仅 API 可用"}
 
 
 def main() -> None:

@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>注册页 — UI 原型</title>
+<link rel="stylesheet" href="shared/tokens.css">
+<link rel="stylesheet" href="shared/base.css">
+<link rel="stylesheet" href="shared/components.css">
+<link rel="stylesheet" href="shared/dark-mode.css">
+<link rel="stylesheet" href="shared/effects.css">
+<style>
+/* ===== 注册页 — 页面专属样式 ===== */
+.scroll-area { padding: 20px 28px; }
+.input-group { margin-bottom: 14px; }
+.input-group label {
+  display: block; font-size: 12px; font-weight: 700; color: #6A5060; margin-bottom: 6px;
+}
+.phone-row { display: flex; gap: 8px; }
+.phone-row .input-field { flex: 1; }
+.code-btn {
+  padding: 13px 14px; border-radius: 12px; font-size: 12px; font-weight: 700;
+  background: rgba(244, 114, 182,0.08); color: #F472B6; border: 1.5px solid rgba(244, 114, 182,0.2);
+  cursor: pointer; white-space: nowrap; font-family: inherit; transition: all 0.2s;
+}
+.code-btn:hover { background: #F472B6; color: #fff; }
+.privacy-row {
+  display: flex; align-items: flex-start; gap: 8px; margin: 16px 0;
+}
+.privacy-row input[type="checkbox"] {
+  width: 18px; height: 18px; accent-color: #F472B6; flex-shrink: 0; margin-top: 1px;
+}
+.privacy-row label { font-size: 12px; color: #8A7080; line-height: 1.6; }
+.privacy-row label a { color: #F472B6; text-decoration: underline; }
+.footer-link {
+  text-align: center; padding: 0 28px 36px; font-size: 13px; color: #B090A0;
+}
+.footer-link a { color: #F472B6; text-decoration: none; font-weight: 600; }
+
+/* 密码强度 (uses input-field from shared, but custom radius) */
+.input-group input.input-field { border-radius: 12px; padding: 13px; font-size: 14px; }
+.input-group.error .input-field {
+  border-color: #FF4757 !important;
+  animation: input-shake 0.4s ease;
+  box-shadow: 0 0 0 3px rgba(255,71,87,0.08) !important;
+}
+.input-group.error::after {
+  content: attr(data-error);
+  display: block; font-size: 11px; color: #FF4757;
+  margin-top: 6px; padding-left: 4px;
+}
+.pw-strength { display: flex; gap: 4px; margin-top: 6px; }
+.pw-bar { flex: 1; height: 3px; border-radius: 2px; background: #F0E0E5; transition: background 0.3s; }
+.pw-bar.weak { background: #F472B6; }
+.pw-bar.medium { background: #FFB347; }
+.pw-bar.strong { background: #4CAF50; }
+
+/* Dark mode */
+.phone.dark-mode .input-group label { color: #A098B0; }
+.phone.dark-mode .code-btn { background: rgba(244, 114, 182,0.12); border-color: rgba(244, 114, 182,0.25); color: #F9A8D4; }
+.phone.dark-mode .code-btn:hover { background: #F472B6; color: #fff; }
+.phone.dark-mode .privacy-row label { color: #A098B0; }
+.phone.dark-mode .footer-link { color: #9080A0; }
+</style>
+</head>
+<body>
+<div class="phone">
+  <div class="title-bar">
+    <a class="back" href="登录页.html">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M15 18l-6-6 6-6"/></svg>
+    </a>
+    <span class="title">创建账号</span>
+  </div>
+  <div class="scroll-area">
+    <div class="input-group">
+      <label>手机号</label>
+      <input class="input-field" type="tel" placeholder="请输入手机号">
+    </div>
+    <div class="input-group">
+      <label>验证码</label>
+      <div class="phone-row">
+        <input class="input-field" type="text" placeholder="6位验证码（开发期固定 1234）" maxlength="6">
+        <button class="code-btn" id="codeBtn" onclick="sendCode()">获取验证码</button>
+      </div>
+    </div>
+    <div class="input-group">
+      <label>昵称</label>
+      <input class="input-field" type="text" placeholder="给自己起个名字" value="">
+    </div>
+    <div class="input-group">
+      <label>密码</label>
+      <input class="input-field" type="password" placeholder="至少8位，含字母+数字" oninput="updatePwStr(this.value)">
+      <div class="pw-strength" id="pwStr">
+        <div class="pw-bar"></div><div class="pw-bar"></div><div class="pw-bar"></div><div class="pw-bar"></div>
+      </div>
+    </div>
+    <div class="input-group">
+      <label>确认密码</label>
+      <input class="input-field" type="password" placeholder="再次输入密码">
+    </div>
+    <div class="privacy-row">
+      <input type="checkbox" id="agree" onchange="document.getElementById('regBtn').disabled=!this.checked">
+      <label for="agree">我已阅读并同意 <a href="用户协议.html" target="_blank" onclick="event.preventDefault();window.open('用户协议.html','_blank','width=375,height=700')">《用户协议》</a> 和 <a href="隐私政策.html" target="_blank" onclick="event.preventDefault();window.open('隐私政策.html','_blank','width=375,height=700')">《隐私政策》</a></label>
+    </div>
+    <button class="btn-primary" id="regBtn" disabled onclick="handleRegister()">注 册</button>
+  </div>
+  <div class="footer-link">已有账号？<a href="登录页.html">去登录 →</a></div>
+</div>
+<script src="shared/config.js"></script>
+<script src="shared/app.js"></script>
+<script src="shared/api.js"></script>
+<script>
+function updatePwStr(pw) {
+  const bars = document.querySelectorAll('#pwStr .pw-bar');
+  bars.forEach(b => { b.className = 'pw-bar'; });
+  if (!pw) return;
+  let score = 0;
+  if (pw.length >= 8) score++;
+  if (/[a-zA-Z]/.test(pw) && /[0-9]/.test(pw)) score++;
+  if (/[^a-zA-Z0-9]/.test(pw)) score++;
+  if (pw.length >= 12) score++;
+  const cls = ['', 'weak', 'medium', 'strong', 'strong'];
+  for (let i = 0; i < Math.min(score, 4); i++) bars[i].classList.add(cls[score]);
+}
+
+// ── 发送验证码（真 API）──
+async function sendCode() {
+  var btn = document.getElementById('codeBtn');
+  var phone = document.querySelector('input[type="tel"]').value.trim();
+  if (!phone || phone.length < 11) {
+    showToast('请先输入正确的 11 位手机号');
+    return;
+  }
+  btn.disabled = true;
+  btn.textContent = '发送中...';
+  try {
+    var d = await API.sendSms(phone);
+    showToast(d.dev_hint || '验证码已发送');
+    // 倒计时 60s
+    var s = 60;
+    btn.textContent = s + 's 后重发';
+    var t = setInterval(function() {
+      s--;
+      if (s <= 0) { clearInterval(t); btn.textContent = '获取验证码'; btn.disabled = false; }
+      else { btn.textContent = s + 's 后重发'; }
+    }, 1000);
+  } catch (e) {
+    showToast('发送失败: ' + e.message);
+    btn.textContent = '获取验证码';
+    btn.disabled = false;
+  }
+}
+
+// ── 注册（真 API）──
+async function handleRegister() {
+  var inputs = document.querySelectorAll('.input-field');
+  var phone = inputs[0].value.trim();
+  var code = inputs[1].value.trim();
+  var nickname = inputs[2].value.trim();
+  var password = inputs[3].value;
+  var password2 = inputs[4].value;
+
+  // 前端校验（保留，不删）
+  document.querySelectorAll('.input-group').forEach(function(g) {
+    g.classList.remove('error'); g.removeAttribute('data-error');
+  });
+  var hasError = false;
+  function markErr(idx, msg) {
+    var g = inputs[idx].closest('.input-group');
+    g.classList.add('error'); g.setAttribute('data-error', msg);
+    hasError = true;
+  }
+  if (!phone || phone.length < 11) markErr(0, '请输入正确的 11 位手机号');
+  if (!code || code.length < 4) markErr(1, '验证码不能少于 4 位');
+  if (!nickname) markErr(2, '请输入昵称');
+  if (password.length < 8) markErr(3, '密码至少 8 位');
+  if (password !== password2) markErr(4, '两次密码不一致');
+  if (hasError) return;
+
+  var btn = document.getElementById('regBtn');
+  btn.disabled = true; btn.classList.add('loading'); btn.textContent = '注册中...';
+  try {
+    await API.register(phone, code, nickname, password);
+    showToast('注册成功！');
+    // 新用户无 Bot → 必走向导
+    setTimeout(function() { location.href = 'Bot创建向导.html'; }, 400);
+  } catch (e) {
+    var msg = e.message || '注册失败';
+    showToast(msg);
+    // 后端返回的具体错误映射到字段
+    if (msg.indexOf('已注册') >= 0 || msg.indexOf('phone_exists') >= 0) markErr(0, '该手机号已注册');
+    else if (msg.indexOf('验证码') >= 0 || msg.indexOf('invalid_code') >= 0) markErr(1, msg);
+    btn.disabled = false; btn.classList.remove('loading'); btn.textContent = '注 册';
+  }
+}
+</script>
+</body>
+</html>
