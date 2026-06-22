@@ -20,6 +20,24 @@ nohup python bot.py &
 - Bot 日志: `journalctl -u deepseek-bot -f --output=cat`
 - 端口: 8082（uvicorn）
 
+### 用户侧 API（8766，Phase 1）
+
+FastAPI 用户侧 API 独立进程，物理隔离于 8082 bot：
+
+```bash
+# ✅ 正确管理方式
+systemctl restart deepseek-api
+journalctl -u deepseek-api -f --output=cat
+curl http://127.0.0.1:8766/api/v1/health
+
+# ❌ 同样不要 nohup 抢端口 8766
+```
+
+- 端口: 8766（FastAPI，JWT 认证，对接安卓控制面板 App）
+- 密钥: `.api.env`（JWT_SECRET + AES_KEY，`chmod 600`，不可提交 git）
+- 部署指南: `deploy/README-api.md`
+- 与 8082 共享 `data/chat_memory.db`（SQLite WAL 模式）
+
 ## 测试
 
 ```bash

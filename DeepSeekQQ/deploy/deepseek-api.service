@@ -1,0 +1,25 @@
+[Unit]
+Description=DeepSeek 用户侧 API (FastAPI 8766) — 安卓控制面板后端
+After=network.target
+# 与 deepseek-bot（8082）物理隔离，互不依赖，可独立重启
+# S6: JWT 认证独立于 ADMIN_API_KEY，两套认证物理隔离
+
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=ubuntu
+# 注意工作目录是双层 DeepSeekQQ/DeepSeekQQ（与 deepseek-bot.service 一致）
+WorkingDirectory=/home/ubuntu/DeepSeekQQ/DeepSeekQQ
+ExecStart=/home/ubuntu/DeepSeekQQ/.venv/bin/python -m plugins.deepseek.api_platform.server
+Restart=on-failure
+# 沿用 deepseek-bot 的防循环崩溃策略（CLAUDE.md 记载的已修复模式）
+RestartSec=60
+StandardOutput=append:/home/ubuntu/DeepSeekQQ/DeepSeekQQ/api.log
+StandardError=append:/home/ubuntu/DeepSeekQQ/DeepSeekQQ/api.log
+Environment=PATH=/home/ubuntu/DeepSeekQQ/.venv/bin:/usr/local/bin:/usr/bin:/bin
+# 密钥从 .api.env 读取（EnvironmentFile 不支持行内注释，文件格式必须是 KEY=VALUE）
+EnvironmentFile=/home/ubuntu/DeepSeekQQ/DeepSeekQQ/.api.env
+
+[Install]
+WantedBy=multi-user.target
