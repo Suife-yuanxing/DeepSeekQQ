@@ -3,8 +3,8 @@
  *
  * 优先级：
  *   1. localStorage['server_base'] （用户在设置页手填，开发调试用）
- *   2. window.APP_CONFIG.server_base （Capacitor 打包时注入，见 capacitor.config.json）
- *   3. 同源（浏览器直接访问 8766 时，API 和页面同源）
+ *   2. window.APP_CONFIG.server_base （托管时注入，见 server.py StaticFiles)
+ *   3. Native/Browser 自动检测
  */
 (function() {
   window.APP_CONFIG = window.APP_CONFIG || {};
@@ -16,11 +16,11 @@
     return;
   }
 
-  // Capacitor 打包注入的默认值（构建时替换 <服务器公网IP>）
+  // 预注入的默认值（构建时替换 <服务器公网IP>）
   if (!window.APP_CONFIG.server_base) {
-    if (window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform()) {
-      // APK 内：默认指向公网服务器（构建时填入真实 IP）
-      window.APP_CONFIG.server_base = 'http://49.232.195.125:8766';
+    if (window.NativeApp && window.NativeApp.isNative) {
+      // APK 内：默认指向公网服务器
+      window.APP_CONFIG.server_base = 'http://129.211.7.67:8766';
     } else {
       // 浏览器调试：同源（页面从 8766 来，API 也走 8766）
       window.APP_CONFIG.server_base = location.origin;
