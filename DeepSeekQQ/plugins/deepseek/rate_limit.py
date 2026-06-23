@@ -22,6 +22,11 @@ import time
 from collections import defaultdict
 from typing import Optional
 
+import os
+
+# 测试阶段开关
+_PLATFORM_TESTING = os.getenv("PLATFORM_TESTING", "true").lower() in ("1", "true", "yes")
+
 # 限流配置
 TOKEN_RATE = 30        # Token 级: 30次/分
 TOKEN_WINDOW = 60      # 秒
@@ -126,6 +131,10 @@ class RateLimitMiddleware:
 
         # 豁免路径
         if path.startswith("/api/v1/health") or path.startswith("/api/v1/app/version"):
+            return await self._app(scope, receive, send)
+
+        # 测试阶段：auth 路由不限流
+        if _PLATFORM_TESTING and path.startswith("/api/v1/auth/"):
             return await self._app(scope, receive, send)
 
         client_ip = request.client.host if request.client else "unknown"

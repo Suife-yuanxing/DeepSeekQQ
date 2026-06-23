@@ -158,8 +158,15 @@ def decode_token(token: str) -> dict:
 # SMS 限流（v2: 1/min/IP + 5/h/phone）
 # ============================================================
 
+# 测试阶段开关：PLATFORM_TESTING=true 跳过 SMS 限流
+_PLATFORM_TESTING = os.getenv("PLATFORM_TESTING", "true").lower() in ("1", "true", "yes")
+
+
 async def _check_sms_rate_limit(phone: str, client_ip: str) -> Optional[str]:
-    """返回错误信息字符串，None 表示通过。"""
+    """返回错误信息字符串，None 表示通过。
+    测试阶段（PLATFORM_TESTING=true）无条件放行。"""
+    if _PLATFORM_TESTING:
+        return None
     async with _sms_lock:
         now = time.time()
         # IP: 1/min
