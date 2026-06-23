@@ -1,0 +1,674 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no">
+<title>开发者面板 — UI 原型</title>
+<link rel="stylesheet" href="shared/tokens.css">
+<link rel="stylesheet" href="shared/base.css">
+<link rel="stylesheet" href="shared/components.css">
+<link rel="stylesheet" href="shared/dark-mode.css">
+<link rel="stylesheet" href="shared/effects.css">
+<style>
+/* ===== 开发者面板 — 页面专属样式 ===== */
+body { background-attachment: fixed; overflow-x: hidden; }
+
+.scroll-area { padding: 0 0 8px; }
+
+/* ── 系统健康四格 ── */
+.health-row {
+  display: grid; grid-template-columns: 1fr 1fr;
+  gap: 8px; margin: 10px 20px 0;
+}
+.health-card {
+  background: var(--card-bg); backdrop-filter: var(--card-blur);
+  border-radius: var(--radius-lg); padding: 14px;
+  border: var(--card-border); box-shadow: var(--card-shadow);
+  display: flex; flex-direction: column; gap: 6px;
+  transition: all 0.25s;
+}
+.health-card:active { transform: scale(0.97); }
+.health-card .hc-head {
+  display: flex; align-items: center; gap: 6px;
+}
+.health-card .hc-icon {
+  width: 28px; height: 28px; border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+.health-card .hc-icon.cpu  { background: rgba(244,114,182,0.1); color: var(--color-primary); }
+.health-card .hc-icon.ram  { background: rgba(173,216,230,0.15); color: var(--color-secondary-dark); }
+.health-card .hc-icon.bw   { background: rgba(196,181,253,0.15); color: var(--color-accent-dark); }
+.health-card .hc-icon.ws   { background: rgba(152,255,152,0.12); color: #2D8B2D; }
+.health-card .hc-icon svg  { width: 15px; height: 15px; }
+.health-card .hc-label {
+  font-size: 11px; color: var(--text-secondary); font-weight: 600;
+}
+.health-card .hc-value {
+  font-size: 24px; font-weight: 800; color: var(--text-primary); line-height: 1;
+}
+.health-card .hc-sub {
+  font-size: 10px; color: var(--text-muted);
+}
+.health-card .hc-bar-wrap {
+  height: 4px; background: rgba(100,100,120,0.06); border-radius: 3px; overflow: hidden;
+}
+.health-card .hc-bar-fill {
+  height: 100%; border-radius: 3px; transition: width 0.6s var(--ease-smooth);
+}
+.hc-bar-fill.cpu { background: var(--gradient-primary); }
+.hc-bar-fill.ram { background: var(--gradient-secondary); }
+.hc-bar-fill.bw  { background: var(--gradient-accent); }
+.hc-bar-fill.ws  { background: var(--gradient-success); }
+
+/* ── 快捷操作 ── */
+.quick-actions {
+  display: flex; gap: 8px; margin: 8px 20px 0;
+  overflow-x: auto; padding: 4px 0; scrollbar-width: none;
+}
+.quick-actions::-webkit-scrollbar { display: none; }
+.qa-btn {
+  flex-shrink: 0; padding: 9px 16px;
+  border-radius: 20px; border: none; cursor: pointer;
+  font-size: 12px; font-weight: 700; white-space: nowrap;
+  background: var(--card-bg); backdrop-filter: var(--card-blur);
+  border: var(--card-border); color: var(--text-primary);
+  box-shadow: var(--shadow-card);
+  display: flex; align-items: center; gap: 5px;
+  transition: all 0.25s;
+}
+.qa-btn:active { transform: scale(0.95); }
+.qa-btn.caution {
+  color: var(--color-error);
+  border-color: rgba(255,107,122,0.2);
+  background: rgba(255,107,122,0.04);
+}
+.qa-btn svg { width: 14px; height: 14px; }
+
+/* ── 分区标题 ── */
+.section-header {
+  margin: 16px 20px 0; display: flex; align-items: center; justify-content: space-between;
+}
+.section-header .sh-title {
+  font-size: 14px; font-weight: 800; color: var(--text-primary);
+  display: flex; align-items: center; gap: 6px;
+}
+.section-header .sh-icon {
+  width: 22px; height: 22px; border-radius: 6px;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+.section-header .sh-icon.users  { background: rgba(173,216,230,0.15); }
+.section-header .sh-icon.bots   { background: rgba(244,114,182,0.1); }
+.section-header .sh-icon.tokens { background: rgba(196,181,253,0.15); }
+.section-header .sh-icon.backup { background: rgba(152,255,152,0.12); }
+.section-header .sh-icon.logs   { background: rgba(100,100,120,0.08); }
+.section-header .sh-icon svg { width: 13px; height: 13px; }
+.section-header .sh-count {
+  font-size: 11px; color: var(--text-secondary);
+  background: rgba(100,100,120,0.05); padding: 3px 10px; border-radius: 10px;
+}
+
+/* ── 表格卡片 ── */
+.table-card {
+  margin: 6px 20px 0;
+  background: var(--card-bg); backdrop-filter: var(--card-blur);
+  border-radius: var(--radius-lg); border: var(--card-border);
+  box-shadow: var(--shadow-card); overflow: hidden;
+}
+.table-card table { width: 100%; border-collapse: collapse; }
+.table-card th {
+  font-size: 10px; font-weight: 700; color: var(--text-secondary);
+  text-transform: uppercase; letter-spacing: 0.5px;
+  padding: 10px 12px; text-align: left;
+  background: rgba(100,100,120,0.02); border-bottom: 1px solid rgba(100,100,120,0.05);
+}
+.table-card td {
+  font-size: 12px; color: var(--text-primary); padding: 10px 12px;
+  border-bottom: 1px solid rgba(100,100,120,0.03);
+}
+.table-card tr:last-child td { border-bottom: none; }
+.table-card tbody tr { transition: background 0.15s; }
+.table-card tbody tr:active { background: rgba(173,216,230,0.05); }
+
+/* ── 状态指示器 ── */
+.status-indicator {
+  display: inline-flex; align-items: center; gap: 5px;
+}
+.status-indicator .si-dot {
+  width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0;
+}
+.si-dot.online  { background: var(--color-success); box-shadow: 0 0 4px var(--color-success); }
+.si-dot.warning { background: var(--color-warning); }
+.si-dot.offline { background: #D0D0D0; }
+
+/* ── Badge ── */
+.badge-sm {
+  font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 6px;
+  display: inline-block; letter-spacing: 0.2px;
+}
+.badge-sm.admin  { background: rgba(244,114,182,0.08); color: var(--color-primary-dark); }
+.badge-sm.user   { background: rgba(173,216,230,0.12); color: var(--color-secondary-dark); }
+.badge-sm.pro    { background: rgba(196,181,253,0.12); color: var(--color-accent-dark); }
+.badge-sm.idle   { background: rgba(100,100,120,0.05); color: var(--text-muted); }
+
+/* ── Token 排行 ── */
+.token-item {
+  display: flex; align-items: center; gap: 10px; padding: 7px 0;
+}
+.token-item .tk-rank {
+  width: 20px; height: 20px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 10px; font-weight: 800; flex-shrink: 0;
+}
+.tk-rank.r1 { background: #FBBF24; color: #fff; }
+.tk-rank.r2 { background: #C0C0C0; color: #fff; }
+.tk-rank.r3 { background: #CD7F32; color: #fff; }
+.tk-rank.rn { background: rgba(100,100,120,0.05); color: var(--text-muted); }
+.token-item .tk-name {
+  font-size: 12px; font-weight: 600; color: var(--text-primary); width: 36px;
+}
+.token-item .tk-bar-wrap {
+  flex: 1; height: 6px; background: rgba(100,100,120,0.05); border-radius: 3px; overflow: hidden;
+}
+.token-item .tk-bar-fill {
+  height: 100%; background: var(--gradient-primary); border-radius: 3px;
+}
+.token-item .tk-val {
+  font-size: 11px; font-weight: 700; color: var(--text-primary); width: 44px; text-align: right;
+}
+.token-summary {
+  text-align: center; padding: 12px 0 4px;
+  font-size: 11px; color: var(--text-secondary);
+}
+.token-summary strong { color: var(--color-primary); }
+
+/* ── 备份卡片 ── */
+.backup-card {
+  margin: 6px 20px 0;
+  background: var(--card-bg); backdrop-filter: var(--card-blur);
+  border-radius: var(--radius-lg); padding: 14px 16px;
+  border: var(--card-border); box-shadow: var(--shadow-card);
+  display: flex; align-items: center; justify-content: space-between;
+  transition: all 0.2s;
+}
+.backup-info { display: flex; flex-direction: column; gap: 2px; }
+.backup-info .bi-name    { font-size: 13px; font-weight: 700; color: var(--text-primary); }
+.backup-info .bi-time    { font-size: 11px; color: var(--text-secondary); }
+.backup-info .bi-detail  { font-size: 10px; color: var(--text-muted); }
+.backup-actions { display: flex; gap: 6px; }
+.backup-actions .ba-btn {
+  width: 32px; height: 32px; border-radius: 50%;
+  border: 1.5px solid rgba(100,100,120,0.12);
+  background: var(--card-bg); cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: 0.2s;
+}
+.backup-actions .ba-btn:active { transform: scale(0.9); }
+.backup-actions .ba-btn.caution { border-color: rgba(255,107,122,0.2); }
+.backup-actions .ba-btn svg { width: 14px; height: 14px; }
+
+/* ── 日志区域 ── */
+.log-filters {
+  display: flex; gap: 6px; margin: 6px 20px 0;
+}
+.log-filter {
+  padding: 4px 12px; border-radius: 14px; border: none; cursor: pointer;
+  font-size: 10px; font-weight: 700;
+  background: rgba(100,100,120,0.05); color: var(--text-secondary);
+  transition: all 0.2s;
+}
+.log-filter.active {
+  background: var(--color-primary-bg); color: var(--color-primary-dark);
+}
+.log-card {
+  margin: 6px 20px 0; max-height: 240px; overflow-y: auto;
+  background: rgba(26,26,46,0.93); border-radius: var(--radius-lg);
+  padding: 10px 14px; font-family: 'SF Mono', 'Cascadia Code', 'Consolas', monospace;
+  font-size: 10px; line-height: 1.7; color: #E0E0F0;
+  box-shadow: var(--shadow-card);
+}
+.log-card .log-line { display: flex; gap: 6px; align-items: baseline; }
+.log-card .log-time { color: #706878; flex-shrink: 0; min-width: 48px; }
+.log-card .log-level { flex-shrink: 0; width: 36px; font-weight: 700; text-align: right; }
+.log-card .log-level.l-info  { color: #60A5FA; }
+.log-card .log-level.l-warn  { color: #FBBF24; }
+.log-card .log-level.l-error { color: #FF6B7A; }
+.log-card .log-level.l-debug { color: #98FF98; }
+.log-card .log-msg { color: #C8C8E0; word-break: break-all; }
+
+/* ── Dark mode ── */
+.phone.dark-mode .health-card,
+.phone.dark-mode .table-card,
+.phone.dark-mode .backup-card {
+  background: var(--bg-dark-card); border-color: rgba(255,255,255,0.05);
+}
+.phone.dark-mode .health-card .hc-value { color: var(--text-dark-primary); }
+.phone.dark-mode .hc-bar-wrap { background: rgba(255,255,255,0.05); }
+.phone.dark-mode .table-card th { background: rgba(255,255,255,0.02); border-color: rgba(255,255,255,0.04); }
+.phone.dark-mode .table-card td { border-color: rgba(255,255,255,0.03); color: var(--text-dark-primary); }
+.phone.dark-mode .section-header .sh-title { color: var(--text-dark-primary); }
+.phone.dark-mode .token-item .tk-name { color: var(--text-dark-primary); }
+.phone.dark-mode .token-item .tk-val { color: var(--text-dark-primary); }
+.phone.dark-mode .token-item .tk-bar-wrap { background: rgba(255,255,255,0.05); }
+.phone.dark-mode .backup-card .bi-name { color: var(--text-dark-primary); }
+.phone.dark-mode .qa-btn { background: var(--bg-dark-card); border-color: rgba(255,255,255,0.06); color: var(--text-dark-primary); }
+.phone.dark-mode .log-filter { background: rgba(255,255,255,0.04); }
+
+/* Toast */
+.toast { pointer-events: none; }
+</style>
+</head>
+<body>
+
+<div class="phone">
+  <!-- Title Bar — 深色区分管理模式 -->
+  <div class="title-bar" style="background: linear-gradient(135deg, #1A1A2E 0%, #16213E 50%, #1A1A2E 100%);">
+    <a class="back" href="index.html" style="color:rgba(255,255,255,0.85);">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.85)" stroke-width="2.5" stroke-linecap="round"><path d="M15 18l-6-6 6-6"/></svg>
+    </a>
+    <span class="title" style="color:rgba(255,255,255,0.92); font-weight:700; letter-spacing:0.5px;">开发者面板</span>
+    <span style="width:44px;flex-shrink:0;"></span>
+  </div>
+
+  <div class="scroll-area">
+
+    <!-- 系统健康四格 -->
+    <div class="health-row">
+      <div class="health-card">
+        <div class="hc-head">
+          <div class="hc-icon cpu">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><line x1="9" y1="1" x2="9" y2="4"/><line x1="15" y1="1" x2="15" y2="4"/><line x1="9" y1="20" x2="9" y2="23"/><line x1="15" y1="20" x2="15" y2="23"/><line x1="20" y1="9" x2="23" y2="9"/><line x1="20" y1="14" x2="23" y2="14"/></svg>
+          </div>
+          <span class="hc-label">CPU 利用率</span>
+        </div>
+        <div class="hc-value" data-metric="cpu">23<span style="font-size:14px;font-weight:600;color:var(--text-secondary);">%</span></div>
+        <div class="hc-bar-wrap"><div class="hc-bar-fill cpu" style="width:23%;"></div></div>
+        <div class="hc-sub">4 核 · 负载 0.8</div>
+      </div>
+      <div class="health-card">
+        <div class="hc-head">
+          <div class="hc-icon ram">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><rect x="2" y="6" width="20" height="12" rx="2"/><line x1="6" y1="10" x2="6" y2="14"/><line x1="9" y1="10" x2="9" y2="14"/><line x1="12" y1="10" x2="12" y2="14"/></svg>
+          </div>
+          <span class="hc-label">内存使用</span>
+        </div>
+        <div class="hc-value" data-metric="mem">1.8<span style="font-size:14px;font-weight:600;color:var(--text-secondary);">/4.0 GB</span></div>
+        <div class="hc-bar-wrap"><div class="hc-bar-fill ram" style="width:45%;"></div></div>
+        <div class="hc-sub">可用 2.2 GB · 缓存 0.6 GB</div>
+      </div>
+    </div>
+    <div class="health-row" style="margin-top:8px;">
+      <div class="health-card">
+        <div class="hc-head">
+          <div class="hc-icon bw">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10"/><path d="M12 2a15.3 15.3 0 00-4 10 15.3 15.3 0 004 10"/></svg>
+          </div>
+          <span class="hc-label">公网带宽</span>
+        </div>
+        <div class="hc-value" data-metric="bw">0.8<span style="font-size:14px;font-weight:600;color:var(--text-secondary);">/3.0 Mbps</span></div>
+        <div class="hc-bar-wrap"><div class="hc-bar-fill bw" style="width:27%;"></div></div>
+        <div class="hc-sub">今日流量 42 MB</div>
+      </div>
+      <div class="health-card">
+        <div class="hc-head">
+          <div class="hc-icon ws">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg>
+          </div>
+          <span class="hc-label">WS 连接</span>
+        </div>
+        <div class="hc-value" data-metric="ws">7<span style="font-size:14px;font-weight:600;color:var(--text-secondary);"> 活跃</span></div>
+        <div class="hc-bar-wrap"><div class="hc-bar-fill ws" style="width:35%;"></div></div>
+        <div class="hc-sub">峰值 12 · 今日新建 34</div>
+      </div>
+    </div>
+
+    <!-- 快捷操作 -->
+    <div class="quick-actions">
+      <button class="qa-btn" onclick="showToast('备份已开始，预计 30 秒完成')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        一键备份
+      </button>
+      <button class="qa-btn" onclick="showToast('日志快照已生成')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+        日志快照
+      </button>
+      <button class="qa-btn" onclick="showToast('Token 统计已重置')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg>
+        重置统计
+      </button>
+      <button class="qa-btn caution" onclick="showToast('恢复将覆盖当前数据，请二次确认')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        恢复备份
+      </button>
+    </div>
+
+    <!-- 全部用户 -->
+    <div class="section-header">
+      <div class="sh-title">
+        <div class="sh-icon users">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4-4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
+        </div>
+        全部用户
+      </div>
+      <div class="sh-count">23 人</div>
+    </div>
+    <div class="table-card" data-table="users">
+      <table>
+        <thead>
+          <tr><th>用户</th><th>手机号</th><th>Bot</th><th>消息</th><th>角色</th><th>注册日期</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td style="font-weight:700;">小明</td>
+            <td>138****8888</td><td>3</td><td>1,247</td>
+            <td><span class="badge-sm admin">管理员</span></td><td>06-20</td>
+          </tr>
+          <tr>
+            <td style="font-weight:600;">小美</td>
+            <td>139****9999</td><td>2</td><td>892</td>
+            <td><span class="badge-sm user">用户</span></td><td>06-20</td>
+          </tr>
+          <tr>
+            <td style="font-weight:600;">小刚</td>
+            <td>137****7777</td><td>1</td><td>456</td>
+            <td><span class="badge-sm pro">Pro</span></td><td>06-21</td>
+          </tr>
+          <tr>
+            <td style="font-weight:600;">小红</td>
+            <td>136****6666</td><td>2</td><td>334</td>
+            <td><span class="badge-sm user">用户</span></td><td>06-21</td>
+          </tr>
+          <tr>
+            <td style="font-weight:600;">阿杰</td>
+            <td>135****5555</td><td>1</td><td>98</td>
+            <td><span class="badge-sm idle">未激活</span></td><td>06-21</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- 全部 Bot -->
+    <div class="section-header">
+      <div class="sh-title">
+        <div class="sh-icon bots">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><rect x="3" y="11" width="18" height="10" rx="3"/><circle cx="12" cy="5" r="2"/><path d="M12 7v4"/><line x1="8" y1="16" x2="16" y2="16"/><line x1="8" y1="19" x2="12" y2="19"/></svg>
+        </div>
+        全部 Bot
+      </div>
+      <div class="sh-count">34 个</div>
+    </div>
+    <div class="table-card">
+      <table>
+        <thead>
+          <tr><th>Bot 名</th><th>创建者</th><th>人格</th><th>消息</th><th>状态</th><th>创建</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td style="font-weight:700;">小咪</td><td>小明</td><td>傲娇</td><td>1,247</td>
+            <td><span class="status-indicator"><span class="si-dot online"></span>活跃</span></td><td>06-20</td>
+          </tr>
+          <tr>
+            <td style="font-weight:700;">温柔酱</td><td>小美</td><td>温柔</td><td>623</td>
+            <td><span class="status-indicator"><span class="si-dot online"></span>活跃</span></td><td>06-20</td>
+          </tr>
+          <tr>
+            <td style="font-weight:700;">毒舌君</td><td>小刚</td><td>毒舌</td><td>456</td>
+            <td><span class="status-indicator"><span class="si-dot warning"></span>限流中</span></td><td>06-21</td>
+          </tr>
+          <tr>
+            <td style="font-weight:700;">三无少女</td><td>小红</td><td>三无</td><td>212</td>
+            <td><span class="status-indicator"><span class="si-dot online"></span>活跃</span></td><td>06-21</td>
+          </tr>
+          <tr>
+            <td style="font-weight:700;">小咪酱</td><td>小明</td><td>元气</td><td>89</td>
+            <td><span class="status-indicator"><span class="si-dot offline"></span>离线</span></td><td>06-21</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Token 排行 -->
+    <div class="section-header">
+      <div class="sh-title">
+        <div class="sh-icon tokens">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>
+        </div>
+        Token 消耗排行
+      </div>
+      <div class="sh-count">本月</div>
+    </div>
+    <div class="table-card" style="padding:6px 16px 8px;">
+      <div class="token-item">
+        <div class="tk-rank r1">1</div>
+        <span class="tk-name">小明</span>
+        <div class="tk-bar-wrap"><div class="tk-bar-fill" style="width:100%;"></div></div>
+        <div class="tk-val">128K</div>
+      </div>
+      <div class="token-item">
+        <div class="tk-rank r2">2</div>
+        <span class="tk-name">小美</span>
+        <div class="tk-bar-wrap"><div class="tk-bar-fill" style="width:72%;"></div></div>
+        <div class="tk-val">92K</div>
+      </div>
+      <div class="token-item">
+        <div class="tk-rank r3">3</div>
+        <span class="tk-name">小刚</span>
+        <div class="tk-bar-wrap"><div class="tk-bar-fill" style="width:51%;"></div></div>
+        <div class="tk-val">65K</div>
+      </div>
+      <div class="token-item">
+        <div class="tk-rank rn">4</div>
+        <span class="tk-name">小红</span>
+        <div class="tk-bar-wrap"><div class="tk-bar-fill" style="width:35%;"></div></div>
+        <div class="tk-val">45K</div>
+      </div>
+      <div class="token-item">
+        <div class="tk-rank rn">5</div>
+        <span class="tk-name">阿杰</span>
+        <div class="tk-bar-wrap"><div class="tk-bar-fill" style="width:18%;"></div></div>
+        <div class="tk-val">23K</div>
+      </div>
+      <div class="token-summary">
+        本月合计 <strong>&yen;17.82</strong> · 预估全月 <strong>&yen;26.50</strong>
+      </div>
+    </div>
+
+    <!-- 备份管理 -->
+    <div class="section-header">
+      <div class="sh-title">
+        <div class="sh-icon backup">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><ellipse cx="12" cy="6" rx="8" ry="3"/><path d="M4 6v6c0 1.66 3.58 3 8 3s8-1.34 8-3V6"/><path d="M4 12v6c0 1.66 3.58 3 8 3s8-1.34 8-3v-6"/></svg>
+        </div>
+        备份管理
+      </div>
+      <div class="sh-count">5 份</div>
+    </div>
+    <div class="backup-card">
+      <div class="backup-info">
+        <div class="bi-name">auto_backup_2026-06-21_14:30.db</div>
+        <div class="bi-time">今天 14:30 · 自动备份</div>
+        <div class="bi-detail">142 MB · sha256 校验通过</div>
+      </div>
+      <div class="backup-actions">
+        <button class="ba-btn" title="下载" onclick="showToast('开始下载备份文件')">
+          <svg viewBox="0 0 24 24" fill="none" stroke="var(--text-secondary)" stroke-width="2.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        </button>
+        <button class="ba-btn caution" title="恢复" onclick="showToast('恢复将覆盖当前数据，请确认')">
+          <svg viewBox="0 0 24 24" fill="none" stroke="var(--color-error)" stroke-width="2.5"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg>
+        </button>
+      </div>
+    </div>
+    <div class="backup-card" style="margin-top:6px;">
+      <div class="backup-info">
+        <div class="bi-name">auto_backup_2026-06-20_02:00.db</div>
+        <div class="bi-time">昨天 02:00 · 定时备份</div>
+        <div class="bi-detail">138 MB · sha256 校验通过</div>
+      </div>
+      <div class="backup-actions">
+        <button class="ba-btn" title="下载" onclick="showToast('开始下载备份文件')">
+          <svg viewBox="0 0 24 24" fill="none" stroke="var(--text-secondary)" stroke-width="2.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        </button>
+        <button class="ba-btn caution" title="恢复" onclick="showToast('恢复将覆盖当前数据，请确认')">
+          <svg viewBox="0 0 24 24" fill="none" stroke="var(--color-error)" stroke-width="2.5"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- 系统日志 -->
+    <div class="section-header">
+      <div class="sh-title">
+        <div class="sh-icon logs">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+        </div>
+        系统日志
+      </div>
+      <div class="sh-count">脱敏</div>
+    </div>
+    <div class="log-filters">
+      <button class="log-filter active" onclick="filterLogs('all', this)">全部</button>
+      <button class="log-filter" onclick="filterLogs('info', this)">INFO</button>
+      <button class="log-filter" onclick="filterLogs('warn', this)">WARN</button>
+      <button class="log-filter" onclick="filterLogs('error', this)">ERROR</button>
+      <button class="log-filter" onclick="filterLogs('debug', this)">DEBUG</button>
+    </div>
+    <div class="log-card" id="logContainer">
+      <div class="log-line" data-level="info"><span class="log-time">14:30:01</span><span class="log-level l-info">INFO</span><span class="log-msg">deepseek-api: WebSocket client connected (user_id=1, bot_id=3)</span></div>
+      <div class="log-line" data-level="info"><span class="log-time">14:29:58</span><span class="log-level l-info">INFO</span><span class="log-msg">deepseek-bot: QQ message routed to bot "小咪" (user_id=1)</span></div>
+      <div class="log-line" data-level="debug"><span class="log-time">14:29:45</span><span class="log-level l-debug">DEBUG</span><span class="log-msg">Pipeline: stage_emotion VA=(0.62, 0.38) express_style="playful"</span></div>
+      <div class="log-line" data-level="warn"><span class="log-time">14:29:32</span><span class="log-level l-warn">WARN</span><span class="log-msg">LLM queue: platform key queue depth=8 (limit=10)</span></div>
+      <div class="log-line" data-level="info"><span class="log-time">14:29:15</span><span class="log-level l-info">INFO</span><span class="log-msg">deepseek-api: POST /api/v1/bots/3/messages (201, 45ms)</span></div>
+      <div class="log-line" data-level="error"><span class="log-time">14:28:50</span><span class="log-level l-error">ERROR</span><span class="log-msg">NapCat connection timeout (retry 3/5, next in 10s)</span></div>
+      <div class="log-line" data-level="debug"><span class="log-time">14:28:40</span><span class="log-level l-debug">DEBUG</span><span class="log-msg">Memory recall: matched 3 memories for query (score>0.15)</span></div>
+      <div class="log-line" data-level="info"><span class="log-time">14:28:30</span><span class="log-level l-info">INFO</span><span class="log-msg">KMS: key rotation check passed (next rotation: 30d)</span></div>
+      <div class="log-line" data-level="info"><span class="log-time">14:28:15</span><span class="log-level l-info">INFO</span><span class="log-msg">Health check: all services OK (bot, api, napcat)</span></div>
+      <div class="log-line" data-level="warn"><span class="log-time">14:27:50</span><span class="log-level l-warn">WARN</span><span class="log-msg">Rate limiter: user_id=7 exceeded 30 req/min</span></div>
+      <div class="log-line" data-level="info"><span class="log-time">14:27:30</span><span class="log-level l-info">INFO</span><span class="log-msg">Backup: auto_backup created (142MB, sha256 ok)</span></div>
+      <div class="log-line" data-level="debug"><span class="log-time">14:27:15</span><span class="log-level l-debug">DEBUG</span><span class="log-msg">Absence check: 3 bots in absence state</span></div>
+      <div class="log-line" data-level="info"><span class="log-time">14:27:00</span><span class="log-level l-info">INFO</span><span class="log-msg">deepseek-bot: systemd watchdog ping (status=healthy)</span></div>
+    </div>
+
+  </div><!-- /scroll-area -->
+
+  <!-- Toast -->
+  <div id="toast" class="toast"></div>
+</div>
+
+<script src="shared/config.js"></script>
+<script src="shared/api.js"></script>
+<script src="shared/app.js"></script>
+<script>
+
+// Admin panel data loading
+if (API.isLoggedIn()) {
+  function loadAdminData() {
+    // System metrics
+    API.getSystemMetrics().then(function(m) {
+      var cpuEl = document.querySelector('[data-metric="cpu"]');
+      var memEl = document.querySelector('[data-metric="mem"]');
+      var bwEl = document.querySelector('[data-metric="bw"]');
+      var wsEl = document.querySelector('[data-metric="ws"]');
+      if (cpuEl) {
+        cpuEl.innerHTML = (m.cpu_percent || 0) + '<span style="font-size:14px;font-weight:600;color:var(--text-secondary);">%</span>';
+        // Update CPU bar
+        var cpuBar = document.querySelector('.hc-bar-fill.cpu');
+        if (cpuBar) cpuBar.style.width = (m.cpu_percent || 0) + '%';
+        var cpuSub = cpuEl.parentElement.querySelector('.hc-sub');
+        if (cpuSub) cpuSub.textContent = (m.cpu_cores || 0) + ' 核 · 负载 ' + ((m.load_avg || [0])[0] || 0).toFixed(1);
+      }
+      if (memEl) {
+        memEl.innerHTML = (m.mem_used || 0) + '<span style="font-size:14px;font-weight:600;color:var(--text-secondary);">/' + (m.mem_total || 0) + ' GB</span>';
+        var memBar = document.querySelector('.hc-bar-fill.ram');
+        if (memBar) memBar.style.width = (m.mem_percent || 0) + '%';
+        var memSub = memEl.parentElement.querySelector('.hc-sub');
+        if (memSub) memSub.textContent = '可用 ' + (m.mem_available || 0) + ' GB · 缓存 ' + ((m.mem_total||0) - (m.mem_used||0) - (m.mem_available||0)).toFixed(1) + ' GB';
+      }
+      if (bwEl) {
+        bwEl.innerHTML = (m.bw_current || 0) + '<span style="font-size:14px;font-weight:600;color:var(--text-secondary);">/' + (m.bw_max || 100) + ' Mbps</span>';
+        var bwSub = bwEl.parentElement.querySelector('.hc-sub');
+        if (bwSub) bwSub.textContent = '今日流量 ' + (m.traffic_today || 0) + ' MB';
+      }
+      if (wsEl) {
+        wsEl.innerHTML = (m.ws_active || 0) + '<span style="font-size:14px;font-weight:600;color:var(--text-secondary);"> 活跃</span>';
+        var wsSub = wsEl.parentElement.querySelector('.hc-sub');
+        if (wsSub) wsSub.textContent = '峰值 ' + (m.ws_peak || 0) + ' · 今日新建 ' + (m.ws_new_today || 0);
+      }
+    }).catch(function() {});
+    // Users
+    API.getAdminUsers(1, 20).then(function(d) {
+      var tbody = document.querySelector('[data-table="users"] tbody');
+      if (tbody && d.users) {
+        // Update user count badge
+        var userCountEl = document.querySelector('[data-table="users"]').parentElement.previousElementSibling.querySelector('.sh-count');
+        if (userCountEl) userCountEl.textContent = (d.total || d.users.length) + ' 人';
+        tbody.innerHTML = d.users.map(function(u) {
+          var roleBadge = u.is_admin ? '<span class="badge-sm admin">管理员</span>' : '<span class="badge-sm user">用户</span>';
+          var phoneMasked = u.phone_hash ? (u.phone_hash.substring(0,3) + '****' + u.phone_hash.substring(u.phone_hash.length-4)) : '--';
+          var createdDate = u.created_at ? new Date(u.created_at * 1000).toLocaleDateString('zh-CN', {month:'2-digit',day:'2-digit'}) : '--';
+          var nickname = u.nickname || '用户' + u.id;
+          return '<tr>' +
+            '<td style="font-weight:700;">' + _esc(nickname) + '</td>' +
+            '<td>' + phoneMasked + '</td>' +
+            '<td>' + (u.bot_count || 0) + '</td>' +
+            '<td>' + (u.message_count || 0) + '</td>' +
+            '<td>' + roleBadge + '</td>' +
+            '<td>' + createdDate + '</td>' +
+          '</tr>';
+        }).join('');
+      }
+    }).catch(function() {});
+    // Bots
+    API.getAdminBots().then(function(d) {
+      // Find the bots table (second table-card after the bots section)
+      var botSection = document.querySelector('.sh-icon.bots');
+      if (!botSection) return;
+      var botCard = botSection.closest('.section-header').nextElementSibling;
+      if (!botCard || !botCard.classList.contains('table-card')) return;
+      var botTbody = botCard.querySelector('tbody');
+      if (!botTbody || !d.bots) return;
+      // Update bot count badge
+      var botCountEl = botSection.closest('.section-header').querySelector('.sh-count');
+      if (botCountEl) botCountEl.textContent = d.bots.length + ' 个';
+      botTbody.innerHTML = d.bots.map(function(b) {
+        var statusHtml = b.is_active !== false
+          ? '<span class="status-indicator"><span class="si-dot online"></span>活跃</span>'
+          : '<span class="status-indicator"><span class="si-dot offline"></span>离线</span>';
+        var createdDate = b.created_at ? new Date(b.created_at * 1000).toLocaleDateString('zh-CN', {month:'2-digit',day:'2-digit'}) : '--';
+        return '<tr>' +
+          '<td style="font-weight:700;">' + _esc(b.name || '') + '</td>' +
+          '<td>' + _esc(b.owner_nickname || '--') + '</td>' +
+          '<td>' + _esc(b.personality || '--') + '</td>' +
+          '<td>' + (b.message_count || 0) + '</td>' +
+          '<td>' + statusHtml + '</td>' +
+          '<td>' + createdDate + '</td>' +
+        '</tr>';
+      }).join('');
+    }).catch(function() {});
+  }
+
+  function _esc(s) { return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+  loadAdminData();
+}
+
+
+function filterLogs(level, btn) {
+  document.querySelectorAll('.log-filter').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  document.querySelectorAll('#logContainer .log-line').forEach(line => {
+    line.style.display = (level === 'all' || line.getAttribute('data-level') === level) ? 'flex' : 'none';
+  });
+}
+function showToast(msg) {
+  if (typeof window.showToast === 'function') {
+    window.showToast(msg);
+  } else {
+    const toast = document.getElementById('toast');
+    toast.textContent = msg;
+    toast.style.cssText = 'position:fixed;bottom:120px;left:50%;transform:translateX(-50%);background:rgba(26,26,46,0.92);color:#fff;padding:10px 20px;border-radius:20px;font-size:13px;z-index:999;opacity:1;transition:opacity 0.3s;pointer-events:none;';
+    setTimeout(function(){ toast.style.opacity = '0'; }, 2000);
+  }
+}
+</script>
+
+</body>
+</html>

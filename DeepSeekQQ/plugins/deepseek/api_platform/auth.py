@@ -28,9 +28,12 @@ from jose import JWTError
 from jose import jwt as jose_jwt
 from fastapi import APIRouter
 from fastapi import Depends
+from fastapi import File
 from fastapi import HTTPException
 from fastapi import Request
+from fastapi import UploadFile
 from fastapi import status
+from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel
 from pydantic import Field
 
@@ -232,6 +235,17 @@ class DataPermissionsPut(BaseModel):
     third_party_sharing: Optional[bool] = None
 
 
+class ChangePasswordReq(BaseModel):
+    old_password: str = Field(..., min_length=8, max_length=20)
+    new_password: str = Field(..., min_length=8, max_length=20)
+
+
+class BlacklistAddReq(BaseModel):
+    blocked_user_id: int
+    blocked_name: str = ""
+    reason: str = ""
+
+
 # ============================================================
 # 端点
 # ============================================================
@@ -316,7 +330,12 @@ async def refresh_token(req: RefreshReq):
     from ..db_platform import is_token_revoked
     if await is_token_revoked(payload.get("jti", "")):
         raise HTTPException(status_code=401, detail={"code": "token_revoked", "message": "token 已吊销"})
+    # v2: 检查用户是否被批量吊销（修改密码等场景）
+    from ..db_platform import get_user_token_reset_at
     user_id = payload["user_id"]
+    reset_at = await get_user_token_reset_at(user_id)
+    if reset_at > 0 and payload.get("iat", 0) < reset_at:
+        raise HTTPException(status_code=401, detail={"code": "token_revoked", "message": "token 已因安全操作失效，请重新登录"})
     role = payload["role"]
     access, _ = create_access_token(user_id, role)
     return {"access_token": access, "token_type": "bearer", "expires_in": ACCESS_TOKEN_TTL}
@@ -375,6 +394,95 @@ async def put_perms(req: DataPermissionsPut, user=Depends(get_current_user)):
 @router.get("/app/version")
 async def app_version():
     return {"version": "1.0.0", "min_version": "1.0.0", "update_url": ""}
+
+
+# ── 修改密码 ────────────────────────────────────────────────
+
+@router.post("/auth/change-password")
+async def change_password(req: ChangePasswordReq, user=Depends(get_current_user)):
+    """修改密码。校验旧密码，更新为新密码，吊销所有 refresh token（安全措施）。"""
+    db_user = await get_user_by_id(user["id"])
+    if not db_user or not _verify_password(req.old_password, db_user["password"]):
+        raise HTTPException(status_code=400, detail={"code": "wrong_password", "message": "旧密码错误"})
+    if req.old_password == req.new_password:
+        raise HTTPException(status_code=400, detail={"code": "same_password", "message": "新密码不能与旧密码相同"})
+    new_hash = _hash_password(req.new_password)
+    from ..db_core import get_db
+    db = await get_db()
+    await db.execute("UPDATE users SET password = ? WHERE id = ?", (new_hash, user["id"]))
+    await db.commit()
+    # 吊销当前用户所有 refresh token
+    from ..db_platform import revoke_all_user_tokens
+    await revoke_all_user_tokens(user["id"])
+    return {"ok": True}
+
+
+# ── 头像上传 ────────────────────────────────────────────────
+
+_AVATAR_DIR = os.getenv("PLATFORM_AVATAR_DIR", "data/avatars")
+_AVATAR_MAX = 2 * 1024 * 1024  # 2MB
+_AVATAR_TYPES = {"image/jpeg", "image/png", "image/webp", "image/gif"}
+
+
+@router.post("/user/avatar")
+async def upload_avatar(file: UploadFile = File(...), user=Depends(get_current_user)):
+    """上传用户头像（multipart）。"""
+    if file.content_type and file.content_type not in _AVATAR_TYPES:
+        raise HTTPException(status_code=400, detail={"code": "invalid_type", "message": "仅支持 JPG/PNG/WebP/GIF"})
+    raw = await file.read()
+    if len(raw) > _AVATAR_MAX:
+        raise HTTPException(status_code=400, detail={"code": "file_too_large", "message": "头像最大 2MB"})
+    # 确保目录存在
+    os.makedirs(_AVATAR_DIR, exist_ok=True)
+    ext = (file.filename or "avatar.png").rsplit(".", 1)[-1] if "." in (file.filename or "") else "png"
+    fname = f"user_{user['id']}_{uuid.uuid4().hex[:8]}.{ext}"
+    fpath = os.path.join(_AVATAR_DIR, fname)
+    with open(fpath, "wb") as f:
+        f.write(raw)
+    avatar_url = f"/data/avatars/{fname}"
+    await update_user_profile(user["id"], {"avatar_url": avatar_url})
+    return {"avatar_url": avatar_url}
+
+
+# ── 黑名单 ──────────────────────────────────────────────────
+
+@router.get("/user/blacklist")
+async def list_blacklist(user=Depends(get_current_user)):
+    """获取黑名单列表。"""
+    from ..db_platform import get_blacklist
+    items = await get_blacklist(user["id"])
+    return {
+        "blacklist": [
+            {
+                "id": item["blocked_user_id"],
+                "name": item["blocked_name"],
+                "reason": item.get("reason", ""),
+                "created_at": item["created_at"],
+            }
+            for item in items
+        ],
+        "count": len(items),
+    }
+
+
+@router.post("/user/blacklist", status_code=status.HTTP_201_CREATED)
+async def add_blacklist(req: BlacklistAddReq, user=Depends(get_current_user)):
+    """添加用户到黑名单。"""
+    from ..db_platform import add_blacklist as db_add_blacklist
+    ok = await db_add_blacklist(user["id"], req.blocked_user_id, req.blocked_name, req.reason)
+    if not ok:
+        raise HTTPException(status_code=409, detail={"code": "already_blocked", "message": "该用户已在黑名单中"})
+    return {"ok": True, "blocked_user_id": req.blocked_user_id}
+
+
+@router.delete("/user/blacklist/{blocked_user_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def remove_blacklist(blocked_user_id: int, user=Depends(get_current_user)):
+    """从黑名单移除用户。"""
+    from ..db_platform import remove_blacklist as db_remove_blacklist
+    ok = await db_remove_blacklist(user["id"], blocked_user_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail={"code": "not_found", "message": "黑名单中未找到该用户"})
+    return None
 
 
 # ============================================================

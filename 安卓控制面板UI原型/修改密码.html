@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no">
+<title>修改密码 — UI 原型</title>
+<link rel="stylesheet" href="shared/tokens.css">
+<link rel="stylesheet" href="shared/base.css">
+<link rel="stylesheet" href="shared/components.css">
+<link rel="stylesheet" href="shared/dark-mode.css">
+<link rel="stylesheet" href="shared/effects.css">
+<style>
+/* ===== 修改密码 — 页面专属样式 ===== */
+.scroll-area { padding: 16px 20px 20px; }
+
+/* 提示信息 */
+.tip-card {
+  padding: 14px 16px; border-radius: 16px;
+  background: rgba(255,240,240,0.6);
+  border: 1px dashed rgba(244, 114, 182,0.2);
+  margin-bottom: 20px;
+}
+.tip-card .tip-title { font-size: 13px; font-weight: 700; color: #F472B6; margin-bottom: 4px; }
+.tip-card .tip-text { font-size: 12px; color: #B090A0; line-height: 1.6; }
+
+/* 输入 */
+.input-group { margin-bottom: 18px; }
+.input-group label {
+  display: block; font-size: 12px; font-weight: 700; color: #6A5060; margin-bottom: 6px;
+}
+.input-row { display: flex; gap: 8px; }
+.input-row .input-field { flex: 1; }
+.code-btn {
+  padding: 14px 16px; border-radius: 16px; font-size: 13px; font-weight: 700;
+  background: rgba(244, 114, 182,0.08); color: #F472B6; border: 1.5px solid rgba(244, 114, 182,0.2);
+  cursor: pointer; white-space: nowrap; font-family: inherit; transition: all 0.2s;
+}
+.code-btn:hover { background: #F472B6; color: #fff; border-color: #F472B6; }
+.code-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* 密码强度 */
+.strength-bar { display: flex; gap: 6px; margin-top: 10px; }
+.strength-seg { flex: 1; height: 4px; border-radius: 2px; background: #EDE0EC; transition: all 0.3s; }
+.strength-seg.l1 { background: #F472B6; }
+.strength-seg.l2 { background: #FFB347; }
+.strength-seg.l3 { background: #4CAF50; }
+.strength-text { font-size: 11px; margin-top: 6px; font-weight: 600; }
+.strength-text.weak { color: #F472B6; }
+.strength-text.medium { color: #FFB347; }
+.strength-text.strong { color: #4CAF50; }
+
+/* ===== Dark Mode ===== */
+.phone.dark-mode .tip-card { background: rgba(244, 114, 182,0.06); border-color: rgba(244, 114, 182,0.15); }
+.phone.dark-mode .input-group label { color: #B0A0C0; }
+.phone.dark-mode .code-btn { background: rgba(244, 114, 182,0.1); border-color: rgba(244, 114, 182,0.3); }
+.phone.dark-mode .strength-seg { background: rgba(255,255,255,0.08); }
+</style>
+</head>
+<body>
+<div class="phone">
+  <div class="title-bar">
+    <a class="back" href="我的.html">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M15 18l-6-6 6-6"/></svg>
+    </a>
+    <span class="title">修改密码</span>
+  </div>
+  <div class="scroll-area">
+    <div class="tip-card">
+      <div class="tip-title">安全提示</div>
+      <div class="tip-text">密码长度 8-20 位，需包含字母 + 数字。修改成功后需重新登录。</div>
+    </div>
+
+    <div class="input-group">
+      <label>原密码</label>
+      <input class="input-field" type="password" id="oldPwd" placeholder="请输入当前密码">
+    </div>
+
+    <div class="input-group">
+      <label>新密码</label>
+      <input class="input-field" type="password" id="newPwd" placeholder="8-20位，字母+数字" oninput="checkStrength(this.value)">
+      <div class="strength-bar" id="strengthBar">
+        <div class="strength-seg"></div>
+        <div class="strength-seg"></div>
+        <div class="strength-seg"></div>
+        <div class="strength-seg"></div>
+      </div>
+      <div class="strength-text" id="strengthText"></div>
+    </div>
+
+    <div class="input-group">
+      <label>确认新密码</label>
+      <input class="input-field" type="password" id="confirmPwd" placeholder="再次输入新密码" oninput="checkMatch()">
+      <div style="font-size:11px;margin-top:6px;color:#F472B6;display:none;" id="mismatchHint">两次输入的密码不一致</div>
+    </div>
+
+    <button class="btn-primary" id="submitBtn" disabled onclick="doChange()">确认修改</button>
+  </div>
+  <div class="toast" id="toast"></div>
+</div>
+<script src="shared/config.js"></script>
+<script src="shared/api.js"></script>
+<script src="shared/app.js"></script>
+<script>
+if (!API.isLoggedIn()) { location.href = '登录页.html'; }
+function checkStrength(val) {
+  const segs = document.querySelectorAll('#strengthBar .strength-seg');
+  const text = document.getElementById('strengthText');
+  segs.forEach(s => s.className = 'strength-seg');
+  let level = 0;
+  if (val.length >= 8) level++;
+  if (val.length >= 12) level++;
+  if (/[a-zA-Z]/.test(val) && /[0-9]/.test(val)) level++;
+  if (/[^a-zA-Z0-9]/.test(val)) level++;
+  const colors = ['', 'l1', 'l2', 'l3'];
+  const labels = ['', '弱', '中等', '强'];
+  for (let i = 0; i < level && i < 4; i++) {
+    segs[i].classList.add(colors[Math.min(level, 3)]);
+  }
+  text.textContent = level >= 3 ? '密码强度：' + labels[Math.min(level, 3)] : (val ? '密码强度：弱' : '');
+  text.className = 'strength-text ' + (level >= 3 ? 'strong' : level === 2 ? 'medium' : 'weak');
+  checkForm();
+}
+
+function checkMatch() {
+  const pwd = document.getElementById('newPwd').value;
+  const confirm = document.getElementById('confirmPwd').value;
+  const hint = document.getElementById('mismatchHint');
+  if (confirm && pwd !== confirm) { hint.style.display = 'block'; }
+  else { hint.style.display = 'none'; }
+  checkForm();
+}
+
+function checkForm() {
+  const pwd = document.getElementById('newPwd').value;
+  const confirm = document.getElementById('confirmPwd').value;
+  const valid = pwd.length >= 8 && /[a-zA-Z]/.test(pwd) && /[0-9]/.test(pwd) && pwd === confirm;
+  document.getElementById('submitBtn').disabled = !valid;
+}
+
+function doChange() {
+	  var oldPwd = document.getElementById("oldPwd").value;
+	  var newPwd = document.getElementById("newPwd").value;
+	  document.getElementById("submitBtn").disabled = true;
+	  API.changePassword(oldPwd, newPwd).then(function() {
+	    showToast("密码修改成功，请重新登录");
+	    API.clearTokens();
+	    setTimeout(function(){ location.href = "登录页.html"; }, 1500);
+	  }).catch(function(err) {
+	    showToast("修改失败：" + (err.message || "未知错误"));
+	    document.getElementById("submitBtn").disabled = false;
+	  });
+}
+</script>
+</body>
+</html>

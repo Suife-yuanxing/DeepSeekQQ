@@ -1,0 +1,371 @@
+/* ===== 林念念 Bot — Shared Components ===== */
+/* Buttons + Inputs + Cards + Toast + Toggle + Modal + Bottom Nav */
+
+/* === Primary Button === */
+.btn-primary {
+  width: 100%; padding: 14px; border-radius: var(--radius-lg, 16px);
+  background: var(--gradient-primary);
+  color: #fff; border: none;
+  font-size: var(--font-size-lg, 16px); font-weight: var(--font-weight-bold, 700);
+  font-family: var(--font-family);
+  cursor: pointer;
+  box-shadow: var(--shadow-btn);
+  transition: all var(--transition-base);
+}
+.btn-primary:hover { transform: translateY(-1px); box-shadow: var(--shadow-btn-hover); }
+.btn-primary:active { transform: scale(0.97); }
+.btn-primary:disabled { opacity: 0.5; pointer-events: none; }
+.btn-primary.loading { pointer-events: none; position: relative; color: transparent; }
+.btn-primary.loading::after {
+  content: ''; position: absolute; inset: 0; margin: auto;
+  width: 20px; height: 20px;
+  border: 2.5px solid rgba(255,255,255,0.3);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: btn-spin 0.6s linear infinite;
+}
+@keyframes btn-spin { to { transform: rotate(360deg); } }
+
+/* === Outline Button === */
+.btn-outline {
+  width: 100%; padding: 14px; border-radius: var(--radius-lg, 16px);
+  background: #fff; color: var(--color-primary);
+  border: 1.5px solid var(--color-primary-border);
+  font-size: 15px; font-weight: var(--font-weight-bold, 700);
+  font-family: var(--font-family);
+  cursor: pointer;
+  transition: all var(--transition-base);
+}
+.btn-outline:hover { background: var(--color-primary); color: #fff; border-color: var(--color-primary); }
+.btn-outline:active { transform: scale(0.97); }
+
+/* === Ghost Button (Title Bar) === */
+.btn-ghost {
+  font-size: 13px; font-weight: 600; color: #fff; cursor: pointer;
+  background: rgba(255, 255, 255, 0.15); border: none;
+  padding: 6px 14px; border-radius: var(--radius-lg, 16px);
+  font-family: inherit;
+  transition: background var(--transition-fast);
+}
+.btn-ghost:hover { background: rgba(255, 255, 255, 0.25); }
+.btn-ghost:active { background: rgba(255, 255, 255, 0.35); }
+
+/* === Round Icon Button (Title Bar) === */
+.btn-icon-round {
+  width: 32px; height: 32px; border-radius: 50%;
+  background: rgba(255, 255, 255, 0.15); border: none;
+  color: #fff; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: all var(--transition-base);
+  flex-shrink: 0;
+}
+.btn-icon-round:hover { background: rgba(255, 255, 255, 0.25); transform: scale(1.08); }
+.btn-icon-round:active { transform: scale(0.92); }
+.btn-icon-round svg { width: 18px; height: 18px; }
+
+/* === Small Action Button === */
+.btn-sm {
+  padding: 6px 12px; border-radius: var(--radius-sm, 8px);
+  font-size: 11px; font-weight: 600;
+  font-family: var(--font-family);
+  cursor: pointer; border: none;
+  transition: all var(--transition-fast);
+}
+.btn-sm.primary { background: var(--color-primary-ghost); color: var(--color-primary); }
+.btn-sm.primary:hover { background: rgba(244, 114, 182, 0.18); }
+.btn-sm.danger { background: rgba(255, 71, 87, 0.08); color: var(--color-error, #FF4757); }
+.btn-sm.danger:hover { background: rgba(255, 71, 87, 0.15); }
+
+/* === Standard Input === */
+.input-field {
+  width: 100%; padding: var(--input-padding);
+  border-radius: var(--input-radius);
+  border: var(--input-border);
+  font-size: var(--font-size-base, 14px);
+  font-family: var(--font-family);
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.8);
+  outline: none;
+  transition: all var(--transition-base);
+}
+.input-field:focus {
+  border-color: var(--color-primary);
+  background: #fff;
+  box-shadow: var(--input-focus-ring);
+}
+.input-field::placeholder { color: var(--text-muted); }
+
+/* Input with error */
+.input-group.error .input-field {
+  border-color: var(--color-error);
+  animation: input-shake 0.4s ease;
+}
+@keyframes input-shake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-6px); }
+  40% { transform: translateX(6px); }
+  60% { transform: translateX(-4px); }
+  80% { transform: translateX(4px); }
+}
+
+/* === Glass Card === */
+/* 高不透明度作为旧 WebView 降级（无 backdrop-filter 时仍可读） */
+.card-glass {
+  background: rgba(255, 255, 255, 0.88);
+  border-radius: var(--radius-lg, 16px);
+  border: 1.5px solid rgba(255, 255, 255, 0.7);
+  box-shadow: var(--shadow-card);
+  padding: var(--space-lg, 16px);
+  transition: all var(--transition-base);
+}
+/* 支持 backdrop-filter 的设备使用更通透的效果 */
+@supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
+  .card-glass {
+    background: rgba(255, 255, 255, 0.7);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+  }
+}
+.card-glass:hover { box-shadow: var(--shadow-card-hover); }
+
+/* === Setting Item === */
+.setting-item {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px var(--space-lg, 16px);
+  border-radius: var(--radius-lg, 16px);
+  background: rgba(255, 255, 255, 0.88);
+  cursor: pointer;
+  transition: all var(--transition-base);
+  margin-bottom: 8px;
+}
+@supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
+  .setting-item {
+    background: rgba(255, 255, 255, 0.7);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+  }
+}
+.setting-item:last-child { margin-bottom: 0; }
+.setting-item:hover { background: rgba(255, 255, 255, 0.9); }
+.setting-item:active { background: rgba(244, 114, 182, 0.04); }
+.setting-item .item-left { display: flex; align-items: center; gap: 10px; }
+.setting-item .item-label { font-size: var(--font-size-base, 14px); font-weight: 600; color: var(--text-primary); }
+.setting-item .item-right { display: flex; align-items: center; gap: 8px; }
+.setting-item .item-value { font-size: 13px; color: var(--text-secondary); }
+.setting-item .item-icon { width: 22px; height: 22px; display: flex; align-items: center; justify-content: center; }
+.setting-item .item-icon svg { width: 20px; height: 20px; }
+
+/* === Group Title === */
+.group-title {
+  font-size: var(--font-size-sm, 12px); font-weight: var(--font-weight-bold, 700);
+  color: var(--text-secondary);
+  margin-bottom: 6px; margin-left: var(--space-xs, 4px);
+  letter-spacing: 0.5px;
+}
+
+/* === Toggle Switch === */
+.toggle-switch { position: relative; width: 48px; height: 28px; flex-shrink: 0; }
+.toggle-switch input { opacity: 0; width: 0; height: 0; }
+.toggle-slider {
+  position: absolute; inset: 0; cursor: pointer;
+  background: #E8D8E0; border-radius: 28px;
+  transition: all 0.3s;
+}
+.toggle-slider::before {
+  content: ''; position: absolute; left: 3px; bottom: 3px;
+  width: 22px; height: 22px; background: #fff;
+  border-radius: 50%;
+  transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+.toggle-switch input:checked + .toggle-slider { background: var(--color-primary); }
+.toggle-switch input:checked + .toggle-slider::before { transform: translateX(20px); }
+
+/* === Toast === */
+.toast {
+  position: absolute; top: 60px; left: 50%; transform: translateX(-50%);
+  background: var(--text-primary, #3A2030); color: #fff;
+  padding: 10px 24px; border-radius: var(--radius-xl, 20px);
+  font-size: 13px; font-weight: 600; z-index: 200;
+  opacity: 0; transition: opacity 0.3s; pointer-events: none;
+}
+.toast.show { opacity: 1; }
+.toast.success { background: var(--color-success, #4CAF50); }
+.toast.error { background: var(--color-error, #FF4757); }
+.toast.info { background: var(--color-primary); }
+
+/* === Modal Overlay + Bottom Sheet === */
+.modal-overlay {
+  position: absolute; inset: 0; z-index: 100;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex; align-items: flex-end; justify-content: center;
+}
+@supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
+  .modal-overlay {
+    background: rgba(0, 0, 0, 0.35);
+    backdrop-filter: blur(2px);
+    -webkit-backdrop-filter: blur(2px);
+  }
+}
+.modal-sheet {
+  width: 100%; background: #fff;
+  border-radius: var(--radius-xl, 20px) var(--radius-xl, 20px) 0 0;
+  padding: var(--space-xl, 20px) var(--space-xl, 20px) 28px;
+  animation: slideUp 0.3s ease-out;
+}
+@keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+.modal-sheet .modal-title {
+  font-size: var(--font-size-lg, 16px); font-weight: var(--font-weight-extrabold, 800);
+  color: var(--text-primary); margin-bottom: var(--space-lg, 16px);
+  text-align: center;
+}
+.modal-sheet .modal-option {
+  display: block; width: 100%; padding: 14px; border: none; background: none;
+  font-size: 15px; color: var(--text-primary); cursor: pointer;
+  font-family: var(--font-family); border-radius: var(--radius-lg, 16px);
+  transition: background var(--transition-fast); text-align: center;
+}
+.modal-sheet .modal-option:hover { background: #FFF0F3; }
+.modal-sheet .modal-option.selected { color: var(--color-primary); font-weight: var(--font-weight-bold, 700); }
+.modal-sheet .modal-option.danger { color: var(--color-primary); font-weight: var(--font-weight-bold, 700); }
+.modal-sheet .modal-cancel {
+  display: block; width: 100%; padding: 14px; margin-top: var(--space-sm, 8px);
+  border: none; background: #F5F0F5; border-radius: var(--radius-lg, 16px);
+  font-size: 15px; font-weight: var(--font-weight-bold, 700);
+  color: var(--text-secondary); cursor: pointer;
+  font-family: var(--font-family);
+  transition: background var(--transition-fast);
+}
+.modal-sheet .modal-cancel:hover { background: #EDE0EC; }
+.hidden { display: none !important; }
+
+/* === Arrow Right === */
+.arrow-right { color: #D0B0C0; }
+.arrow-right svg { width: 16px; height: 16px; }
+
+/* ===== Bottom Navigation — v9 Macaron Capsule + Dual Trail + Spring ===== */
+/*
+ * 胶囊指示器：马卡龙软粉渐变，包裹 icon+text
+ * 拖尾 smear：双层模糊拖尾 (t1=45ms/5px, t2=90ms/10px)
+ * 弹簧物理：--ease-spring 弹性曲线，入场 overshoot → 回弹 → 稳定
+ * 暗色模式：半透明深色底 + 更柔和的胶囊发光
+ * 无障碍：prefers-reduced-motion 禁用所有动画
+ */
+.bottom-nav {
+  display: flex; justify-content: space-around;
+  padding: 6px 0 18px;
+  background: rgba(255, 255, 255, 0.88);
+  border-top: 0.5px solid rgba(0, 0, 0, 0.05);
+  position: relative; z-index: 10;
+}
+@supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
+  .bottom-nav {
+    background: rgba(255, 255, 255, 0.48);
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
+  }
+}
+
+.nav-item {
+  text-align: center;
+  font-size: var(--font-size-xs, 10px);
+  color: #B0A0B0;
+  cursor: pointer;
+  display: flex; flex-direction: column; align-items: center;
+  gap: 3px; padding: 4px 12px;
+  transition: color 0.3s var(--ease-smooth, cubic-bezier(0.4, 0, 0.2, 1));
+  position: relative; z-index: 2;
+  text-decoration: none;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+}
+
+.nav-item svg {
+  width: 24px; height: 24px; display: block;
+  transition: transform 0.35s var(--ease-spring, cubic-bezier(0.34, 1.56, 0.64, 1));
+}
+
+/* Active state — white text on capsule for contrast + subtle glow */
+.nav-item.active {
+  color: #FFFFFF;
+  text-shadow: 0 1px 3px rgba(244, 114, 182, 0.3);
+}
+.nav-item.active svg {
+  transform: scale(1.06);
+  filter: drop-shadow(0 1px 2px rgba(244, 114, 182, 0.18));
+}
+
+/* ===== Capsule — v9 token 软粉渐变 + 玻璃高光 + 投影 ===== */
+.nav-capsule {
+  position: absolute;
+  border-radius: 14px;
+  background: linear-gradient(135deg,
+    rgba(244, 114, 182, 0.8) 0%,
+    rgba(236, 72, 153, 0.72) 40%,
+    rgba(219, 90, 130, 0.65) 100%);
+  box-shadow:
+    0 2px 14px rgba(244, 114, 182, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.22);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  z-index: 1;
+  pointer-events: none;
+  /* position/size set via JS to match .nav-item bounding rect */
+  transition:
+    left   0.38s var(--ease-spring, cubic-bezier(0.34, 1.56, 0.64, 1)),
+    width  0.42s var(--ease-spring, cubic-bezier(0.34, 1.56, 0.64, 1)),
+    top    0.38s var(--ease-spring, cubic-bezier(0.34, 1.56, 0.64, 1)),
+    height 0.38s var(--ease-spring, cubic-bezier(0.34, 1.56, 0.64, 1));
+}
+
+/* ===== Trail t1 — 45ms lag, 5px blur, higher opacity for visible smear ===== */
+.nav-capsule-trail.t1 {
+  position: absolute;
+  border-radius: 14px;
+  background: rgba(244, 114, 182, 0.3);
+  box-shadow: 0 0 20px rgba(244, 114, 182, 0.2);
+  z-index: 0;
+  pointer-events: none;
+  filter: blur(5px);
+  transition:
+    left   0.38s var(--ease-spring, cubic-bezier(0.34, 1.56, 0.64, 1)) 0.045s,
+    width  0.42s var(--ease-spring, cubic-bezier(0.34, 1.56, 0.64, 1)) 0.045s,
+    top    0.38s var(--ease-spring, cubic-bezier(0.34, 1.56, 0.64, 1)) 0.045s,
+    height 0.38s var(--ease-spring, cubic-bezier(0.34, 1.56, 0.64, 1)) 0.045s;
+}
+
+/* ===== Trail t2 — 90ms lag, 10px blur, faint wide glow ===== */
+.nav-capsule-trail.t2 {
+  position: absolute;
+  border-radius: 14px;
+  background: rgba(244, 114, 182, 0.15);
+  box-shadow: 0 0 32px rgba(244, 114, 182, 0.12);
+  z-index: 0;
+  pointer-events: none;
+  filter: blur(10px);
+  transition:
+    left   0.38s var(--ease-spring, cubic-bezier(0.34, 1.56, 0.64, 1)) 0.09s,
+    width  0.42s var(--ease-spring, cubic-bezier(0.34, 1.56, 0.64, 1)) 0.09s,
+    top    0.38s var(--ease-spring, cubic-bezier(0.34, 1.56, 0.64, 1)) 0.09s,
+    height 0.38s var(--ease-spring, cubic-bezier(0.34, 1.56, 0.64, 1)) 0.09s;
+}
+
+/* ===== Spring bounce keyframe — used by JS for icon on tap ===== */
+@keyframes nav-spring {
+  0%   { transform: scale(1); }
+  25%  { transform: scale(0.78); }
+  55%  { transform: scale(1.14); }
+  80%  { transform: scale(0.95); }
+  100% { transform: scale(1); }
+}
+
+/* ===== Reduced Motion — instant snap, no animation ===== */
+@media (prefers-reduced-motion: reduce) {
+  .nav-capsule,
+  .nav-capsule-trail.t1,
+  .nav-capsule-trail.t2 {
+    transition: none;
+  }
+  .nav-item svg {
+    transition: none;
+  }
+}

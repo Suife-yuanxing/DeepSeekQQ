@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no">
+<title>API Key 管理 v2 — UI 原型</title>
+<link rel="stylesheet" href="shared/tokens.css">
+<link rel="stylesheet" href="shared/base.css">
+<link rel="stylesheet" href="shared/components.css">
+<link rel="stylesheet" href="shared/dark-mode.css">
+<link rel="stylesheet" href="shared/effects.css">
+<style>
+/* ===== API Key 管理 — 页面专属样式 ===== */
+body { background-attachment: fixed; overflow-x: hidden; }
+
+.title-bar { overflow: hidden; }
+.title-bar::after {
+  content: ''; position: absolute; top: -20%; right: -20%;
+  width: 60%; height: 150%;
+  background: radial-gradient(ellipse, rgba(255,255,255,0.08) 0%, transparent 70%);
+  pointer-events: none;
+}
+.title-bar .back { padding: 4px; z-index: 1; }
+.title-bar .title { z-index: 1; }
+.title-bar .add-btn {
+  width: 32px; height: 32px; border-radius: 50%;
+  background: rgba(255,255,255,0.2); border: none; cursor: pointer;
+  color: #fff; display: flex; align-items: center; justify-content: center;
+  z-index: 1; transition: all 0.2s;
+}
+.title-bar .add-btn:hover { background: rgba(255,255,255,0.35); transform: scale(1.05); }
+.title-bar .add-btn svg { width: 18px; height: 18px; }
+
+.scroll-area { padding: 0 0 8px; }
+
+/* 用量概览 */
+.usage-summary {
+  margin: 12px 20px 0; padding: 14px 16px;
+  background: rgba(255,255,255,0.7); backdrop-filter: blur(12px);
+  border-radius: 16px; display: flex; gap: 6px;
+  border: 1.5px solid rgba(255,255,255,0.8);
+  box-shadow: 0 3px 12px rgba(244, 114, 182,0.05);
+}
+.usage-item { flex: 1; text-align: center; }
+.usage-item .val { font-size: 20px; font-weight: 800; }
+.usage-item .lbl { font-size: 10px; color: #B090A0; margin-top: 2px; }
+.usage-item .val.c-pink { color: #F472B6; }
+.usage-item .val.c-purple { color: #C4B5FD; }
+.usage-item .val.c-orange { color: #FFB347; }
+.usage-divider { width: 1px; background: rgba(0,0,0,0.06); flex-shrink: 0; }
+
+/* 标签页 */
+.tab-row {
+  display: flex; margin: 14px 20px 0;
+  background: rgba(255,255,255,0.4); border-radius: 12px;
+  padding: 3px; gap: 2px;
+}
+.tab-btn {
+  flex: 1; text-align: center; padding: 8px 0; font-size: 13px; font-weight: 600;
+  border-radius: 10px; cursor: pointer; transition: all 0.3s;
+  color: #B090A0; border: none; background: transparent; font-family: inherit;
+}
+.tab-btn.active { background: #fff; color: #F472B6; box-shadow: 0 2px 8px rgba(244, 114, 182,0.1); }
+
+/* Key 卡片 */
+.key-card {
+  margin: 10px 20px 0;
+  background: rgba(255,255,255,0.65); backdrop-filter: blur(8px);
+  border-radius: 16px; padding: 16px;
+  border: 1.5px solid rgba(255,255,255,0.7);
+  box-shadow: 0 3px 12px rgba(244, 114, 182,0.04);
+  transition: all 0.25s;
+}
+.key-card:active { transform: scale(0.985); }
+.key-name-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+.key-name { font-size: 15px; font-weight: 700; color: #3A2030; display: flex; align-items: center; gap: 6px; }
+.key-status { font-size: 10px; padding: 3px 8px; border-radius: 8px; font-weight: 600; }
+.key-status.active { background: #E8F5E9; color: #4CAF50; }
+.key-status.revoked { background: #FFF0F0; color: #F472B6; text-decoration: line-through; }
+.key-masked {
+  font-size: 12px; color: #B090A0; font-family: 'SF Mono','Cascadia Code',monospace;
+  margin-bottom: 6px; display: flex; align-items: center; gap: 6px;
+  cursor: pointer; user-select: all;
+}
+.key-masked .mask-dot { letter-spacing: 2px; }
+.key-info-row {
+  display: flex; gap: 16px; font-size: 10px; color: #C0A0B0;
+  margin-top: 8px; padding-top: 8px;
+  border-top: 1px solid rgba(0,0,0,0.03);
+}
+.key-info-row span { display: flex; align-items: center; gap: 3px; }
+.key-info-row svg { width: 12px; height: 12px; }
+.key-actions { display: flex; gap: 8px; margin-top: 10px; }
+.key-act {
+  font-size: 11px; font-weight: 600; border-radius: 8px; padding: 6px 12px;
+  cursor: pointer; transition: all 0.2s; border: none; font-family: inherit;
+}
+.key-act.copy { background: rgba(244, 114, 182,0.08); color: #F472B6; }
+.key-act.copy:hover { background: rgba(244, 114, 182,0.15); }
+.key-act.revoke { background: rgba(0,0,0,0.03); color: #B090A0; }
+.key-act.revoke:hover { background: #FFF0F0; color: #F472B6; }
+
+/* 权限标签 */
+.perms { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 4px; }
+.perm-tag {
+  font-size: 9px; font-weight: 600; padding: 2px 6px; border-radius: 4px;
+  background: rgba(124,92,191,0.06); color: #C4B5FD;
+}
+
+/* 新建 Key 表单 */
+.new-key-form {
+  margin: 10px 20px 0; padding: 16px 16px 14px;
+  background: rgba(255,255,255,0.97); backdrop-filter: blur(24px); border-radius: 16px;
+  border: 1.5px solid rgba(244, 114, 182,0.18); box-shadow: 0 8px 32px rgba(0,0,0,0.08), 0 2px 8px rgba(0,0,0,0.04);
+  display: none;
+}
+.new-key-form.show { display: block; }
+
+  /* 权限复选框 */
+  .perm-checkboxes { display: flex; flex-direction: column; gap: 6px; margin-top: 4px; }
+  .perm-check {
+      display: flex; align-items: center; gap: 8px; font-size: 13px; color: #3A2030;
+      cursor: pointer; padding: 7px 12px; border-radius: 10px; background: rgba(0,0,0,0.015);
+      transition: background 0.2s;
+  }
+  .perm-check:hover { background: rgba(0,0,0,0.04); }
+  .perm-check input[type="checkbox"] { accent-color: #F472B6; width: 15px; height: 15px; margin: 0; flex-shrink: 0; }
+  .perm-name { font-weight: 700; min-width: 56px; font-family: 'SF Mono','Cascadia Code',monospace; font-size: 12px; color: #4A3A50; }
+  .perm-cn { color: #B090A0; font-size: 11px; }
+.new-key-form label { font-size: 11px; font-weight: 600; color: #B090A0; display: block; margin-bottom: 4px; margin-top: 10px; }
+.new-key-form label:first-child { margin-top: 0; }
+.new-key-form input, .new-key-form select {
+  width: 100%; padding: 10px 12px; border-radius: 10px; border: 1.5px solid rgba(255,200,210,0.4);
+  background: rgba(255,255,255,0.95); font-size: 13px; font-family: inherit; outline: none;
+  transition: all 0.25s; color: #3A2030;
+}
+.new-key-form input:focus, .new-key-form select:focus {
+  border-color: #F472B6; background: #fff;
+  box-shadow: 0 0 0 3px rgba(244, 114, 182,0.06);
+}
+.new-key-form .form-actions { display: flex; gap: 8px; margin-top: 14px; }
+.form-btn {
+  flex: 1; padding: 10px; border-radius: 10px; font-size: 13px; font-weight: 700;
+  cursor: pointer; border: none; font-family: inherit; transition: all 0.2s;
+}
+.form-btn.create {
+  background: linear-gradient(135deg, #F472B6, #FF8095);
+  color: #fff; box-shadow: 0 4px 14px rgba(244, 114, 182,0.25);
+}
+.form-btn.create:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(244, 114, 182,0.35); }
+.form-btn.cancel { background: rgba(0,0,0,0.04); color: #B090A0; }
+.form-btn.cancel:hover { background: rgba(0,0,0,0.08); }
+
+/* Dark mode adjustments */
+.phone.dark-mode .usage-summary { background: #16213E; border-color: rgba(255,255,255,0.06); }
+.phone.dark-mode .usage-divider { background: rgba(255,255,255,0.06); }
+.phone.dark-mode .tab-row { background: rgba(255,255,255,0.04); }
+.phone.dark-mode .tab-btn.active { background: #2A2A3E; color: #F9A8D4; }
+.phone.dark-mode .key-card { background: #16213E; border-color: rgba(255,255,255,0.06); }
+.phone.dark-mode .key-name { color: #D0C8E0; }
+.phone.dark-mode .key-status.active { background: rgba(76,175,80,0.12); }
+.phone.dark-mode .key-masked { color: #9088A0; }
+.phone.dark-mode .key-info-row { color: #706878; border-top-color: rgba(255,255,255,0.04); }
+.phone.dark-mode .key-act.revoke { background: rgba(255,255,255,0.04); color: #9088A0; }
+.phone.dark-mode .key-act.revoke:hover { background: rgba(244, 114, 182,0.1); color: #F472B6; }
+.phone.dark-mode .perm-tag { background: rgba(124,92,191,0.1); color: #B794F4; }
+.phone.dark-mode .new-key-form { background: rgba(22, 33, 62, 0.98); backdrop-filter: blur(24px); border-color: rgba(244, 114, 182,0.2); box-shadow: 0 8px 32px rgba(0,0,0,0.35); }
+.phone.dark-mode .new-key-form input, .phone.dark-mode .new-key-form select { background: #1A1A3E; border-color: rgba(255,255,255,0.08); color: #E0D8E8; }
+.phone.dark-mode .form-btn.cancel { background: rgba(255,255,255,0.04); color: #9088A0; }
+.phone.dark-mode .form-btn.cancel:hover { background: rgba(255,255,255,0.08); }
+.phone.dark-mode .perm-check { color: #D0C8E0; background: rgba(255,255,255,0.02); }
+.phone.dark-mode .perm-check:hover { background: rgba(255,255,255,0.05); }
+.phone.dark-mode .perm-name { color: #D0C8E0; }
+.phone.dark-mode .perm-cn { color: #8078A0; }
+</style>
+</head>
+<body>
+<div class="phone">
+  <div class="title-bar">
+    <span class="title">API Key</span>
+    <button class="add-btn" onclick="toggleNewForm()" title="新建 Key">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+    </button>
+  </div>
+
+  <div class="usage-summary">
+    <div class="usage-item"><div class="val c-pink" id="totalCalls">1,283</div><div class="lbl">总调用</div></div>
+    <div class="usage-divider"></div>
+    <div class="usage-item"><div class="val c-purple">3</div><div class="lbl">活跃 Key</div></div>
+    <div class="usage-divider"></div>
+    <div class="usage-item"><div class="val c-orange">98.7%</div><div class="lbl">成功率</div></div>
+  </div>
+
+  <div class="tab-row">
+    <button class="tab-btn active" onclick="switchTab('keys', this)">我的 Key</button>
+    <button class="tab-btn" onclick="switchTab('usage', this)">用量明细</button>
+  </div>
+
+  <div class="scroll-area" id="scrollArea">
+    <div id="keysTab">
+      <div class="key-card" id="key-1">
+        <div class="key-name-row">
+          <span class="key-name"><svg viewBox="0 0 24 24" fill="none" stroke="#F472B6" stroke-width="1.8" stroke-linecap="round" style="width:18px;height:18px;"><circle cx="8" cy="12" r="6"/><path d="M13 9l7-7M16 2h5v5"/></svg>生产环境</span>
+          <span class="key-status active">● 活跃</span>
+        </div>
+        <div class="key-masked" onclick="copyKey('sk-prod-8a3f2...c91d', this)" title="点击复制"><span class="mask-dot">sk-prod-8a3f2••••••••c91d</span></div>
+        <div class="perms"><span class="perm-tag">chat</span><span class="perm-tag">image</span><span class="perm-tag">voice</span><span class="perm-tag">memory</span></div>
+        <div class="key-info-row">
+          <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>创建于 2026-03-15</span>
+          <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M20 12a8 8 0 11-16 0 8 8 0 0116 0z"/><path d="M12 8v4l2 2"/></svg>最近调用 2 分钟前</span>
+        </div>
+        <div class="key-actions"><button class="key-act copy" onclick="copyKey('sk-prod-8a3f2...c91d', this)">复制</button><button class="key-act revoke" onclick="revokeKey('key-1')">吊销</button></div>
+      </div>
+
+      <div class="key-card" id="key-2">
+        <div class="key-name-row">
+          <span class="key-name"><svg viewBox="0 0 24 24" fill="none" stroke="#C4B5FD" stroke-width="1.8" stroke-linecap="round" style="width:18px;height:18px;"><circle cx="8" cy="12" r="6"/><path d="M13 9l7-7M16 2h5v5"/></svg>开发测试</span>
+          <span class="key-status active">● 活跃</span>
+        </div>
+        <div class="key-masked" onclick="copyKey('sk-dev-7b1e9...d45a', this)" title="点击复制"><span class="mask-dot">sk-dev-7b1e9••••••••d45a</span></div>
+        <div class="perms"><span class="perm-tag">chat</span><span class="perm-tag">image</span></div>
+        <div class="key-info-row">
+          <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>创建于 2026-06-01</span>
+          <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M20 12a8 8 0 11-16 0 8 8 0 0116 0z"/><path d="M12 8v4l2 2"/></svg>最近调用 1 小时前</span>
+        </div>
+        <div class="key-actions"><button class="key-act copy" onclick="copyKey('sk-dev-7b1e9...d45a', this)">复制</button><button class="key-act revoke" onclick="revokeKey('key-2')">吊销</button></div>
+      </div>
+
+      <div class="key-card" id="key-3" style="opacity:0.5;">
+        <div class="key-name-row">
+          <span class="key-name"><svg viewBox="0 0 24 24" fill="none" stroke="#C0A0B0" stroke-width="1.8" stroke-linecap="round" style="width:18px;height:18px;"><circle cx="8" cy="12" r="6"/><path d="M13 9l7-7M16 2h5v5"/></svg>临时测试</span>
+          <span class="key-status revoked">已吊销</span>
+        </div>
+        <div class="key-masked"><span class="mask-dot" style="text-decoration:line-through;">sk-tmp-••••••••••••</span></div>
+        <div class="perms"><span class="perm-tag">chat</span></div>
+        <div class="key-info-row"><span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>创建于 2026-05-20 · 吊销于 2026-06-10</span></div>
+      </div>
+    </div>
+
+    <div id="usageTab" style="display:none;">
+      <div class="key-card">
+        <div style="font-size:14px;font-weight:700;color:#3A2030;margin-bottom:12px;">生产环境 — 近7天调用</div>
+        <div style="display:flex;align-items:flex-end;gap:8px;height:120px;padding:4px 0;">
+          <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;"><div style="width:100%;height:85px;background:linear-gradient(180deg,#F472B6,#FFB0C0);border-radius:6px 6px 2px 2px;"></div><span style="font-size:10px;color:#B090A0;">一</span></div>
+          <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;"><div style="width:100%;height:60px;background:linear-gradient(180deg,#F472B6,#FFB0C0);border-radius:6px 6px 2px 2px;"></div><span style="font-size:10px;color:#B090A0;">二</span></div>
+          <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;"><div style="width:100%;height:100px;background:linear-gradient(180deg,#F472B6,#FFB0C0);border-radius:6px 6px 2px 2px;"></div><span style="font-size:10px;color:#B090A0;">三</span></div>
+          <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;"><div style="width:100%;height:72px;background:linear-gradient(180deg,#F472B6,#FFB0C0);border-radius:6px 6px 2px 2px;"></div><span style="font-size:10px;color:#B090A0;">四</span></div>
+          <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;"><div style="width:100%;height:110px;background:linear-gradient(180deg,#F472B6,#FFB0C0);border-radius:6px 6px 2px 2px;"></div><span style="font-size:10px;color:#B090A0;">五</span></div>
+          <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;"><div style="width:100%;height:95px;background:linear-gradient(180deg,#F472B6,#FFB0C0);border-radius:6px 6px 2px 2px;"></div><span style="font-size:10px;color:#B090A0;">六</span></div>
+          <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;"><div style="width:100%;height:45px;background:linear-gradient(180deg,#F472B6,#FFB0C0);border-radius:6px 6px 2px 2px;"></div><span style="font-size:10px;color:#B090A0;">日</span></div>
+        </div>
+        <div style="display:flex;justify-content:space-between;margin-top:8px;font-size:11px;color:#B090A0;"><span>日均: 183 次</span><span>峰值: 287 次 (周五)</span><span>总计: 1,283 次</span></div>
+      </div>
+      <div class="key-card">
+        <div style="font-size:14px;font-weight:700;color:#3A2030;margin-bottom:10px;">端点分布（本月）</div>
+        <div style="display:flex;flex-direction:column;gap:8px;">
+          <div style="display:flex;align-items:center;gap:8px;"><span style="font-size:12px;width:55px;color:#B090A0;">/chat</span><div style="flex:1;height:8px;background:#FFF0F3;border-radius:4px;overflow:hidden;"><div style="width:58%;height:100%;background:#F472B6;border-radius:4px;"></div></div><span style="font-size:11px;color:#3A2030;font-weight:600;width:35px;text-align:right;">58%</span></div>
+          <div style="display:flex;align-items:center;gap:8px;"><span style="font-size:12px;width:55px;color:#B090A0;">/image</span><div style="flex:1;height:8px;background:#FFF0F3;border-radius:4px;overflow:hidden;"><div style="width:22%;height:100%;background:#C4B5FD;border-radius:4px;"></div></div><span style="font-size:11px;color:#3A2030;font-weight:600;width:35px;text-align:right;">22%</span></div>
+          <div style="display:flex;align-items:center;gap:8px;"><span style="font-size:12px;width:55px;color:#B090A0;">/voice</span><div style="flex:1;height:8px;background:#FFF0F3;border-radius:4px;overflow:hidden;"><div style="width:13%;height:100%;background:#FFB347;border-radius:4px;"></div></div><span style="font-size:11px;color:#3A2030;font-weight:600;width:35px;text-align:right;">13%</span></div>
+          <div style="display:flex;align-items:center;gap:8px;"><span style="font-size:12px;width:55px;color:#B090A0;">/memory</span><div style="flex:1;height:8px;background:#FFF0F3;border-radius:4px;overflow:hidden;"><div style="width:7%;height:100%;background:#B794F4;border-radius:4px;"></div></div><span style="font-size:11px;color:#3A2030;font-weight:600;width:35px;text-align:right;">7%</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="new-key-form" id="newKeyForm" style="position:absolute;top:160px;left:20px;right:20px;z-index:25;margin:0;">
+        <label>提供商</label>
+    <select id="newKeyProvider">
+      <option value="deepseek">DeepSeek</option>
+      <option value="kimi">Kimi</option>
+      <option value="minimax">MiniMax</option>
+      <option value="mimo">Mimo</option>
+      <option value="glm">GLM</option>
+      <option value="qwen_vl">Qwen VL</option>
+    </select>
+    <label>Key 名称</label><input type="text" id="newKeyName" placeholder="例：移动端 App">
+    <label>API Key</label><input type="text" id="newKeyValue" placeholder="粘贴你的 API Key，如 sk-...">
+    <label>权限范围</label>
+    <div class="perm-checkboxes">
+        <label class="perm-check"><input type="checkbox" checked> <span class="perm-name">chat</span> <span class="perm-cn">聊天对话</span></label>
+        <label class="perm-check"><input type="checkbox" checked> <span class="perm-name">image</span> <span class="perm-cn">图像生成</span></label>
+        <label class="perm-check"><input type="checkbox"> <span class="perm-name">voice</span> <span class="perm-cn">语音合成</span></label>
+        <label class="perm-check"><input type="checkbox"> <span class="perm-name">memory</span> <span class="perm-cn">记忆存储</span></label>
+    </div>
+    <label>过期时间</label>
+    <select><option>永不过期</option><option>30 天后</option><option>90 天后</option><option>180 天后</option><option>自定义日期</option></select>
+    <div class="form-actions"><button class="form-btn cancel" onclick="toggleNewForm()">取消</button><button class="form-btn create" onclick="createKey()">创建 Key</button></div>
+  </div>
+
+  <div class="bottom-nav" id="bottomNav">
+    <a class="nav-item" href="首页仪表盘.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12l9-9 9 9"/><path d="M5 10v10a1 1 0 001 1h4v-6h4v6h4a1 1 0 001-1V10"/></svg>首页</a>
+    <a class="nav-item" href="聊天页.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v13H8l-4 4v-4H4z"/></svg>聊天</a>
+    <a class="nav-item" href="我的Bot.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="5"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/><circle cx="10" cy="7" r="1" fill="currentColor" stroke="none"/><circle cx="14" cy="7" r="1" fill="currentColor" stroke="none"/></svg>Bot管理</a>
+    <a class="nav-item" href="我的.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="12" cy="10" r="3"/><path d="M7 18c0-2 2.2-4 5-4s5 2 5 4"/></svg>我的</a>
+  </div>
+  <div class="toast" id="toast" style="top:120px;"></div>
+</div>
+<script src="shared/config.js"></script>
+<script src="shared/api.js"></script>
+<script src="shared/app.js"></script>
+<script>
+// ===== API Key 管理 — API 动态加载 =====
+(function() {
+  'use strict';
+  if (!API.isLoggedIn()) { location.href = '登录页.html'; return; }
+
+  var currentTab = 'keys';
+
+  // ---- 加载用量概览 ----
+  function loadUsageSummary() {
+    API.getApiKeyUsageSummary().then(function(d) {
+      var totalEl = document.getElementById('totalCalls');
+      var activeEl = document.querySelector('.usage-item:nth-child(3) .val');
+      var successEl = document.querySelector('.usage-item:nth-child(5) .val');
+      if (totalEl) totalEl.textContent = (d.total_calls || 0).toLocaleString();
+      if (activeEl) activeEl.textContent = d.active_keys || 0;
+      if (successEl) successEl.textContent = (d.success_rate ? (d.success_rate*100).toFixed(1)+'%' : '--');
+    }).catch(function() {});
+  }
+
+  // ---- 加载 Key 列表 ----
+  function loadKeys() {
+    API.getApiKeys().then(function(d) {
+      var container = document.getElementById('keysTab');
+      if (!container) return;
+      if (!d.keys || d.keys.length === 0) {
+        container.innerHTML = '<div class="key-card" style="text-align:center;padding:32px;"><div style="font-size:14px;color:#B090A0;">暂无 API Key</div><div style="font-size:12px;color:#C0A0B0;">点击右上角 + 创建一个</div></div>';
+        return;
+      }
+      container.innerHTML = d.keys.map(function(k) {
+        var isActive = k.status === 'active';
+        var scopesHtml = (k.scopes || []).map(function(s) {
+          return '<span class="perm-tag">' + _esc(s) + '</span>';
+        }).join('');
+        var createdDate = k.created_at ? new Date(k.created_at * 1000).toLocaleDateString('zh-CN') : '--';
+        var lastUsed = k.last_used ? _formatRelative(k.last_used) : '未使用';
+        return '<div class="key-card" id="key-' + k.id + '" style="' + (isActive ? '' : 'opacity:0.5;') + '">' +
+          '<div class="key-name-row">' +
+            '<span class="key-name"><svg viewBox="0 0 24 24" fill="none" stroke="' + (isActive ? '#F472B6' : '#C0A0B0') + '" stroke-width="1.8" stroke-linecap="round" style="width:18px;height:18px;"><circle cx="8" cy="12" r="6"/><path d="M13 9l7-7M16 2h5v5"/></svg>' + _esc(k.name || '未命名') + '</span>' +
+            '<span class="key-status ' + (isActive ? 'active' : 'revoked') + '">' + (isActive ? '● 活跃' : '已吊销') + '</span>' +
+          '</div>' +
+          '<div class="key-masked" onclick="copyKey('' + _esc(k.key_suffix || '') + '', this)" title="点击复制后缀"><span class="mask-dot">' + _esc(k.provider || '') + ':' + _esc(k.key_suffix || '****') + '</span></div>' +
+          (scopesHtml ? '<div class="perms">' + scopesHtml + '</div>' : '') +
+          '<div class="key-info-row">' +
+            '<span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>创建于 ' + createdDate + '</span>' +
+            '<span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M20 12a8 8 0 11-16 0 8 8 0 0116 0z"/><path d="M12 8v4l2 2"/></svg>' + lastUsed + '</span>' +
+          '</div>' +
+          (isActive ? '<div class="key-actions"><button class="key-act copy" onclick="copyKey('' + _esc(k.key_suffix || '') + '', this)">复制</button><button class="key-act revoke" onclick="doRevoke(' + k.id + ')">吊销</button></div>' : '') +
+        '</div>';
+      }).join('');
+    }).catch(function(err) {
+      var container = document.getElementById('keysTab');
+      if (container) container.innerHTML = '<div class="key-card" style="text-align:center;padding:32px;color:#F472B6;">加载失败: ' + _esc(err.message || '网络错误') + '</div>';
+    });
+  }
+
+  function _formatRelative(ts) {
+    if (!ts) return '未使用';
+    var diff = (Date.now()/1000 - ts);
+    if (diff < 60) return '刚刚';
+    if (diff < 3600) return Math.floor(diff/60) + ' 分钟前';
+    if (diff < 86400) return Math.floor(diff/3600) + ' 小时前';
+    return Math.floor(diff/86400) + ' 天前';
+  }
+
+  function _esc(s) { return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
+
+  // ---- 复制 ----
+  window.copyKey = function(text, el) {
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(text).then(function() {
+        if (window.showToast) showToast('已复制到剪贴板 ✓');
+      });
+    } else {
+      if (window.showToast) showToast('已复制: ' + text);
+    }
+  };
+
+  // ---- 吊销 ----
+  window.doRevoke = function(id) {
+    if (!confirm('确定要吊销该 API Key 吗？吊销后立即失效，不可恢复。')) return;
+    API.revokeApiKey(id).then(function() {
+      if (window.showToast) showToast('已吊销');
+      loadKeys();
+      loadUsageSummary();
+    }).catch(function(err) {
+      alert('吊销失败: ' + (err.message || '未知错误'));
+    });
+  };
+
+  // ---- 创建 ----
+  window.createKey = function() {
+    var name = document.getElementById('newKeyName').value.trim() || '未命名';
+    var keyValue = document.getElementById('newKeyValue').value.trim();
+    var provider = document.getElementById('newKeyProvider').value;
+    if (!keyValue) { if (window.showToast) showToast('请填写 API Key'); return; }
+    var scopes = [];
+    document.querySelectorAll('#newKeyForm .perm-check input[type="checkbox"]').forEach(function(cb) {
+      if (cb.checked) {
+        var nameEl = cb.parentElement.querySelector('.perm-name');
+        if (nameEl) scopes.push(nameEl.textContent.trim());
+      }
+    });
+    API.createApiKey({ name: name, provider: provider, key_value: keyValue, scopes: scopes }).then(function() {
+      if (window.showToast) showToast('✓ Key 创建成功');
+      toggleNewForm();
+      document.getElementById('newKeyName').value = '';
+      document.getElementById('newKeyValue').value = '';
+      loadKeys();
+      loadUsageSummary();
+    }).catch(function(err) {
+      alert('创建失败: ' + (err.message || '未知错误'));
+    });
+  };
+
+  // ---- Tab 切换 ----
+  window.switchTab = function(tab, btn) {
+    currentTab = tab;
+    document.querySelectorAll('.tab-btn').forEach(function(b){ b.classList.remove('active'); });
+    btn.classList.add('active');
+    document.getElementById('keysTab').style.display = tab === 'keys' ? '' : 'none';
+    document.getElementById('usageTab').style.display = tab === 'usage' ? '' : 'none';
+  };
+
+  // ---- 表单切换 ----
+  window.toggleNewForm = function() {
+    document.getElementById('newKeyForm').classList.toggle('show');
+  };
+
+  // 初始化
+  loadUsageSummary();
+  loadKeys();
+})();
+</script>
+</body>
+</html>

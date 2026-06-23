@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no">
+<title>黑名单 — UI 原型</title>
+<link rel="stylesheet" href="shared/tokens.css">
+<link rel="stylesheet" href="shared/base.css">
+<link rel="stylesheet" href="shared/components.css">
+<link rel="stylesheet" href="shared/dark-mode.css">
+<link rel="stylesheet" href="shared/effects.css">
+<style>
+/* ===== 黑名单 — 页面专属样式 ===== */
+.title-bar .count { font-size: 12px; opacity: 0.8; }
+
+/* 说明 */
+.desc-card {
+  margin: 0 20px 14px; padding: 14px 16px; border-radius: 16px;
+  background: rgba(244, 114, 182,0.04);
+  border: 1px solid rgba(244, 114, 182,0.1);
+  font-size: 12px; color: #B090A0; line-height: 1.6;
+}
+
+/* 用户卡片 */
+.user-card {
+  margin: 6px 20px; padding: 14px 16px;
+  background: rgba(255,255,255,0.7); backdrop-filter: blur(8px);
+  border-radius: 16px; display: flex; align-items: center; gap: 12px;
+  border: 1.5px solid rgba(255,255,255,0.7);
+  box-shadow: 0 3px 12px rgba(244, 114, 182,0.05);
+  transition: all 0.25s;
+}
+.user-card.removing { transform: translateX(120%); opacity: 0; }
+.user-avatar {
+  width: 44px; height: 44px; border-radius: 50%; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 18px; font-weight: 700; color: #fff;
+}
+.av-1 { background: linear-gradient(135deg, #F472B6, #F9A8D4); }
+.av-2 { background: linear-gradient(135deg, #C4B5FD, #B794F4); }
+.av-3 { background: linear-gradient(135deg, #FFB347, #FFC773); }
+.av-4 { background: linear-gradient(135deg, #4CAF50, #81C784); }
+.user-info { flex: 1; }
+.user-name { font-size: 15px; font-weight: 700; color: #3A2030; }
+.user-reason { font-size: 11px; color: #C090A0; margin-top: 2px; }
+.user-time { font-size: 11px; color: #C0A0B0; }
+.unblock-btn {
+  padding: 7px 16px; border-radius: 14px; font-size: 12px; font-weight: 700;
+  background: #fff; color: #F472B6; border: 1.5px solid rgba(244, 114, 182,0.25);
+  cursor: pointer; font-family: inherit; transition: all 0.2s; white-space: nowrap;
+}
+.unblock-btn:hover { background: #F472B6; color: #fff; }
+.unblock-btn:active { transform: scale(0.95); }
+
+/* 空态 */
+.empty-state { text-align: center; padding: 80px 20px; }
+.empty-state .icon { width: 72px; height: 72px; margin: 0 auto 16px; }
+.empty-state .icon svg { width: 72px; height: 72px; stroke: #D0B0C0; }
+.empty-state .title { font-size: 17px; font-weight: 700; color: #3A2030; margin-bottom: 6px; }
+.empty-state .desc { font-size: 13px; color: #B090A0; }
+
+/* ===== Dark Mode ===== */
+.phone.dark-mode .desc-card { background: rgba(244, 114, 182,0.06); border-color: rgba(244, 114, 182,0.12); color: #9088A0; }
+.phone.dark-mode .user-card { background: #16213E; border-color: rgba(255,255,255,0.06); }
+.phone.dark-mode .user-name { color: #E0D8E8; }
+.phone.dark-mode .user-reason { color: #9088A0; }
+.phone.dark-mode .user-time { color: #706878; }
+.phone.dark-mode .unblock-btn { background: #16213E; border-color: rgba(244, 114, 182,0.2); }
+</style>
+</head>
+<body>
+<div class="phone">
+  <div class="title-bar">
+    <a class="back" href="我的.html">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M15 18l-6-6 6-6"/></svg>
+    </a>
+    <span class="title">黑名单</span>
+    <span class="count" id="blockCount">4人</span>
+  </div>
+  <div class="scroll-area" id="blockList">
+    <div id="blockListInner">
+    <div class="loading-state" style="text-align:center;padding:40px;color:#C0A0B0;">加载中…</div>
+    </div>
+    <div class="desc-card" style="display:none;">
+      被拉黑的用户无法给你发消息或查看你的 Bot。解除拉黑后，历史消息不会恢复。
+    </div>
+
+    <!-- 用户 1 -->
+    <div class="user-card" id="user1">
+      <div class="user-avatar av-1">A</div>
+      <div class="user-info">
+        <div class="user-name">广告号_推广001</div>
+        <div class="user-reason">拉黑原因：发送垃圾广告</div>
+      </div>
+      <div style="text-align:right;">
+        <div class="user-time">3天前</div>
+        <button class="unblock-btn" style="margin-top:6px;" onclick="removeUser('user1')">解除</button>
+      </div>
+    </div>
+
+    <!-- 用户 2 -->
+    <div class="user-card" id="user2">
+      <div class="user-avatar av-2">S</div>
+      <div class="user-info">
+        <div class="user-name">骚扰用户_002</div>
+        <div class="user-reason">拉黑原因：频繁骚扰</div>
+      </div>
+      <div style="text-align:right;">
+        <div class="user-time">1周前</div>
+        <button class="unblock-btn" style="margin-top:6px;" onclick="removeUser('user2')">解除</button>
+      </div>
+    </div>
+
+    <!-- 用户 3 -->
+    <div class="user-card" id="user3">
+      <div class="user-avatar av-3">M</div>
+      <div class="user-info">
+        <div class="user-name">恶意刷屏_003</div>
+        <div class="user-reason">拉黑原因：刷屏攻击</div>
+      </div>
+      <div style="text-align:right;">
+        <div class="user-time">2周前</div>
+        <button class="unblock-btn" style="margin-top:6px;" onclick="removeUser('user3')">解除</button>
+      </div>
+    </div>
+
+    <!-- 用户 4 -->
+    <div class="user-card" id="user4">
+      <div class="user-avatar av-4">T</div>
+      <div class="user-info">
+        <div class="user-name">诈骗账号_004</div>
+        <div class="user-reason">拉黑原因：诈骗信息</div>
+      </div>
+      <div style="text-align:right;">
+        <div class="user-time">1个月前</div>
+        <button class="unblock-btn" style="margin-top:6px;" onclick="removeUser('user4')">解除</button>
+      </div>
+    </div>
+
+    <div style="height:20px;"></div>
+  </div>
+  <div class="toast" id="toast"></div>
+</div>
+<script src="shared/config.js"></script>
+<script src="shared/api.js"></script>
+<script src="shared/app.js"></script>
+<script>
+function formatBlockTime(ts) {
+  var d = new Date(ts * 1000); var now = new Date();
+  var diff = Math.floor((now - d) / 864e5);
+  if (diff === 0) return '今天';
+  if (diff === 1) return '昨天';
+  if (diff < 7) return diff + '天前';
+  if (diff < 30) return Math.floor(diff/7) + '周前';
+  return Math.floor(diff/30) + '个月前';
+}
+
+function loadBlacklist() {
+  API.getBlacklist().then(function(d) {
+    var container = document.getElementById('blockListInner');
+    if (!container) { container = document.getElementById('blockList'); }
+    if (!d.blacklist || d.blacklist.length === 0) {
+      container.innerHTML = '<div class="empty-state"><div class="icon"><svg viewBox="0 0 72 72" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="36" cy="36" r="30"/><path d="M28 28l16 16M44 28L28 44"/></svg></div><div class="title">黑名单为空</div><div class="desc">没有被拉黑的用户</div></div>';
+      if (document.getElementById('blockCount')) document.getElementById('blockCount').textContent = '0人';
+      return;
+    }
+    if (document.getElementById('blockCount')) document.getElementById('blockCount').textContent = d.count + '人';
+    var colors = ['av-1','av-2','av-3','av-4'];
+    var html = d.blacklist.map(function(b, i) {
+      return '<div class="user-card" id="block_' + b.id + '">' +
+        '<div class="user-avatar ' + (colors[i % 4]) + '">' + (b.name || '?').charAt(0).toUpperCase() + '</div>' +
+        '<div class="user-info"><div class="user-name">' + (b.name || '未知用户') + '</div>' +
+        '<div class="user-reason">拉黑原因：' + (b.reason || '未说明') + '</div></div>' +
+        '<div style="text-align:right;"><div class="user-time">' + formatBlockTime(b.created_at) + '</div>' +
+        '<button class="unblock-btn" style="margin-top:6px;" onclick="removeBlock(' + b.id + ')">解除</button></div></div>';
+    }).join('');
+    container.innerHTML = html + '<div style="height:20px;"></div>';
+  }).catch(function(err) {
+    var container = document.getElementById('blockListInner') || document.getElementById('blockList');
+    container.innerHTML = '<div class="empty-state"><div class="title">加载失败</div><div class="desc">' + (err.message || '网络错误') + '</div></div>';
+  });
+}
+
+function removeBlock(id) {
+  API.removeFromBlacklist(id).then(function() {
+    var el = document.getElementById('block_' + id);
+    if (el) { el.classList.add('removing'); }
+    setTimeout(function() { loadBlacklist(); }, 300);
+    showToast('已解除拉黑');
+  }).catch(function(err) {
+    showToast('解除失败：' + (err.message || '未知错误'));
+  });
+}
+
+loadBlacklist();
+</script>
+</body>
+</html>

@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no">
+<title>编辑个人资料 — UI 原型</title>
+<link rel="stylesheet" href="shared/tokens.css">
+<link rel="stylesheet" href="shared/base.css">
+<link rel="stylesheet" href="shared/components.css">
+<link rel="stylesheet" href="shared/anime-cat.css">
+<link rel="stylesheet" href="shared/dark-mode.css">
+<link rel="stylesheet" href="shared/effects.css">
+<style>
+/* ===== Page-Specific: 编辑个人资料 ===== */
+
+/* 头像区域 */
+.avatar-section {
+  display: flex; flex-direction: column; align-items: center; padding: 24px 0 20px;
+}
+.avatar-wrap {
+  width: 88px; height: 88px; border-radius: 50%; position: relative; cursor: pointer;
+  background: transparent;
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 4px 16px rgba(244, 114, 182,0.15);
+  transition: all 0.25s;
+}
+.avatar-wrap:hover { transform: scale(1.04); }
+.avatar-wrap:active { transform: scale(0.96); }
+.avatar-edit-badge {
+  position: absolute; bottom: 2px; right: 2px;
+  width: 28px; height: 28px; border-radius: 50%;
+  background: #fff; color: #F472B6;
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.12); z-index: 5;
+}
+.avatar-edit-badge svg { width: 14px; height: 14px; }
+.avatar-hint { font-size: 12px; color: #B090A0; margin-top: 8px; }
+
+/* 表单区域 */
+.form-section { padding: 0 20px; }
+.field-group { margin-bottom: 18px; }
+.field-label {
+  display: block; font-size: 12px; font-weight: 700; color: #6A5060;
+  margin-bottom: 6px; margin-left: 4px;
+}
+textarea.input-field { resize: none; height: 80px; }
+
+/* 性别选择 */
+.gender-row { display: flex; gap: 10px; }
+.radio-option {
+  flex: 1; padding: 14px; border-radius: 16px; text-align: center; cursor: pointer;
+  background: rgba(255,255,255,0.7); border: 1.5px solid rgba(244, 114, 182,0.15);
+  font-size: 14px; font-weight: 600; color: #6A5060; font-family: inherit;
+  transition: all 0.25s;
+}
+.radio-option:hover { border-color: rgba(244, 114, 182,0.3); }
+.radio-option.selected { background: rgba(244, 114, 182,0.06); border-color: #F472B6; color: #F472B6; }
+
+/* 自定义性别 */
+.gender-templates { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 8px; }
+.gender-tag {
+  display: inline-block; padding: 6px 14px; border-radius: 20px; font-size: 12px;
+  background: rgba(244,114,182,0.06); color: #F472B6;
+  border: 1px solid rgba(244,114,182,0.18); cursor: pointer;
+  transition: all 0.2s; font-family: inherit;
+}
+.gender-tag:hover { background: rgba(244,114,182,0.14); border-color: rgba(244,114,182,0.35); }
+.gender-tag:active { transform: scale(0.95); }
+
+/* Dark mode — page-specific overrides */
+.phone.dark-mode .field-label { color: #B0A0C0; }
+.phone.dark-mode .radio-option {
+  background: #16213E; border-color: rgba(255,255,255,0.08); color: #C0B8D0;
+}
+.phone.dark-mode .radio-option.selected {
+  background: rgba(244, 114, 182,0.15); border-color: #F472B6; color: #F472B6;
+}
+.phone.dark-mode .avatar-wrap { box-shadow: 0 4px 16px rgba(244, 114, 182,0.2); }
+.phone.dark-mode .avatar-edit-badge { background: #16213E; color: #F472B6; }
+.phone.dark-mode .avatar-hint { color: #8078A0; }
+.phone.dark-mode .gender-tag { background: rgba(244, 114, 182,0.1); border-color: rgba(244, 114, 182,0.2); color: #F9A8D4; }
+.phone.dark-mode .gender-tag:hover { background: rgba(244, 114, 182,0.2); }
+</style>
+</head>
+<body>
+<div class="phone">
+  <div class="title-bar">
+    <a class="back" href="我的.html">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M15 18l-6-6 6-6"/></svg>
+    </a>
+    <span class="title">编辑个人资料</span>
+  </div>
+  <div class="scroll-area">
+    <!-- 头像 — v4 CSS 猫娘（Claymorphism × Macaron Pastel） -->
+    <div class="avatar-section">
+      <div class="avatar-wrap" id="avatarDisplay" onclick="changeAvatar()">
+        <div class="img-cat hero img-lg gentle"><img src="shared/agnes-cat.png" alt="猫娘"></div>
+        <div class="avatar-edit-badge">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg>
+        </div>
+      </div>
+      <div class="avatar-hint">点击更换头像</div>
+    </div>
+
+    <!-- 表单 -->
+    <div class="form-section">
+      <div class="field-group">
+        <label class="field-label">用户 ID</label>
+        <input class="input-field" value="NianNian2024" disabled style="opacity:0.55;cursor:not-allowed;">
+      </div>
+
+      <div class="field-group">
+        <label class="field-label">昵称</label>
+        <input class="input-field" id="nickname" value="小明" placeholder="请输入昵称" maxlength="20">
+      </div>
+
+      <div class="field-group">
+        <label class="field-label">个性签名</label>
+        <textarea class="input-field" id="bio" placeholder="写一句话介绍自己..." maxlength="60">和猫娘一起聊天的每一天~</textarea>
+      </div>
+
+      <div class="field-group">
+        <label class="field-label">性别</label>
+        <div class="gender-row">
+          <button class="radio-option selected" onclick="selectGender(this,'男')">男</button>
+          <button class="radio-option" onclick="selectGender(this,'女')">女</button>
+          <button class="radio-option" onclick="selectGender(this,'自定义')">自定义</button>
+        </div>
+        <div class="custom-gender-wrap" id="customGenderWrap" style="display:none;">
+          <input class="input-field" id="customGender" placeholder="输入自定义性别…" maxlength="20" style="margin-top:10px;">
+          <div class="gender-templates">
+            <span class="gender-tag" onclick="applyGenderTemplate('沃尔玛购物袋')">沃尔玛购物袋</span>
+            <span class="gender-tag" onclick="applyGenderTemplate('武装直升机')">武装直升机</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="field-group">
+        <label class="field-label">生日</label>
+        <input class="input-field" id="birthday" type="date" value="2000-01-01">
+      </div>
+    </div>
+
+    <button class="btn-primary" style="width:calc(100% - 40px);margin:24px 20px 8px;" onclick="saveProfile()">保存</button>
+  </div>
+  <div class="toast" id="toast"></div>
+</div>
+
+<script>
+var selectedGender = '男';
+var currentPersona = 'gentle'; // 当前猫娘人格：gentle/tsundere/energetic/default
+
+function selectGender(el, gender) {
+  selectedGender = gender;
+  var wrap = document.getElementById('customGenderWrap');
+  if (gender === '自定义') {
+    wrap.style.display = 'block';
+  } else {
+    wrap.style.display = 'none';
+    document.getElementById('customGender').value = '';
+  }
+  el.parentElement.querySelectorAll('.radio-option').forEach(function(b){ b.classList.remove('selected'); });
+  el.classList.add('selected');
+}
+
+function applyGenderTemplate(value) {
+  document.getElementById('customGender').value = value;
+}
+
+function changeAvatar() {
+  // 轮换猫娘人格变体 (v4 支持 gentle / tsundere / energetic / 默认)
+  var personas = ['gentle', 'tsundere', 'energetic', ''];
+  var labels = ['温柔', '傲娇', '元气', '默认'];
+  var idx = personas.indexOf(currentPersona);
+  idx = (idx + 1) % personas.length;
+  currentPersona = personas[idx];
+
+  var cat = document.querySelector('#avatarDisplay .img-cat');
+  cat.className = 'img-cat avatar img-lg';
+  if (currentPersona) cat.classList.add(currentPersona);
+  cat.style.cssText = 'transform:scale(1.2);margin:0 auto;';
+
+  showToast('头像风格：' + labels[idx]);
+}
+
+function saveProfile() {
+  var nickname = document.getElementById('nickname').value.trim();
+  if (!nickname) { showToast('昵称不能为空'); return; }
+  var finalGender = selectedGender;
+  if (selectedGender === '自定义') {
+    var customVal = document.getElementById('customGender').value.trim();
+    finalGender = customVal || '自定义';
+  }
+  showToast('个人资料已保存（性别：' + finalGender + '）');
+  setTimeout(function(){ location.href = '我的.html'; }, 1200);
+}
+</script>
+
+<script src="shared/config.js"></script>
+<script src="shared/api.js"></script>
+<script src="shared/app.js">
+// Load user profile
+if (API.isLoggedIn()) {
+  API.getProfile().then(function(user) {
+    var nickEl = document.querySelector('[data-field="nickname"]') || document.getElementById('nicknameInput');
+    var bioEl = document.querySelector('[data-field="bio"]') || document.getElementById('bioInput');
+    if (nickEl) nickEl.value = user.nickname || '';
+    if (bioEl) bioEl.value = user.bio || '';
+    // gender
+    if (user.gender) {
+      var chips = document.querySelectorAll('.radio-chip');
+      chips.forEach(function(c) {
+        if (c.getAttribute('data-value') === user.gender) c.classList.add('selected');
+      });
+    }
+  }).catch(function() {});
+}
+// Override save to use API
+var origSaveProfile = window.saveProfile;
+window.saveProfile = function() {
+  var data = {};
+  var nickEl = document.querySelector('[data-field="nickname"]') || document.getElementById('nicknameInput');
+  var bioEl = document.querySelector('[data-field="bio"]') || document.getElementById('bioInput');
+  if (nickEl && nickEl.value) data.nickname = nickEl.value;
+  if (bioEl && bioEl.value) data.bio = bioEl.value;
+  var selChip = document.querySelector('.radio-chip.selected');
+  if (selChip) data.gender = selChip.getAttribute('data-value');
+  API.updateProfile(data).then(function() {
+    if (window.showToast) showToast('保存成功');
+  }).catch(function(err) {
+    if (window.showToast) showToast('保存失败：' + (err.message || '未知错误'));
+  });
+};
+
+</script>
+</body>
+</html>

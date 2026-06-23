@@ -173,6 +173,14 @@ async def init_platform_tables() -> None:
         )
     """)
 
+    # ── user_token_reset 表（修改密码时批量吊销）──
+    await db.execute("""
+        CREATE TABLE IF NOT EXISTS user_token_reset (
+            user_id INTEGER PRIMARY KEY,
+            reset_at REAL NOT NULL
+        )
+    """)
+
     await db.commit()
 
 
@@ -466,6 +474,20 @@ async def get_messages(
     return [dict(r) for r in rows]
 
 
+async def clear_bot_memory(bot_id: int) -> int:
+    """清除指定 Bot 的所有聊天消息，返回删除条数。"""
+    from .db_core import get_db
+    db = await get_db()
+    async with db.execute(
+        "SELECT COUNT(*) as cnt FROM chat_messages WHERE bot_id = ?", (bot_id,)
+    ) as cur:
+        row = await cur.fetchone()
+    count = row["cnt"] if row else 0
+    await db.execute("DELETE FROM chat_messages WHERE bot_id = ?", (bot_id,))
+    await db.commit()
+    return count
+
+
 # ============================================================
 # revoked_tokens（H7: refresh 黑名单）
 # ============================================================
@@ -501,6 +523,33 @@ async def is_token_revoked(jti: str) -> bool:
         return False
     exp = row["expires_at"]
     return exp == 0 or exp > time.time()
+
+
+async def revoke_all_user_tokens(user_id: int) -> None:
+    """修改密码时吊销用户所有 refresh token。
+
+    通过 upsert user_token_reset 表实现批量吊销：
+    - 刷新 token 时若 iat < reset_at 则拒绝。
+    """
+    from .db_core import get_db
+    db = await get_db()
+    now = time.time()
+    await db.execute(
+        "INSERT OR REPLACE INTO user_token_reset (user_id, reset_at) VALUES (?, ?)",
+        (user_id, now),
+    )
+    await db.commit()
+
+
+async def get_user_token_reset_at(user_id: int) -> float:
+    """查询用户 token 批量吊销时间，未吊销返回 0。"""
+    from .db_core import get_db
+    db = await get_db()
+    async with db.execute(
+        "SELECT reset_at FROM user_token_reset WHERE user_id = ?", (user_id,)
+    ) as cur:
+        row = await cur.fetchone()
+    return row["reset_at"] if row else 0.0
 
 
 async def get_bot_abilities(bot_id: int) -> dict:

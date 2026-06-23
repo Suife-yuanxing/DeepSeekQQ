@@ -1,0 +1,697 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta http-equiv="refresh" content="0; url=我的.html">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no">
+<title>设置 — 已迁移至「我的」</title>
+<link rel="stylesheet" href="shared/tokens.css">
+<link rel="stylesheet" href="shared/base.css">
+<link rel="stylesheet" href="shared/components.css">
+<link rel="stylesheet" href="shared/anime-cat.css">
+<link rel="stylesheet" href="shared/dark-mode.css">
+<link rel="stylesheet" href="shared/effects.css">
+<style>
+/* ===== 账户卡片 ===== */
+.account-card {
+  margin: 8px 20px 12px; padding: 16px;
+  display: flex; align-items: center; gap: 14px;
+  cursor: pointer; transition: all 0.25s;
+  background: rgba(255,255,255,0.7); backdrop-filter: blur(8px);
+  border-radius: 16px;
+  border: 1.5px solid rgba(255,255,255,0.7);
+  box-shadow: 0 3px 12px rgba(244, 114, 182,0.05);
+}
+.account-card:hover { transform: translateY(-1px); border-color: rgba(244, 114, 182,0.2); }
+.account-card:active { transform: scale(0.98); }
+.account-avatar {
+  width: 52px; height: 52px; border-radius: 50%; flex-shrink: 0;
+  background: transparent;
+  display: flex; align-items: center; justify-content: center;
+}
+.account-info { flex: 1; }
+.account-name { font-size: 16px; font-weight: 800; color: #3A2030; }
+.account-id { font-size: 12px; color: #B090A0; margin-top: 2px; }
+.account-arrow { color: #C0A0B0; }
+.account-arrow svg { width: 16px; height: 16px; }
+
+/* ===== 聊天背景面板 ===== */
+.wallpaper-panel {
+  margin: 0 0 4px; padding: 10px 14px;
+  background: rgba(255,255,255,0.5); border-radius: 16px;
+  display: flex; align-items: center; gap: 10px;
+  border: 1px dashed rgba(244, 114, 182,0.2);
+}
+.wallpaper-panel .wp-label {
+  font-size: 11px; color: #B090A0; display: flex; align-items: center; gap: 4px;
+}
+.wallpaper-panel .wp-label svg { width: 14px; height: 14px; }
+.wallpaper-swatches { display: flex; gap: 6px; }
+.wp-swatch {
+  width: 26px; height: 26px; border-radius: 50%; cursor: pointer;
+  border: 2px solid transparent; transition: all 0.2s;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+}
+.wp-swatch:hover { transform: scale(1.15); }
+.wp-swatch.active { border-color: #F472B6; }
+.wp-swatch.grad-pink { background: linear-gradient(135deg, #FFE0E8, #FFD4DC); }
+.wp-swatch.grad-purple { background: linear-gradient(135deg, #E8E0F8, #D4CCF0); }
+.wp-swatch.solid-dark { background: #1A1A2E; }
+.wp-swatch.photo { background: linear-gradient(135deg, #87CEEB, #98FB98); position: relative; }
+.wp-swatch.photo::after { content: '📷'; font-size: 10px; position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; }
+.wp-swatch.custom-swatch.active { border-color: #7C5CBF; }
+
+/* ===== 品牌色预览链接（合入聊天背景内） ===== */
+.brand-link {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 11px; color: #C0A0B0; cursor: pointer; text-decoration: none;
+  transition: color 0.2s;
+}
+.brand-link:hover { color: #F472B6; }
+.brand-link svg { width: 12px; height: 12px; }
+
+/* ===== 设置分组 ===== */
+.setting-group { margin: 0 20px 12px; }
+
+/* ===== 取消设置项 margin-bottom 覆盖（已由 shared 提供） ===== */
+
+/* ===== 危险按钮 ===== */
+.danger-section { margin: 20px 20px 0; }
+.logout-btn {
+  width: 100%; padding: 14px; border-radius: 16px;
+  background: #fff; color: #F472B6; border: 1.5px solid rgba(244, 114, 182,0.25);
+  font-size: 15px; font-weight: 700; cursor: pointer; font-family: inherit;
+  transition: all 0.25s;
+}
+.logout-btn:hover { background: #F472B6; color: #fff; border-color: #F472B6; }
+.logout-btn:active { transform: scale(0.97); }
+
+/* ===== 版本号 ===== */
+.version-text { text-align: center; font-size: 11px; color: #D0B0C0; padding: 16px 0 8px; }
+
+/* ===== 字号大小弹窗 ===== */
+.font-size-grid { display: flex; gap: 12px; margin: 8px 0 16px; }
+.font-size-card {
+  flex: 1; padding: 16px 8px; border-radius: 16px; text-align: center; cursor: pointer;
+  background: rgba(244, 114, 182,0.04); border: 1.5px solid rgba(244, 114, 182,0.12);
+  transition: all 0.2s; font-family: inherit;
+}
+.font-size-card:hover { border-color: rgba(244, 114, 182,0.3); }
+.font-size-card.selected { background: rgba(244, 114, 182,0.08); border-color: #F472B6; }
+.font-size-card .size-label { font-size: 13px; font-weight: 700; color: #3A2030; }
+.font-size-card .size-preview { color: #B090A0; margin-top: 4px; }
+.font-size-card.selected .size-label { color: #F472B6; }
+.font-size-card.selected .size-preview { color: #F472B6; }
+.font-size-card .preview-s { font-size: 12px; }
+.font-size-card .preview-m { font-size: 15px; }
+.font-size-card .preview-l { font-size: 18px; }
+
+/* ===== 通知铃声弹窗 ===== */
+.ringtone-list { margin: 4px 0 12px; }
+.ringtone-option {
+  display: flex; align-items: center; gap: 12px; width: 100%;
+  padding: 13px 16px; border-radius: 16px; cursor: pointer;
+  background: none; border: none; font-family: inherit;
+  margin-bottom: 4px; transition: all 0.2s; text-align: left;
+}
+.ringtone-option:hover { background: rgba(244, 114, 182,0.04); }
+.ringtone-option.selected { background: rgba(244, 114, 182,0.08); }
+.ringtone-option .ring-name { flex: 1; font-size: 15px; font-weight: 600; color: #3A2030; }
+.ringtone-option .ring-desc { font-size: 11px; color: #B090A0; }
+.ringtone-option .ring-check { color: #F472B6; font-size: 16px; font-weight: 700; opacity: 0; }
+.ringtone-option.selected .ring-check { opacity: 1; }
+.ringtone-option.selected .ring-name { color: #F472B6; }
+.ringtone-import {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  padding: 14px; border-radius: 16px; cursor: pointer;
+  background: rgba(124,92,191,0.05); border: 1.5px dashed rgba(124,92,191,0.25);
+  font-family: inherit; font-size: 14px; font-weight: 700; color: #7C5CBF;
+  transition: all 0.2s; justify-content: center; margin-top: 8px;
+}
+.ringtone-import:hover { background: rgba(124,92,191,0.1); border-color: #7C5CBF; }
+.ringtone-import svg { width: 18px; height: 18px; }
+
+/* ===== 管理员入口 ===== */
+.admin-group { display: none; }
+.admin-group.visible { display: block; }
+.admin-badge {
+  display: inline-block; background: linear-gradient(135deg, #1A1A2E, #16213E);
+  color: #ADD8E6; font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 10px;
+  margin-left: 6px; vertical-align: middle; letter-spacing: 0.5px;
+}
+.setting-item.admin-entry .item-label { color: #1A1A2E; }
+.phone.dark-mode .setting-item.admin-entry .item-label { color: #E8E0F0; }
+.version-text { cursor: default; user-select: none; }
+
+/* ===== 暗色模式覆盖 — 页面专用 ===== */
+/* (account-card, account-name, account-id, account-arrow, wallpaper-panel, brand-link,
+    font-size-card, ringtone-option, ringtone-import, logout-btn, version-text —
+    most are handled by shared/dark-mode.css) */
+
+/* Logout button dark mode */
+.phone.dark-mode .logout-btn { background: #16213E; border-color: rgba(244, 114, 182,0.2); }
+.phone.dark-mode .logout-btn:hover { background: #F472B6; color: #fff; border-color: #F472B6; }
+.phone.dark-mode .version-text { color: #706878; }
+</style>
+</head>
+<body>
+<div class="phone" id="phoneFrame">
+  <div class="toast" id="toast"></div>
+  <!-- 标题栏 -->
+  <div class="title-bar">
+    <a class="back" href="首页仪表盘.html">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M15 18l-6-6 6-6"/></svg>
+    </a>
+    <span class="title">设置</span>
+  </div>
+
+  <div class="scroll-area">
+    <!-- 账户卡片 -->
+    <div class="account-card" onclick="location.href='编辑个人资料.html'" id="accountCard">
+      <div class="account-avatar" id="accountAvatar">
+        <div class="img-cat avatar img-md"><img src="shared/agnes-cat.png" alt="猫娘"></div>
+      </div>
+      <div class="account-info">
+        <div class="account-name" id="accountName">小明</div>
+        <div class="account-id">ID: NianNian2024</div>
+      </div>
+      <span class="account-arrow">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M9 18l6-6-6-6"/></svg>
+      </span>
+    </div>
+
+    <!-- 通知设置 -->
+    <div class="setting-group">
+      <div class="group-title">通知</div>
+      <div class="setting-item">
+        <span class="item-label">推送通知</span>
+        <label class="toggle-switch">
+          <input type="checkbox" checked onchange="toggleToast(this,'推送通知')">
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+      <div class="setting-item">
+        <span class="item-label">消息声音</span>
+        <label class="toggle-switch">
+          <input type="checkbox" checked onchange="toggleToast(this,'消息声音')">
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+      <div class="setting-item">
+        <span class="item-label">振动</span>
+        <label class="toggle-switch">
+          <input type="checkbox" onchange="toggleToast(this,'振动')">
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+      <div class="setting-item" onclick="showRingtoneSheet()">
+        <span class="item-label">通知铃声</span>
+        <div class="item-right">
+          <span class="item-value" id="ringtoneLabel">喵~</span>
+          <span class="arrow-right"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M9 18l6-6-6-6"/></svg></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 外观 -->
+    <div class="setting-group">
+      <div class="group-title">外观</div>
+      <!-- 聊天背景（含品牌色预览入口） -->
+      <div class="setting-item" style="flex-direction:column;align-items:stretch;cursor:default;" onclick="event.stopPropagation()">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+          <span class="item-label">聊天背景</span>
+          <a href="品牌色预览.html" class="brand-link">
+            完整色板 <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 4l4 4-4 4"/></svg>
+          </a>
+        </div>
+        <div class="wallpaper-panel" style="margin:0;">
+          <span class="wp-label">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
+          </span>
+          <div class="wallpaper-swatches">
+            <div class="wp-swatch grad-pink active" onclick="event.stopPropagation();setBg('default', this)"></div>
+            <div class="wp-swatch grad-purple" onclick="event.stopPropagation();setBg('gradient-purple', this)"></div>
+            <div class="wp-swatch solid-dark" onclick="event.stopPropagation();setBg('dark', this)"></div>
+            <div class="wp-swatch photo custom-swatch" onclick="event.stopPropagation();setBg('custom', this)" title="自定义图片"></div>
+          </div>
+        </div>
+      </div>
+      <div class="setting-item" onclick="showThemeSheet()">
+        <div class="item-left">
+          <span class="item-label">主题模式</span>
+        </div>
+        <div class="item-right">
+          <span class="item-value" id="themeLabel">浅色</span>
+          <span class="arrow-right"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M9 18l6-6-6-6"/></svg></span>
+        </div>
+      </div>
+      <div class="setting-item" onclick="showFontSizeSheet()">
+        <div class="item-left">
+          <span class="item-label">字号大小</span>
+        </div>
+        <div class="item-right">
+          <span class="item-value" id="fontSizeLabel">中</span>
+          <span class="arrow-right"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M9 18l6-6-6-6"/></svg></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 隐私与安全 -->
+    <div class="setting-group">
+      <div class="group-title">隐私与安全</div>
+      <div class="setting-item" onclick="location.href='修改密码.html'">
+        <span class="item-label">修改密码</span>
+        <span class="arrow-right"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M9 18l6-6-6-6"/></svg></span>
+      </div>
+      <div class="setting-item" onclick="location.href='数据权限.html'">
+        <span class="item-label">数据权限</span>
+        <span class="arrow-right"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M9 18l6-6-6-6"/></svg></span>
+      </div>
+      <div class="setting-item" onclick="location.href='黑名单.html'">
+        <span class="item-label">黑名单</span>
+        <span class="arrow-right"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M9 18l6-6-6-6"/></svg></span>
+      </div>
+    </div>
+
+    <!-- 管理（仅管理员可见） -->
+    <div class="setting-group admin-group" id="adminGroup">
+      <div class="group-title">管理</div>
+      <div class="setting-item admin-entry" onclick="location.href='管理员面板.html'">
+        <div class="item-left">
+          <span class="item-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="#1A1A2E" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"/>
+              <rect x="10" y="10" width="4" height="4" rx="1"/>
+              <line x1="12" y1="2" x2="12" y2="6"/>
+              <line x1="12" y1="18" x2="12" y2="22"/>
+              <line x1="2" y1="12" x2="6" y2="12"/>
+              <line x1="18" y1="12" x2="22" y2="12"/>
+            </svg>
+          </span>
+          <span class="item-label">开发者面板 <span class="admin-badge">ADMIN</span></span>
+        </div>
+        <div class="item-right">
+          <span class="item-value">系统监控 · 用户管理</span>
+          <span class="arrow-right"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M9 18l6-6-6-6"/></svg></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 关于 -->
+    <div class="setting-group">
+      <div class="group-title">关于</div>
+      <div class="setting-item" onclick="location.href='用户协议.html'">
+        <span class="item-label">用户协议</span>
+        <span class="arrow-right"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M9 18l6-6-6-6"/></svg></span>
+      </div>
+      <div class="setting-item" onclick="location.href='隐私政策.html'">
+        <span class="item-label">隐私政策</span>
+        <span class="arrow-right"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M9 18l6-6-6-6"/></svg></span>
+      </div>
+      <div class="setting-item" onclick="location.href='开源许可.html'">
+        <span class="item-label">开源许可</span>
+        <span class="arrow-right"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M9 18l6-6-6-6"/></svg></span>
+      </div>
+    </div>
+
+    <!-- 退出登录 -->
+    <div class="danger-section">
+      <button class="logout-btn" onclick="showLogoutConfirm()">退出登录</button>
+    </div>
+
+    <div class="version-text">林念念 v1.0.0</div>
+  </div>
+
+  <!-- 主题选择底部弹窗 -->
+  <div class="modal-overlay hidden" id="themeSheet">
+    <div class="modal-sheet">
+      <div class="modal-title">选择主题模式</div>
+      <button class="modal-option" id="optLight" onclick="setTheme('light')">浅色模式</button>
+      <button class="modal-option" id="optDark" onclick="setTheme('dark')">深色模式</button>
+      <button class="modal-option" id="optAuto" onclick="setTheme('auto')">跟随系统</button>
+      <button class="modal-cancel" onclick="closeThemeSheet()">取消</button>
+    </div>
+  </div>
+
+  <!-- 退出登录确认弹窗 -->
+  <div class="modal-overlay hidden" id="logoutSheet">
+    <div class="modal-sheet">
+      <div class="modal-title">确定要退出登录吗？</div>
+      <div style="font-size:13px;color:#B090A0;text-align:center;margin-bottom:16px;">退出后需要重新验证手机号</div>
+      <button class="modal-option danger" onclick="doLogout()">退出登录</button>
+      <button class="modal-cancel" onclick="closeLogoutSheet()">取消</button>
+    </div>
+  </div>
+
+  <!-- 字号大小弹窗 -->
+  <div class="modal-overlay hidden" id="fontSizeSheet">
+    <div class="modal-sheet">
+      <div class="modal-title">选择字号大小</div>
+      <div class="font-size-grid">
+        <div class="font-size-card" id="fsSmall" onclick="setFontSize('小','fsSmall')">
+          <div class="size-label">小</div>
+          <div class="size-preview preview-s">Aa 适合大信息量</div>
+        </div>
+        <div class="font-size-card selected" id="fsMedium" onclick="setFontSize('中','fsMedium')">
+          <div class="size-label">中</div>
+          <div class="size-preview preview-m">Aa 标准大小</div>
+        </div>
+        <div class="font-size-card" id="fsLarge" onclick="setFontSize('大','fsLarge')">
+          <div class="size-label">大</div>
+          <div class="size-preview preview-l">Aa 更易阅读</div>
+        </div>
+      </div>
+      <button class="modal-cancel" onclick="closeFontSizeSheet()">取消</button>
+    </div>
+  </div>
+
+  <!-- 通知铃声弹窗 -->
+  <div class="modal-overlay hidden" id="ringtoneSheet">
+    <div class="modal-sheet">
+      <div class="modal-title">选择通知铃声</div>
+      <div class="ringtone-list">
+        <button class="ringtone-option selected" id="ringMew" onclick="setRingtone('喵~','ringMew')">
+          <span style="font-size:20px;">🐱</span>
+          <div>
+            <div class="ring-name">喵~</div>
+            <div class="ring-desc">经典猫娘提示音</div>
+          </div>
+          <span class="ring-check">✓</span>
+        </button>
+        <button class="ringtone-option" id="ringDing" onclick="setRingtone('叮咚','ringDing')">
+          <span style="font-size:20px;">🔔</span>
+          <div>
+            <div class="ring-name">叮咚</div>
+            <div class="ring-desc">清脆门铃声</div>
+          </div>
+          <span class="ring-check">✓</span>
+        </button>
+        <button class="ringtone-option" id="ringWind" onclick="setRingtone('风铃','ringWind')">
+          <span style="font-size:20px;">🎐</span>
+          <div>
+            <div class="ring-name">风铃</div>
+            <div class="ring-desc">轻柔风铃声</div>
+          </div>
+          <span class="ring-check">✓</span>
+        </button>
+        <button class="ringtone-option" id="ringDrop" onclick="setRingtone('水滴','ringDrop')">
+          <span style="font-size:20px;">💧</span>
+          <div>
+            <div class="ring-name">水滴</div>
+            <div class="ring-desc">自然水滴声</div>
+          </div>
+          <span class="ring-check">✓</span>
+        </button>
+        <button class="ringtone-option" id="ringNote" onclick="setRingtone('音符','ringNote')">
+          <span style="font-size:20px;">🎵</span>
+          <div>
+            <div class="ring-name">音符</div>
+            <div class="ring-desc">轻快旋律</div>
+          </div>
+          <span class="ring-check">✓</span>
+        </button>
+      </div>
+      <button class="ringtone-import" onclick="importRingtone()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V1"/></svg>
+        自定义导入 (.mp3, .wav, .ogg)
+      </button>
+      <input type="file" id="ringtoneFileInput" accept=".mp3,.wav,.ogg" style="display:none;" onchange="handleRingtoneImport(event)">
+      <input type="file" id="bgFileInput" accept="image/jpeg,image/png,image/webp,image/gif,image/bmp" style="display:none;" onchange="handleBgFileImport(event)">
+      <button class="modal-cancel" onclick="closeRingtoneSheet()" style="margin-top:8px;">取消</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ===== 页面逻辑（设置.html 专用） =====
+// 主题 + 聊天背景 + 字号 + 铃声 + 退出登录
+
+function applyDarkMode(on) {
+  var phone = document.getElementById('phoneFrame');
+  if (on) { phone.classList.add('dark-mode'); }
+  else { phone.classList.remove('dark-mode'); }
+}
+
+// 开关 Toast
+function toggleToast(input, label) {}
+
+// 主题选择
+function showThemeSheet() {
+  document.getElementById('themeSheet').classList.remove('hidden');
+}
+function closeThemeSheet() {
+  document.getElementById('themeSheet').classList.add('hidden');
+}
+function setTheme(mode) {
+  var labels = { light: '浅色', dark: '深色', auto: '跟随系统' };
+  document.getElementById('themeLabel').textContent = labels[mode];
+  closeThemeSheet();
+  localStorage.setItem('theme', mode);
+  if (mode === 'dark') {
+    applyDarkMode(true);
+  } else if (mode === 'auto') {
+    if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+      applyDarkMode(true);
+    } else {
+      applyDarkMode(false);
+    }
+  } else {
+    applyDarkMode(false);
+  }
+}
+
+// ===== 聊天背景全局同步 =====
+var CHAT_BG_KEY = 'chatBg';
+var BG_PRESETS = {
+  'default':     { type: 'default', label: '默认粉', value: '', cssBg: '#FFF5F7' },
+  'gradient-purple': { type: 'gradient', label: '紫藤', value: 'linear-gradient(180deg, #F5F0FF, #EDE5FA, #F3F0FA)', cssBg: 'linear-gradient(180deg, #F5F0FF, #EDE5FA, #F3F0FA)' },
+  'dark':        { type: 'dark', label: '暗色', value: '#1A1A2E', cssBg: '#1A1A2E' },
+  'custom':      { type: 'custom', label: '自定义', value: '', cssBg: '' }
+};
+
+function applyChatBgToPhone(bgData) {
+  var phone = document.getElementById('phoneFrame');
+  if (!phone) return;
+  phone.style.background = '';
+  if (!bgData || bgData.type === 'default') {
+    if (!phone.classList.contains('dark-mode')) phone.style.background = '#FFF5F7';
+  } else if (bgData.type === 'custom' && bgData.value) {
+    phone.style.background = 'url(' + bgData.value + ') center/cover no-repeat';
+  } else if (bgData.value) {
+    phone.style.background = bgData.value;
+  }
+}
+
+function setBg(type, el) {
+  document.querySelectorAll('.wp-swatch').forEach(function(s) { s.classList.remove('active'); });
+  if (el) el.classList.add('active');
+
+  if (type === 'custom' || type === 'photo') {
+    document.getElementById('bgFileInput').click();
+    return;
+  }
+
+  var preset = BG_PRESETS[type] || BG_PRESETS['default'];
+  var bgData = { type: preset.type, value: preset.value };
+  localStorage.setItem(CHAT_BG_KEY, JSON.stringify(bgData));
+  applyChatBgToPhone(bgData);
+}
+
+function handleBgFileImport(e) {
+  var file = e.target.files[0];
+  if (!file) return;
+  if (!file.type.match(/image\/(jpeg|png|webp|gif|bmp)/)) {
+    showToast('仅支持 JPG/PNG/WebP/GIF 图片格式');
+    return;
+  }
+  var reader = new FileReader();
+  reader.onload = function(ev) {
+    var dataUrl = ev.target.result;
+    var bgData = { type: 'custom', value: dataUrl };
+    if (dataUrl.length > 500 * 1024) {
+      var img = new Image();
+      img.onload = function() {
+        var canvas = document.createElement('canvas');
+        var maxW = 720, maxH = 1600;
+        var scale = Math.min(maxW / img.width, maxH / img.height, 1);
+        canvas.width = img.width * scale;
+        canvas.height = img.height * scale;
+        var ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        bgData.value = canvas.toDataURL('image/jpeg', 0.75);
+        saveAndApplyBg(bgData);
+      };
+      img.src = dataUrl;
+    } else {
+      saveAndApplyBg(bgData);
+    }
+  };
+  reader.readAsDataURL(file);
+  e.target.value = '';
+}
+
+function saveAndApplyBg(bgData) {
+  localStorage.setItem(CHAT_BG_KEY, JSON.stringify(bgData));
+  applyChatBgToPhone(bgData);
+  document.querySelectorAll('.wp-swatch').forEach(function(s) { s.classList.remove('active'); });
+  var customSwatch = document.querySelector('.wp-swatch.custom-swatch');
+  if (customSwatch) customSwatch.classList.add('active');
+  showToast('聊天背景已全局同步');
+}
+
+function loadChatBg() {
+  try {
+    var raw = localStorage.getItem(CHAT_BG_KEY);
+    if (!raw) return;
+    var bgData = JSON.parse(raw);
+    applyChatBgToPhone(bgData);
+    var activeType = bgData.type === 'custom' ? 'custom' :
+      (bgData.value === BG_PRESETS['gradient-purple'].value ? 'gradient-purple' :
+       bgData.value === BG_PRESETS['dark'].value ? 'dark' : 'default');
+    document.querySelectorAll('.wp-swatch').forEach(function(s) { s.classList.remove('active'); });
+    var target = document.querySelector('.wp-swatch.' + activeType) || document.querySelector('.wp-swatch.custom-swatch');
+    if (target) target.classList.add('active');
+  } catch(e) {}
+}
+
+// 退出登录
+function showLogoutConfirm() {
+  document.getElementById('logoutSheet').classList.remove('hidden');
+}
+function closeLogoutSheet() {
+  document.getElementById('logoutSheet').classList.add('hidden');
+}
+function doLogout() {
+  closeLogoutSheet();
+  setTimeout(function(){ location.href = '登录页.html'; }, 200);
+}
+
+// 点击遮罩关闭
+document.querySelectorAll('.modal-overlay').forEach(function(overlay) {
+  overlay.addEventListener('click', function(e) {
+    if (e.target === overlay) {
+      overlay.classList.add('hidden');
+    }
+  });
+});
+
+// ===== 字号大小弹窗 =====
+function showFontSizeSheet() {
+  document.getElementById('fontSizeSheet').classList.remove('hidden');
+  var cur = document.getElementById('fontSizeLabel').textContent;
+  ['小','中','大'].forEach(function(s, i) {
+    var ids = ['fsSmall','fsMedium','fsLarge'];
+    var el = document.getElementById(ids[i]);
+    if (s === cur) el.classList.add('selected');
+    else el.classList.remove('selected');
+  });
+}
+function closeFontSizeSheet() {
+  document.getElementById('fontSizeSheet').classList.add('hidden');
+}
+function setFontSize(size, id) {
+  document.getElementById('fontSizeLabel').textContent = size;
+  ['fsSmall','fsMedium','fsLarge'].forEach(function(s) {
+    document.getElementById(s).classList.remove('selected');
+  });
+  document.getElementById(id).classList.add('selected');
+  localStorage.setItem('fontSize', size);
+  // 全局同步 — 更新 phone 属性使 CSS 变量即时生效
+  var phone = document.getElementById('phoneFrame');
+  if (phone) phone.setAttribute('data-font-size', size);
+  closeFontSizeSheet();
+}
+
+// ===== 通知铃声弹窗 =====
+function showRingtoneSheet() {
+  document.getElementById('ringtoneSheet').classList.remove('hidden');
+  var cur = document.getElementById('ringtoneLabel').textContent;
+  var map = {'喵~':'ringMew','叮咚':'ringDing','风铃':'ringWind','水滴':'ringDrop','音符':'ringNote'};
+  ['ringMew','ringDing','ringWind','ringDrop','ringNote'].forEach(function(id) {
+    var el = document.getElementById(id);
+    if (el) {
+      if (id === map[cur]) el.classList.add('selected');
+      else el.classList.remove('selected');
+    }
+  });
+}
+function closeRingtoneSheet() {
+  document.getElementById('ringtoneSheet').classList.add('hidden');
+}
+function setRingtone(name, id) {
+  document.getElementById('ringtoneLabel').textContent = name;
+  ['ringMew','ringDing','ringWind','ringDrop','ringNote'].forEach(function(s) {
+    var el = document.getElementById(s); if (el) el.classList.remove('selected');
+  });
+  var el = document.getElementById(id); if (el) el.classList.add('selected');
+  localStorage.setItem('ringtone', name);
+  closeRingtoneSheet();
+}
+function importRingtone() {
+  document.getElementById('ringtoneFileInput').click();
+}
+function handleRingtoneImport(e) {
+  var file = e.target.files[0];
+  if (!file) return;
+  var name = file.name.replace(/\.[^/.]+$/, '');
+  document.getElementById('ringtoneLabel').textContent = name;
+  localStorage.setItem('ringtone', name);
+  localStorage.setItem('ringtone_custom', name);
+  showToast('已导入: ' + name);
+  closeRingtoneSheet();
+}
+
+// 恢复聊天背景 + storage 跨页监听
+loadChatBg();
+window.addEventListener('storage', function(e) {
+  if (e.key === CHAT_BG_KEY) loadChatBg();
+});
+
+// 恢复字号大小显示
+(function(){
+  var cur = localStorage.getItem('fontSize') || '中';
+  document.getElementById('fontSizeLabel').textContent = cur;
+  var phone = document.getElementById('phoneFrame');
+  if (phone) phone.setAttribute('data-font-size', cur);
+})();
+
+// ===== 管理员入口：连击版本号 5 次切换 =====
+function updateAdminVisibility() {
+  var group = document.getElementById('adminGroup');
+  if (!group) return;
+  var isAdmin = localStorage.getItem('is_admin') === '1';
+  if (isAdmin) {
+    group.classList.add('visible');
+  } else {
+    group.classList.remove('visible');
+  }
+}
+
+var adminTapCount = 0;
+var adminTapTimer = null;
+var versionEl = document.querySelector('.version-text');
+if (versionEl) {
+  versionEl.style.cursor = 'default';
+  versionEl.addEventListener('click', function(e) {
+    e.stopPropagation();
+    adminTapCount++;
+    clearTimeout(adminTapTimer);
+    if (adminTapCount >= 5) {
+      adminTapCount = 0;
+      var current = localStorage.getItem('is_admin') === '1';
+      var next = current ? '0' : '1';
+      localStorage.setItem('is_admin', next);
+      updateAdminVisibility();
+      showToast(next === '1' ? '开发者面板已解锁' : '开发者面板已隐藏', 'info');
+    } else {
+      adminTapTimer = setTimeout(function() { adminTapCount = 0; }, 2500);
+    }
+  });
+}
+
+updateAdminVisibility();
+</script>
+
+<script src="shared/app.js"></script>
+</body>
+</html>

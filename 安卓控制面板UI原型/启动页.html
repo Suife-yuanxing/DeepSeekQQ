@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no">
+<title>启动页 — UI 原型</title>
+<link rel="stylesheet" href="shared/tokens.css">
+<link rel="stylesheet" href="shared/base.css">
+<link rel="stylesheet" href="shared/anime-cat.css">
+<link rel="stylesheet" href="shared/effects.css">
+<style>
+/* ===== 启动页 — 专属样式 ===== */
+/* 依赖 shared/ 目录：tokens.css (变量) + base.css (reset/phone) + effects.css (orb/petal keyframes) */
+
+/* --- Phone: 品牌三色渐变 --- */
+.phone.splash {
+  background: linear-gradient(160deg,
+    #FBCFE8 0%,          /* 极浅粉 — 顶部 */
+    #F9A8D4 15%,         /* 浅粉 */
+    #F472B6 40%,         /* 品牌软粉 — 中上部 */
+    #C4B5FD 65%,         /* 薰衣草紫 — 中下部 */
+    #ADD8E6 85%,         /* 婴儿蓝 — 底部 */
+    #E0F2FE 100%         /* 极浅蓝 — 底部收尾 */
+  );
+  justify-content: center;
+  align-items: center;
+  animation: page-push-enter 0.38s var(--ease-spring, cubic-bezier(0.34, 1.56, 0.64, 1)) both;
+}
+
+/* --- Dark mode gradient --- */
+.phone.splash.dark-mode {
+  background: linear-gradient(160deg,
+    #1A1A2E 0%,
+    #2D1A3E 20%,
+    #1A1A3E 45%,
+    #16213E 70%,
+    #1A1A2E 100%
+  );
+}
+.phone.splash.dark-mode .splash-title {
+  text-shadow: 0 2px 16px rgba(249,168,212,0.3), 0 0 40px rgba(196,181,253,0.15);
+}
+.phone.splash.dark-mode .splash-sub {
+  color: rgba(255,255,255,0.7);
+}
+.phone.splash.dark-mode .splash-dots span {
+  background: rgba(255,255,255,0.4);
+}
+
+/* ================================================
+   Ambient Layer — 浮动光球 + 飘落花瓣
+   ================================================ */
+
+/* Orbs: 三色马卡龙光球，复用 effects.css 的 orb-float 关键帧 */
+.splash-orb {
+  position: absolute; border-radius: 50%; pointer-events: none; z-index: 0;
+}
+.splash-orb.pink {
+  width: 220px; height: 220px; top: -80px; right: -40px;
+  background: radial-gradient(circle, rgba(244,114,182,0.18) 0%, transparent 70%);
+  animation: orb-float-1 8s ease-in-out infinite;
+}
+.splash-orb.lavender {
+  width: 180px; height: 180px; bottom: 140px; left: -50px;
+  background: radial-gradient(circle, rgba(196,181,253,0.14) 0%, transparent 70%);
+  animation: orb-float-2 10s ease-in-out infinite;
+}
+.splash-orb.blue {
+  width: 140px; height: 140px; top: 50%; right: -30px;
+  background: radial-gradient(circle, rgba(173,216,230,0.10) 0%, transparent 70%);
+  animation: orb-float-1 12s ease-in-out infinite reverse;
+}
+
+/* Petals: 四片花瓣缓慢飘落 */
+.splash-petal {
+  position: absolute; pointer-events: none; z-index: 0;
+  border-radius: 50% 0 50% 0;
+  animation: petal-drift linear infinite;
+}
+@keyframes petal-drift {
+  0%   { transform: translateY(-12%) rotate(0deg) scale(0.8); opacity: 0; }
+  12%  { opacity: 0.65; }
+  88%  { opacity: 0.4; }
+  100% { transform: translateY(112%) rotate(540deg) scale(0.25); opacity: 0; }
+}
+
+/* ================================================
+   Content Layer — 猫图 + 标题 + 副标题 + 加载点
+   ================================================ */
+
+.splash-content {
+  position: relative; z-index: 1;
+  display: flex; flex-direction: column; align-items: center;
+}
+
+/* Staggered entrance — 子元素逐项弹入 */
+.splash-content > * {
+  opacity: 0;
+  animation: splash-fade-up 0.5s var(--ease-spring, cubic-bezier(0.34, 1.56, 0.64, 1)) forwards;
+}
+.splash-content > *:nth-child(1) { animation-delay: 0.08s; }  /* 猫图 */
+.splash-content > *:nth-child(2) { animation-delay: 0.22s; }  /* 标题 */
+.splash-content > *:nth-child(3) { animation-delay: 0.36s; }  /* 副标题 */
+.splash-content > *:nth-child(4) { animation-delay: 0.50s; }  /* 加载点 */
+
+@keyframes splash-fade-up {
+  from { opacity: 0; transform: translateY(26px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* --- Cat: Agnes 图片呼吸动画 --- */
+.splash-cat {
+  width: 100px; height: 100px; margin-bottom: 14px;
+}
+.splash-cat img {
+  width: 100%; height: 100%; object-fit: contain;
+  filter: brightness(1.08) drop-shadow(0 4px 20px rgba(244,114,182,0.28));
+  animation: splash-breathe 3.5s ease-in-out infinite;
+}
+@keyframes splash-breathe {
+  0%, 100% { transform: scale(1); }
+  50%      { transform: scale(1.055); }
+}
+
+/* --- Title --- */
+.splash-title {
+  font-size: 34px; font-weight: 800; color: #FFFFFF;
+  letter-spacing: 3px;
+  text-shadow: 0 2px 16px rgba(244,114,182,0.35), 0 0 48px rgba(196,181,253,0.18);
+  margin-bottom: 8px;
+}
+
+/* --- Subtitle --- */
+.splash-sub {
+  font-size: var(--font-size-base, 14px); color: rgba(255,255,255,0.82);
+  margin-bottom: 36px; letter-spacing: 1px;
+}
+
+/* --- Loading Dots — 弹簧弹跳 --- */
+.splash-dots {
+  display: flex; gap: 8px; justify-content: center;
+}
+.splash-dots span {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: rgba(255,255,255,0.55);
+  animation: splash-dot 1.4s ease-in-out infinite;
+}
+.splash-dots span:nth-child(2) { animation-delay: 0.18s; }
+.splash-dots span:nth-child(3) { animation-delay: 0.36s; }
+@keyframes splash-dot {
+  0%, 100% { transform: scale(0.5) translateY(0); opacity: 0.3; }
+  50%      { transform: scale(1.25) translateY(-8px); opacity: 1; }
+}
+
+/* --- Version --- */
+.splash-version {
+  position: absolute; bottom: 44px;
+  font-size: var(--font-size-xs, 10px);
+  color: rgba(255,255,255,0.45);
+  z-index: 1;
+}
+
+/* ================================================
+   Exit Transition — 退场（比入场快 ~70%）
+   ================================================ */
+
+.phone.splash.exit {
+  animation: splash-exit 0.28s var(--ease-smooth, cubic-bezier(0.4, 0, 0.2, 1)) forwards;
+  pointer-events: none;
+}
+@keyframes splash-exit {
+  0%   { opacity: 1; transform: scale(1); filter: blur(0); }
+  100% { opacity: 0; transform: scale(0.95); filter: blur(6px); }
+}
+
+/* ================================================
+   Accessibility — Reduced Motion
+   ================================================ */
+
+@media (prefers-reduced-motion: reduce) {
+  .phone.splash {
+    animation: none;
+  }
+  .splash-content > * {
+    animation: none; opacity: 1;
+  }
+  .splash-cat img {
+    animation: none;
+  }
+  .splash-dots span {
+    animation: none; opacity: 0.5;
+  }
+  .splash-orb, .splash-petal {
+    animation: none;
+  }
+  .phone.splash.exit {
+    animation: none; opacity: 0;
+  }
+}
+</style>
+</head>
+<body>
+<div class="phone splash" role="img" aria-label="林念念 — 启动画面，加载中">
+
+  <!-- Ambient Orbs -->
+  <div class="splash-orb pink" aria-hidden="true"></div>
+  <div class="splash-orb lavender" aria-hidden="true"></div>
+  <div class="splash-orb blue" aria-hidden="true"></div>
+
+  <!-- Floating Petals -->
+  <div class="splash-petal" aria-hidden="true"
+       style="left:15%; width:10px; height:13px;
+              background:radial-gradient(ellipse at 30% 30%, rgba(244,114,182,0.45), rgba(249,168,212,0.12));
+              animation-duration:7s; animation-delay:0s;"></div>
+  <div class="splash-petal" aria-hidden="true"
+       style="left:55%; width:8px; height:11px;
+              background:radial-gradient(ellipse at 30% 30%, rgba(196,181,253,0.4), rgba(221,214,254,0.1));
+              animation-duration:8.5s; animation-delay:1.2s;"></div>
+  <div class="splash-petal" aria-hidden="true"
+       style="left:78%; width:11px; height:14px;
+              background:radial-gradient(ellipse at 30% 30%, rgba(173,216,230,0.4), rgba(197,232,245,0.1));
+              animation-duration:9s; animation-delay:2.5s;"></div>
+  <div class="splash-petal" aria-hidden="true"
+       style="left:32%; width:9px; height:12px;
+              background:radial-gradient(ellipse at 30% 30%, rgba(249,168,212,0.4), rgba(251,207,232,0.1));
+              animation-duration:7.8s; animation-delay:3.8s;"></div>
+
+  <!-- Central Content -->
+  <div class="splash-content">
+    <div class="splash-cat">
+      <img src="shared/agnes-cat.png" alt="猫娘林念念">
+    </div>
+    <h1 class="splash-title">林念念</h1>
+    <p class="splash-sub">你的 AI 猫娘伙伴</p>
+    <div class="splash-dots" role="status" aria-label="加载中">
+      <span></span><span></span><span></span>
+    </div>
+  </div>
+
+  <!-- Version -->
+  <span class="splash-version" aria-hidden="true">v1.0.0</span>
+
+</div>
+
+<script src="shared/config.js"></script>
+<script src="shared/capacitor.js"></script>
+<script src="shared/api.js"></script>
+<script src="shared/app.js"></script>
+<script>
+// ── 启动页智能路由 ──
+// 2.5s 品牌动画后根据登录状态 + 服务器可达性跳转
+// 使用 location.replace() 清 history，用户无法返回到启动页
+var DEV_MODE = localStorage.getItem('dev_mode') === '1';
+
+// 手动切换 Dev Mode：连续点击版本号 5 次
+var _tapCount = 0;
+document.querySelector('.splash-version').addEventListener('click', function() {
+  _tapCount++;
+  if (_tapCount >= 5) {
+    _tapCount = 0;
+    DEV_MODE = !DEV_MODE;
+    localStorage.setItem('dev_mode', DEV_MODE ? '1' : '0');
+    showToast(DEV_MODE ? '🔧 开发模式：跳过登录' : '🔒 正常模式：需要登录');
+  }
+  clearTimeout(_tapTimer);
+  var _tapTimer = setTimeout(function() { _tapCount = 0; }, 800);
+});
+
+function _enterDevMode() {
+  // 注入假登录态，使页面不再校验登录
+  localStorage.setItem('access_token', 'dev.mock.token.skip.login');
+  localStorage.setItem('refresh_token', 'dev.mock.refresh.token');
+  localStorage.setItem('current_user', JSON.stringify({
+    id: 0, nickname: 'DevTester', phone: '13800000000',
+    avatar_url: null, created_at: new Date().toISOString()
+  }));
+  localStorage.setItem('dev_mode', '1');
+  DEV_MODE = true;
+}
+
+setTimeout(function(){
+  var phone = document.querySelector('.phone');
+  if (!phone) { doNavigate(); return; }
+  phone.classList.add('exit');
+  setTimeout(doNavigate, 280);
+}, 2500);
+
+function doNavigate() {
+  // 开发模式：跳过登录直接进首页
+  if (DEV_MODE) {
+    _enterDevMode();
+    location.replace('首页仪表盘.html');
+    return;
+  }
+
+  // 已有有效 token → 正常路由
+  if (window.API && window.API.isLoggedIn && window.API.isLoggedIn()) {
+    if (window.API.listBots) {
+      // 带超时的 Bot 列表检查（3s 超时）
+      var timeout = new Promise(function(_, reject) {
+        setTimeout(function() { reject(new Error('timeout')); }, 3000);
+      });
+      Promise.race([window.API.listBots(), timeout])
+        .then(function(bots) {
+          if (bots && bots.count > 0) {
+            window.API.setCurrentBotId(bots.bots[0].id);
+            location.replace('首页仪表盘.html');
+          } else {
+            location.replace('Bot创建向导.html');
+          }
+        })
+        .catch(function() {
+          // 服务器不可达 → 自动进入离线开发模式
+          _enterDevMode();
+          showToast('⚠️ 服务器离线，已进入本地测试模式');
+          setTimeout(function() { location.replace('首页仪表盘.html'); }, 800);
+        });
+    } else {
+      location.replace('首页仪表盘.html');
+    }
+    return;
+  }
+
+  // 无 token — 服务器可用则跳登录，否则离线模式
+  if (window.API && window.API._ping) {
+    var timeout2 = new Promise(function(_, reject) {
+      setTimeout(function() { reject(new Error('timeout')); }, 3000);
+    });
+    Promise.race([window.API._ping(), timeout2])
+      .then(function() {
+        location.replace('登录页.html');
+      })
+      .catch(function() {
+        _enterDevMode();
+        showToast('⚠️ 服务器离线，已进入本地测试模式');
+        setTimeout(function() { location.replace('首页仪表盘.html'); }, 800);
+      });
+  } else {
+    location.replace('登录页.html');
+  }
+}
+</script>
+</body>
+</html>

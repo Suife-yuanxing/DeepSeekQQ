@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no">
+<title>QQ 通道 — UI 原型</title>
+<link rel="stylesheet" href="shared/tokens.css">
+<link rel="stylesheet" href="shared/base.css">
+<link rel="stylesheet" href="shared/components.css">
+<link rel="stylesheet" href="shared/anime-cat.css">
+<link rel="stylesheet" href="shared/dark-mode.css">
+<link rel="stylesheet" href="shared/effects.css">
+<style>
+/* ===== QQ 通道 — 页面专属样式 ===== */
+.scroll-area { padding: 12px 0 8px; }
+
+/* 连接状态卡片 */
+.status-card {
+  margin: 8px 20px; padding: 18px 16px;
+  background: linear-gradient(135deg, #4CAF50 0%, #66BB6A 50%, #81C784 100%);
+  border-radius: 18px; color: #fff;
+  box-shadow: 0 8px 24px rgba(76,175,80,0.25);
+  display: flex; align-items: center; gap: 14px;
+  position: relative; overflow: hidden;
+}
+.status-card::after {
+  content: ''; position: absolute; top: -30%; left: -30%;
+  width: 80%; height: 100%;
+  background: radial-gradient(ellipse, rgba(255,255,255,0.12) 0%, transparent 70%);
+  pointer-events: none;
+}
+.status-card .sc-icon {
+  width: 44px; height: 44px; border-radius: 50%;
+  background: rgba(255,255,255,0.2);
+  display: flex; align-items: center; justify-content: center;
+  position: relative; z-index: 1;
+}
+.status-card .sc-icon svg { width: 26px; height: 26px; }
+.status-card .sc-info { position: relative; z-index: 1; }
+.status-card .sc-label { font-size: 13px; font-weight: 700; }
+.status-card .sc-detail { font-size: 11px; opacity: 0.8; margin-top: 2px; }
+.status-card .sc-badge {
+  position: relative; z-index: 1; margin-left: auto;
+  background: rgba(255,255,255,0.2); border: 1.5px solid rgba(255,255,255,0.3);
+  padding: 6px 14px; border-radius: 12px;
+  font-size: 12px; font-weight: 700;
+}
+
+/* 信息卡片 */
+.info-card {
+  margin: 6px 20px; padding: 16px;
+  background: rgba(255,255,255,0.7); backdrop-filter: blur(8px);
+  border-radius: 18px;
+  border: 1.5px solid rgba(255,255,255,0.7);
+  box-shadow: 0 3px 12px rgba(100,100,120,0.05);
+}
+.info-row {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 0;
+}
+.info-row + .info-row { border-top: 1px solid rgba(0,0,0,0.04); }
+.info-row .ir-label { font-size: 13px; color: #B090A0; }
+.info-row .ir-value { font-size: 13px; font-weight: 700; color: #3A2030; display: flex; align-items: center; gap: 6px; }
+.info-row .ir-value .dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
+.info-row .ir-value .dot.green { background: #4CAF50; }
+
+/* Mini stat grid */
+.stat-mini-row { display: flex; gap: 10px; margin: 6px 20px; }
+.stat-mini {
+  flex: 1; background: rgba(255,255,255,0.7); backdrop-filter: blur(8px);
+  border-radius: 16px; padding: 12px; text-align: center;
+  border: 1.5px solid rgba(255,255,255,0.7);
+  box-shadow: 0 3px 12px rgba(100,100,120,0.05);
+}
+.stat-mini .sm-value { font-size: 20px; font-weight: 800; }
+.stat-mini .sm-label { font-size: 11px; color: #B090A0; margin-top: 2px; }
+.sm-green { color: #4CAF50; }
+.sm-pink { color: #F472B6; }
+
+/* Danger zone */
+.danger-zone { margin: 16px 20px; }
+.danger-btn {
+  width: 100%; padding: 14px; border-radius: 16px;
+  background: rgba(255,255,255,0.7); backdrop-filter: blur(8px);
+  color: #F472B6; border: 1.5px solid rgba(244, 114, 182,0.2);
+  font-size: 14px; font-weight: 700; font-family: inherit; cursor: pointer;
+  transition: all 0.25s;
+}
+.danger-btn:hover { background: #F472B6; color: #fff; border-color: #F472B6; }
+.danger-btn:active { transform: scale(0.97); }
+
+/* ===== Dark Mode ===== */
+.phone.dark-mode .status-card { box-shadow: 0 8px 24px rgba(76,175,80,0.15); }
+.phone.dark-mode .info-card { background: #16213E; border-color: rgba(255,255,255,0.06); }
+.phone.dark-mode .info-row .ir-label { color: #8078A0; }
+.phone.dark-mode .info-row .ir-value { color: #E0D8E8; }
+.phone.dark-mode .info-row + .info-row { border-top-color: rgba(255,255,255,0.04); }
+.phone.dark-mode .stat-mini { background: #16213E; border-color: rgba(255,255,255,0.06); }
+.phone.dark-mode .stat-mini .sm-label { color: #8078A0; }
+.phone.dark-mode .danger-btn { background: #16213E; border-color: rgba(244, 114, 182,0.2); }
+.phone.dark-mode .danger-btn:hover { background: #F472B6; }
+</style>
+</head>
+<body>
+<div class="phone" id="phoneFrame">
+  <div class="title-bar">
+    <span class="title">QQ 通道</span>
+    <button class="btn-icon-round" onclick="showToast('通道配置已保存')" title="更多">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/></svg>
+    </button>
+  </div>
+
+  <div class="scroll-area">
+    <!-- 连接状态 -->
+    <div class="status-card">
+      <div class="sc-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4 20-7z"/></svg>
+      </div>
+      <div class="sc-info">
+        <div class="sc-label">已连接</div>
+        <div class="sc-detail">QQ Bot · 运行正常</div>
+      </div>
+      <div class="sc-badge">v1.2.0</div>
+    </div>
+
+    <!-- 连接信息 -->
+    <div class="group-title" style="margin:14px 20px 6px;">连接信息</div>
+    <div class="info-card">
+      <div class="info-row">
+        <span class="ir-label">QQ 号</span>
+        <span class="ir-value">3073****21</span>
+      </div>
+      <div class="info-row">
+        <span class="ir-label">Bot 类型</span>
+        <span class="ir-value">官方 Bot</span>
+      </div>
+      <div class="info-row">
+        <span class="ir-label">连接时间</span>
+        <span class="ir-value">2026-06-20 14:32</span>
+      </div>
+      <div class="info-row">
+        <span class="ir-label">心跳状态</span>
+        <span class="ir-value"><span class="dot green"></span> 正常</span>
+      </div>
+      <div class="info-row">
+        <span class="ir-label">协议</span>
+        <span class="ir-value">WebSocket</span>
+      </div>
+    </div>
+
+    <!-- 今日统计 -->
+    <div class="group-title" style="margin:14px 20px 6px;">今日统计</div>
+    <div class="stat-mini-row">
+      <div class="stat-mini">
+        <div class="sm-value sm-green" id="msgCount">156</div>
+        <div class="sm-label">收发消息</div>
+      </div>
+      <div class="stat-mini">
+        <div class="sm-value sm-pink" id="groupCount">12</div>
+        <div class="sm-label">活跃群聊</div>
+      </div>
+      <div class="stat-mini">
+        <div class="sm-value" style="color:#C4B5FD;">99.7%</div>
+        <div class="sm-label">成功率</div>
+      </div>
+    </div>
+
+    <!-- 通道设置 -->
+    <div class="group-title" style="margin:14px 20px 6px;">通道设置</div>
+    <div class="info-card" style="padding:0; overflow:hidden;">
+      <div class="setting-item" style="margin:0; border-radius:0; background:transparent;" onclick="var t=this.querySelector('input'); t.checked=!t.checked; t.dispatchEvent(new Event('change'))">
+        <div class="item-left">
+          <div class="item-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="#F472B6" stroke-width="1.8" stroke-linecap="round"><path d="M4 4h16v13H8l-4 4v-4H4z"/></svg>
+          </div>
+          <span class="item-label">自动回复</span>
+        </div>
+        <label class="toggle-switch" onclick="event.stopPropagation()">
+          <input type="checkbox" checked onchange="showToast(this.checked?'自动回复已开启':'自动回复已关闭')">
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+      <div class="setting-item" style="margin:0; border-radius:0; background:transparent; border-top:1px solid rgba(0,0,0,0.04);" onclick="var t=this.querySelector('input'); t.checked=!t.checked; t.dispatchEvent(new Event('change'))">
+        <div class="item-left">
+          <div class="item-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="#C4B5FD" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>
+          </div>
+          <span class="item-label">群聊响应</span>
+        </div>
+        <label class="toggle-switch" onclick="event.stopPropagation()">
+          <input type="checkbox" onchange="showToast(this.checked?'群聊响应已开启':'群聊响应已关闭')">
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+      <div class="setting-item" style="margin:0; border-radius:0; background:transparent; border-top:1px solid rgba(0,0,0,0.04);" onclick="var t=this.querySelector('input'); t.checked=!t.checked; t.dispatchEvent(new Event('change'))">
+        <div class="item-left">
+          <div class="item-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="#FFB347" stroke-width="1.8" stroke-linecap="round"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 01-3.4 0"/></svg>
+          </div>
+          <span class="item-label">消息通知</span>
+        </div>
+        <label class="toggle-switch" onclick="event.stopPropagation()">
+          <input type="checkbox" checked onchange="showToast(this.checked?'消息通知已开启':'消息通知已关闭')">
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+      <div class="setting-item" style="margin:0; border-radius:0; background:transparent; border-top:1px solid rgba(0,0,0,0.04);" onclick="location.href='数据面板.html'">
+        <div class="item-left">
+          <div class="item-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="#4CAF50" stroke-width="1.8" stroke-linecap="round"><rect x="3" y="12" width="4" height="9" rx="1"/><rect x="10" y="7" width="4" height="14" rx="1"/><rect x="17" y="3" width="4" height="18" rx="1"/></svg>
+          </div>
+          <span class="item-label">查看详细数据</span>
+        </div>
+        <div class="item-right">
+          <span class="arrow-right"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 18l6-6-6-6"/></svg></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 消息日志预览 -->
+    <div class="group-title" style="margin:14px 20px 6px;">最近消息</div>
+    <div class="info-card" style="padding:0; overflow:hidden;">
+      <div class="setting-item" style="margin:0; border-radius:0; background:transparent;">
+        <div style="display:flex; align-items:center; gap:10px; width:100%;">
+          <div style="width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,#F472B6,#FFB0C0);display:flex;align-items:center;justify-content:center;">
+            <div class="img-cat avatar img-sm"><img src="shared/agnes-cat.png" alt="猫娘"></div>
+          </div>
+          <div style="flex:1;min-width:0;">
+            <div style="font-size:13px;font-weight:700;color:#3A2030;">小咪</div>
+            <div style="font-size:12px;color:#B090A0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">知道啦，主人~ 马上就去办 ✨</div>
+          </div>
+          <span style="font-size:10px;color:#C0A0B0;">14:32</span>
+        </div>
+      </div>
+      <div class="setting-item" style="margin:0; border-radius:0; background:transparent; border-top:1px solid rgba(0,0,0,0.04);">
+        <div style="display:flex;align-items:center;gap:10px;width:100%;">
+          <div style="width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,#C4B5FD,#9B7ED8);display:flex;align-items:center;justify-content:center;color:#fff;font-size:16px;font-weight:800;">群</div>
+          <div style="flex:1;min-width:0;">
+            <div style="font-size:13px;font-weight:700;color:#3A2030;">猫娘粉丝群</div>
+            <div style="font-size:12px;color:#B090A0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">小明：@小咪 今天心情怎么样？</div>
+          </div>
+          <span style="font-size:10px;color:#C0A0B0;">14:28</span>
+        </div>
+      </div>
+      <div class="setting-item" style="margin:0; border-radius:0; background:transparent; border-top:1px solid rgba(0,0,0,0.04);">
+        <div style="display:flex;align-items:center;gap:10px;width:100%;">
+          <div style="width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,#FFB347,#FFC773);display:flex;align-items:center;justify-content:center;color:#fff;font-size:16px;font-weight:800;">群</div>
+          <div style="flex:1;min-width:0;">
+            <div style="font-size:13px;font-weight:700;color:#3A2030;">二次元の部屋</div>
+            <div style="font-size:12px;color:#B090A0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">小红：今天的番看了吗！</div>
+          </div>
+          <span style="font-size:10px;color:#C0A0B0;">13:55</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 危险操作 -->
+    <div class="danger-zone">
+      <button class="danger-btn" onclick="if(confirm('确定断开 QQ 通道连接吗？Bot 将停止响应 QQ 消息。')){showToast('QQ 通道已断开','error')}">
+        断开连接
+      </button>
+    </div>
+    <div style="height:20px;"></div>
+  </div>
+
+  <!-- 底部导航 -->
+  <div class="bottom-nav" id="bottomNav">
+    <a class="nav-item" href="首页仪表盘.html">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12l9-9 9 9"/><path d="M5 10v10a1 1 0 001 1h4v-6h4v6h4a1 1 0 001-1V10"/></svg>
+      首页
+    </a>
+    <a class="nav-item" href="聊天页.html">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v13H8l-4 4v-4H4z"/></svg>
+      聊天
+    </a>
+    <a class="nav-item" href="我的Bot.html">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="5"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/><circle cx="10" cy="7" r="1" fill="currentColor" stroke="none"/><circle cx="14" cy="7" r="1" fill="currentColor" stroke="none"/></svg>
+      Bot管理
+    </a>
+    <a class="nav-item" href="我的.html">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="12" cy="10" r="3"/><path d="M7 18c0-2 2.2-4 5-4s5 2 5 4"/></svg>
+      我的
+    </a>
+  </div>
+</div>
+
+<script>
+// Counter animation
+(function() {
+  var counters = [
+    { el: document.getElementById('msgCount'), target: 156 },
+    { el: document.getElementById('groupCount'), target: 12 }
+  ];
+  counters.forEach(function(c) {
+    if (!c.el) return;
+    var duration = 600, start = performance.now();
+    function update(now) {
+      var p = Math.min((now - start) / duration, 1);
+      var eased = 1 - Math.pow(1 - p, 3);
+      c.el.textContent = Math.round(c.target * eased);
+      if (p < 1) requestAnimationFrame(update);
+      else c.el.textContent = c.target;
+    }
+    c.el.textContent = '0';
+    requestAnimationFrame(update);
+  });
+})();
+</script>
+<script src="shared/config.js"></script>
+<script src="shared/api.js"></script>
+<script src="shared/app.js">
+// Load QQ channel status
+if (API.isLoggedIn()) {
+  function loadQQStatus() {
+    API.getQQStatus().then(function(qq) {
+      // Update connection status
+      var statusEl = document.querySelector('.conn-status') || document.querySelector('[data-qq-status]');
+      if (statusEl) {
+        statusEl.textContent = qq.connected ? '已连接' : '未连接';
+        statusEl.className = (statusEl.className || '').replace(/\bon\b|\boff\b/g, '') + (qq.connected ? ' on' : ' off');
+      }
+      var qqNumEl = document.querySelector('[data-qq-number]') || document.querySelector('.qq-number');
+      if (qqNumEl && qq.qq_number) qqNumEl.textContent = qq.qq_number;
+    }).catch(function() {});
+    API.getQQStats().then(function(s) {
+      var msgEl = document.querySelector('[data-msg-count]');
+      if (msgEl) msgEl.textContent = s.message_count || 0;
+      var grpEl = document.querySelector('[data-group-count]');
+      if (grpEl) grpEl.textContent = s.active_groups || 0;
+    }).catch(function() {});
+    API.getQQRecentMessages(3).then(function(d) {
+      var container = document.querySelector('[data-recent-msgs]');
+      if (container && d.messages) {
+        container.innerHTML = d.messages.map(function(m) {
+          return '<div class="msg-item"><span class="msg-source">' + (m.source || '') + '</span><span class="msg-text">' + (m.content || '') + '</span></div>';
+        }).join('');
+      }
+    }).catch(function() {});
+  }
+  loadQQStatus();
+  setInterval(loadQQStatus, 30000); // auto refresh every 30s
+}
+
+</script>
+</body>
+</html>

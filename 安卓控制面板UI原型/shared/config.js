@@ -20,7 +20,7 @@
   if (!window.APP_CONFIG.server_base) {
     if (window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform()) {
       // APK 内：默认指向公网服务器（构建时填入真实 IP）
-      window.APP_CONFIG.server_base = 'http://<服务器公网IP>:8766';
+      window.APP_CONFIG.server_base = 'http://49.232.195.125:8766';
     } else {
       // 浏览器调试：同源（页面从 8766 来，API 也走 8766）
       window.APP_CONFIG.server_base = location.origin;

@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no">
+<title>品牌色系统 v2 — UI 原型</title>
+<link rel="stylesheet" href="shared/tokens.css">
+<link rel="stylesheet" href="shared/effects.css">
+<style>
+/* ===== 页面布局 ===== */
+/* 品牌色预览使用 .page-wrap 布局，NO phone frame */
+body {
+  font-family: -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  min-height: 100vh;
+  background: linear-gradient(160deg, #FFE0E8 0%, #FFD4DC 20%, #FFE8F0 45%, #FFDDE5 70%, #FFE5EC 100%);
+  background-attachment: fixed;
+  color: #4A3040; padding: 32px 20px 60px; overflow-x: hidden;
+}
+
+/* Page enter animation — spring-based (this page has NO phone frame so defines its own) */
+@keyframes page-push-enter {
+  0%   { opacity: 0; transform: scale(0.92) translateY(12px); }
+  60%  { opacity: 1; transform: scale(1.01) translateY(-2px); }
+  100% { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+.page-wrap { max-width: 860px; margin: 0 auto; position: relative; z-index: 1; }
+.back-link {
+  display: inline-flex; align-items: center; gap: 6px; color: #B090A0; text-decoration: none;
+  font-size: 13px; margin-bottom: 20px; transition: color 0.2s;
+}
+.back-link:hover { color: #F472B6; }
+.back-link svg { width: 16px; height: 16px; }
+
+h1 {
+  text-align: center; font-size: 28px; font-weight: 800; margin-bottom: 6px;
+  background: linear-gradient(135deg, #F472B6, #C4B5FD);
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+}
+.sub { text-align: center; color: #C090A0; margin-bottom: 36px; font-size: 14px; }
+
+.section-title { font-size: 18px; font-weight: 700; margin: 32px 0 16px; color: #3A2030; }
+.palettes { display: flex; gap: 24px; justify-content: center; flex-wrap: wrap; }
+.palette-card {
+  flex: 1; min-width: 300px; max-width: 400px;
+  background: rgba(255,255,255,0.6); backdrop-filter: blur(12px);
+  border-radius: 20px; padding: 24px;
+  border: 1.5px solid rgba(255,255,255,0.7);
+  box-shadow: 0 4px 20px rgba(244, 114, 182,0.06);
+}
+.palette-card h2 { font-size: 17px; margin-bottom: 20px; text-align: center; color: #3A2030; }
+.color-row { display: flex; align-items: center; gap: 14px; margin-bottom: 14px; }
+.swatch { width: 52px; height: 52px; border-radius: 14px; flex-shrink: 0;
+  border: 2px solid rgba(255,255,255,0.8); box-shadow: 0 3px 10px rgba(0,0,0,0.06); }
+.color-name { font-size: 14px; font-weight: 700; color: #3A2030; }
+.color-hex { font-size: 12px; color: #B090A0; font-family: 'SF Mono','Cascadia Code',monospace; }
+.color-role { font-size: 11px; color: #C0A0B0; margin-top: 2px; }
+
+/* ===== 手机模拟 ===== */
+.phone-row { display: flex; gap: 28px; justify-content: center; flex-wrap: wrap; margin-top: 8px; }
+.phone {
+  width: 320px; height: 620px; border-radius: 28px;
+  border: 3px solid rgba(255,255,255,0.5);
+  overflow: hidden; position: relative;
+  box-shadow: 0 12px 40px rgba(244, 114, 182,0.1);
+  animation: page-push-enter 0.35s cubic-bezier(0.25, 0.1, 0.25, 1) both;
+}
+.phone-header {
+  height: 40px; display: flex; align-items: center; justify-content: center;
+  font-size: 13px; font-weight: 700; letter-spacing: 0.5px;
+}
+.phone-body { padding: 14px; height: calc(100% - 40px - 52px); overflow-y: auto; }
+.phone-nav {
+  height: 52px; display: flex; align-items: center; justify-content: space-around;
+  border-top: 1px solid rgba(0,0,0,0.06);
+}
+.nv { text-align: center; font-size: 10px; cursor: pointer; transition: color 0.2s; }
+.nv svg { width: 22px; height: 22px; display: block; margin: 0 auto 2px; }
+
+/* ===== 亮色 ===== */
+.ph-light { background: #FFF5F7; }
+.ph-light .phone-header { background: linear-gradient(135deg, #F472B6, #F9A8D4); color: #fff; }
+.ph-light .phone-nav { background: #fff; }
+.ph-light .card {
+  background: #fff; border-radius: 12px; padding: 12px; margin-bottom: 10px;
+  box-shadow: 0 2px 8px rgba(244, 114, 182,0.06);
+}
+.ph-light .btn {
+  background: #F472B6; color: #fff; border: none; border-radius: 10px;
+  padding: 9px 18px; font-size: 13px; font-weight: 600; cursor: pointer;
+}
+.ph-light .btn-o {
+  background: transparent; color: #F472B6; border: 1.5px solid #F472B6;
+  border-radius: 10px; padding: 9px 18px; font-size: 13px; font-weight: 600; cursor: pointer;
+}
+.ph-light .tag { background: #FFF0F3; color: #F472B6; padding: 2px 8px; border-radius: 6px; font-size: 11px; }
+.ph-light .nv { color: #C0A0B0; }
+.ph-light .nv.active { color: #F472B6; }
+
+/* ===== 暗色 ===== */
+.ph-dark { background: #1A1A2E; }
+.ph-dark .phone-header { background: linear-gradient(135deg, #F472B6, #D45570); color: #fff; }
+.ph-dark .phone-nav { background: #16213E; border-top-color: rgba(255,255,255,0.06); }
+.ph-dark .card {
+  background: #16213E; border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 12px; padding: 12px; margin-bottom: 10px; color: #ccc;
+}
+.ph-dark .btn {
+  background: #F472B6; color: #fff; border: none; border-radius: 10px;
+  padding: 9px 18px; font-size: 13px; font-weight: 600; cursor: pointer;
+}
+.ph-dark .btn-o {
+  background: transparent; color: #F472B6; border: 1.5px solid #F472B6;
+  border-radius: 10px; padding: 9px 18px; font-size: 13px; font-weight: 600; cursor: pointer;
+}
+.ph-dark .tag { background: rgba(244, 114, 182,0.15); color: #F472B6; padding: 2px 8px; border-radius: 6px; font-size: 11px; }
+.ph-dark .nv { color: #888; }
+.ph-dark .nv.active { color: #F472B6; }
+
+/* ===== 颜色色块 ===== */
+.swatch.c1 { background: #F472B6; } .swatch.c2 { background: #ADD8E6; }
+.swatch.c3 { background: #C4B5FD; } .swatch.c4 { background: #98FF98; }
+.swatch.c5 { background: #1A1A2E; } .swatch.c6 { background: #16213E; }
+.swatch.c7 { background: #F9A8D4; }
+
+/* ===== 对比度警告 ===== */
+.wcag-warn {
+  display: inline-flex; align-items: center; gap: 4px; font-size: 10px;
+  background: #FFF3CD; color: #856404; padding: 2px 8px; border-radius: 8px;
+  margin-top: 4px;
+}
+</style>
+</head>
+<body>
+
+<script>
+// ===== 花瓣初始化（页面专用） =====
+(function() {
+  for (var i = 0; i < 12; i++) {
+    var p = document.createElement('div'); p.className = 'petal';
+    p.style.left = Math.random()*100+'%'; p.style.width = p.style.height = (6+Math.random()*12)+'px';
+    p.style.animationDuration = (5+Math.random()*10)+'s'; p.style.animationDelay = Math.random()*8+'s';
+    p.style.opacity = 0.3+Math.random()*0.4;
+    document.body.appendChild(p);
+  }
+})();
+</script>
+
+<div class="page-wrap">
+  <a href="index.html" class="back-link">
+    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M10 3L5 8l5 5"/></svg>
+    返回索引
+  </a>
+
+  <h1>品牌色系统 — v3</h1>
+  <p class="sub">马卡龙软粉 · 婴儿蓝辅色 · 薰衣草点缀 · 薄荷绿语义 · 亮/暗双模式</p>
+
+  <div class="palettes">
+    <div class="palette-card">
+      <h2>
+        <svg viewBox="0 0 20 20" fill="none" stroke="#FFB347" stroke-width="1.5" stroke-linecap="round" style="width:18px;height:18px;vertical-align:text-bottom;margin-right:4px;">
+          <circle cx="10" cy="10" r="4"/><path d="M10 2v3M10 15v3M2 10h3M15 10h3"/>
+        </svg>
+        亮色模式
+      </h2>
+      <div class="color-row"><div class="swatch c1"></div><div><div class="color-name">主色 马卡龙软粉</div><div class="color-hex">#F472B6</div><div class="color-role">按钮 / 强调 / 选中态 / 渐变起点</div></div></div>
+      <div class="color-row"><div class="swatch c2"></div><div><div class="color-name">辅色 婴儿蓝</div><div class="color-hex">#ADD8E6</div><div class="color-role">次要强调 / 链接 / 聚焦环 / 装饰</div></div></div>
+      <div class="color-row"><div class="swatch c3"></div><div><div class="color-name">强调 薰衣草</div><div class="color-hex">#C4B5FD</div><div class="color-role">数据 / 图表 / 装饰 / 渐变</div></div></div>
+      <div class="color-row"><div class="swatch c4"></div><div><div class="color-name">语义 薄荷绿</div><div class="color-hex">#98FF98</div><div class="color-role">成功 / 确认 / 在线状态</div></div></div>
+    </div>
+    <div class="palette-card">
+      <h2>
+        <svg viewBox="0 0 20 20" fill="none" stroke="#B794F4" stroke-width="1.5" stroke-linecap="round" style="width:18px;height:18px;vertical-align:text-bottom;margin-right:4px;">
+          <path d="M17 12.5A7.5 7.5 0 0110 18a7.5 7.5 0 01-7-4"/>
+        </svg>
+        暗色模式
+      </h2>
+      <div class="color-row"><div class="swatch c7"></div><div><div class="color-name">主色 暗色提亮</div><div class="color-hex">#F9A8D4</div><div class="color-role">暗色下保持品牌识别，比亮色模式亮一级</div></div></div>
+      <div class="color-row"><div class="swatch c2"></div><div><div class="color-name">辅色 婴儿蓝</div><div class="color-hex">#ADD8E6</div><div class="color-role">暗色下不变</div></div></div>
+      <div class="color-row"><div class="swatch c5"></div><div><div class="color-name">背景 深蓝紫</div><div class="color-hex">#1A1A2E</div><div class="color-role">主背景色</div></div></div>
+      <div class="color-row"><div class="swatch c6"></div><div><div class="color-name">卡片 深色</div><div class="color-hex">#16213E</div><div class="color-role">卡片/列表/输入框背景</div></div></div>
+    </div>
+  </div>
+
+  <div class="section-title">📱 手机模拟对比（Apple 风格图标）</div>
+  <div class="phone-row">
+    <!-- 亮色 -->
+    <div class="phone ph-light">
+      <div class="phone-header">林念念</div>
+      <div class="phone-body">
+        <div class="card">
+          <div style="font-weight:700;margin-bottom:4px;">小咪 <span class="tag">傲娇</span></div>
+          <div style="font-size:11px;color:#999;">● 在线 · 今日 23 条消息</div>
+        </div>
+        <div class="card">
+          <div style="font-weight:700;margin-bottom:8px;">今日数据</div>
+          <div style="display:flex;gap:8px;">
+            <div style="flex:1;text-align:center;background:#FFF5F7;border-radius:8px;padding:8px;">
+              <div style="font-size:18px;font-weight:700;color:#F472B6;">23</div><div style="font-size:10px;color:#999;">消息</div></div>
+            <div style="flex:1;text-align:center;background:#FFF5F7;border-radius:8px;padding:8px;">
+              <div style="font-size:18px;font-weight:700;color:#C4B5FD;">18</div><div style="font-size:10px;color:#999;">好友</div></div>
+            <div style="flex:1;text-align:center;background:#FFF5F7;border-radius:8px;padding:8px;">
+              <div style="font-size:18px;font-weight:700;color:#FFB347;">85%</div><div style="font-size:10px;color:#999;">活跃</div></div>
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;">
+          <button class="btn" style="flex:1;">聊天</button>
+          <button class="btn-o" style="flex:1;">设置</button>
+        </div>
+      </div>
+      <div class="phone-nav">
+        <div class="nv active">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12l9-9 9 9"/><path d="M5 10v10a1 1 0 001 1h4v-6h4v6h4a1 1 0 001-1V10"/></svg>
+          首页
+        </div>
+        <div class="nv">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v13H8l-4 4v-4H4z"/></svg>
+          聊天
+        </div>
+        <div class="nv">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="5"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>
+          Bot
+        </div>
+        <div class="nv">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M5 20v-1a7 7 0 0114 0v1"/></svg>
+          我的
+        </div>
+      </div>
+    </div>
+
+    <!-- 暗色 -->
+    <div class="phone ph-dark">
+      <div class="phone-header">林念念</div>
+      <div class="phone-body">
+        <div class="card">
+          <div style="font-weight:700;margin-bottom:4px;">小咪 <span class="tag">傲娇</span></div>
+          <div style="font-size:11px;color:#888;">● 在线 · 今日 23 条消息</div>
+        </div>
+        <div class="card">
+          <div style="font-weight:700;margin-bottom:8px;">今日数据</div>
+          <div style="display:flex;gap:8px;">
+            <div style="flex:1;text-align:center;background:rgba(244, 114, 182,0.08);border-radius:8px;padding:8px;">
+              <div style="font-size:18px;font-weight:700;color:#F472B6;">23</div><div style="font-size:10px;color:#888;">消息</div></div>
+            <div style="flex:1;text-align:center;background:rgba(183,148,244,0.08);border-radius:8px;padding:8px;">
+              <div style="font-size:18px;font-weight:700;color:#B794F4;">18</div><div style="font-size:10px;color:#888;">好友</div></div>
+            <div style="flex:1;text-align:center;background:rgba(255,179,71,0.08);border-radius:8px;padding:8px;">
+              <div style="font-size:18px;font-weight:700;color:#FFB347;">85%</div><div style="font-size:10px;color:#888;">活跃</div></div>
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;">
+          <button class="btn" style="flex:1;">聊天</button>
+          <button class="btn-o" style="flex:1;">设置</button>
+        </div>
+      </div>
+      <div class="phone-nav">
+        <div class="nv active">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12l9-9 9 9"/><path d="M5 10v10a1 1 0 001 1h4v-6h4v6h4a1 1 0 001-1V10"/></svg>
+          首页
+        </div>
+        <div class="nv">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v13H8l-4 4v-4H4z"/></svg>
+          聊天
+        </div>
+        <div class="nv">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="5"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>
+          Bot
+        </div>
+        <div class="nv">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M5 20v-1a7 7 0 0114 0v1"/></svg>
+          我的
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <p style="text-align:center;color:#C0A0B0;font-size:12px;margin-top:28px;">
+    v9 马卡龙色系 · 主色 #F472B6 软粉 + 辅色 #ADD8E6 婴儿蓝 · 暗色模式全覆盖<br>
+    底部导航图标全部替换为 Apple SF Symbol 风格 SVG（无 emoji）
+  </p>
+</div>
+
+<script src="shared/app.js"></script>
+</body>
+</html>

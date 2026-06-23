@@ -1,0 +1,315 @@
+/* ===== 林念念 Bot — Complete Dark Mode Overrides ===== */
+/* Covers all shared components + common page patterns */
+
+/* === Base === */
+.phone.dark-mode { background: #1A1A2E; }
+.phone.dark-mode .title-bar { background: linear-gradient(135deg, #F9A8D4, #F472B6); }
+
+/* === Text Colors === */
+.phone.dark-mode .group-title { color: #8078A0; }
+.phone.dark-mode .arrow-right { color: #706878; }
+
+/* === Buttons === */
+.phone.dark-mode .btn-primary { box-shadow: 0 6px 20px rgba(244, 114, 182, 0.25); }
+.phone.dark-mode .btn-outline {
+  background: #16213E; border-color: rgba(244, 114, 182, 0.2); color: #F9A8D4;
+}
+.phone.dark-mode .btn-outline:hover { background: #F9A8D4; color: #fff; }
+
+/* === Inputs === */
+.phone.dark-mode .input-field {
+  background: #16213E; border-color: rgba(255, 255, 255, 0.08); color: #E0D8E8;
+}
+.phone.dark-mode .input-field:focus {
+  border-color: #F9A8D4; background: #1A1A3E;
+}
+.phone.dark-mode .input-field::placeholder { color: #706878; }
+
+/* === Glass Card === */
+.phone.dark-mode .card-glass {
+  background: #16213E; border-color: rgba(255, 255, 255, 0.06);
+}
+
+/* === Setting Item === */
+.phone.dark-mode .setting-item {
+  background: #16213E;
+}
+.phone.dark-mode .setting-item:hover { background: rgba(255, 255, 255, 0.04); }
+.phone.dark-mode .setting-item .item-label { color: #D0C8E0; }
+.phone.dark-mode .setting-item .item-value { color: #8078A0; }
+
+/* === Modal Sheet === */
+.phone.dark-mode .modal-overlay { background: rgba(0, 0, 0, 0.55); }
+.phone.dark-mode .modal-sheet { background: #1E1E3A; }
+.phone.dark-mode .modal-sheet .modal-title { color: #E0D8E8; }
+.phone.dark-mode .modal-sheet .modal-option { color: #D0C8E0; }
+.phone.dark-mode .modal-sheet .modal-option:hover { background: rgba(244, 114, 182, 0.08); }
+.phone.dark-mode .modal-sheet .modal-option.danger { color: #F9A8D4; }
+.phone.dark-mode .modal-sheet .modal-cancel {
+  background: rgba(255, 255, 255, 0.06); color: #8078A0;
+}
+.phone.dark-mode .modal-sheet .modal-cancel:hover { background: rgba(255, 255, 255, 0.1); }
+
+/* === Toast === */
+.phone.dark-mode .toast { background: #E0D8E8; color: #1A1A2E; }
+
+/* === Bottom Nav — Dark Mode === */
+.phone.dark-mode .bottom-nav {
+  background: rgba(26, 26, 46, 0.55);
+  border-top-color: rgba(255, 255, 255, 0.06);
+}
+.phone.dark-mode .bottom-nav .nav-item { color: #9080A0; }
+.phone.dark-mode .bottom-nav .nav-item.active {
+  color: #FFFFFF;
+  text-shadow: 0 1px 4px rgba(249, 168, 212, 0.35);
+}
+.phone.dark-mode .bottom-nav .nav-item.active svg {
+  filter: drop-shadow(0 1px 3px rgba(249, 168, 212, 0.25));
+}
+
+/* Dark capsule — lighter pink for contrast against dark bg */
+.phone.dark-mode .nav-capsule {
+  background: linear-gradient(135deg,
+    rgba(249, 168, 212, 0.6) 0%,
+    rgba(244, 114, 182, 0.5) 40%,
+    rgba(236, 72, 153, 0.42) 100%);
+  box-shadow:
+    0 2px 16px rgba(249, 168, 212, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.06);
+}
+
+/* Dark trails — lower opacity, softer glow */
+.phone.dark-mode .nav-capsule-trail.t1 {
+  background: rgba(249, 168, 212, 0.2);
+  box-shadow: 0 0 22px rgba(249, 168, 212, 0.12);
+}
+.phone.dark-mode .nav-capsule-trail.t2 {
+  background: rgba(249, 168, 212, 0.1);
+  box-shadow: 0 0 34px rgba(249, 168, 212, 0.06);
+}
+
+/* === Anime Cat in Dark Mode (CSS fallback) === */
+.phone.dark-mode .anime-cat::before {
+  border-color: rgba(255, 255, 255, 0.5);
+  box-shadow: 0 0 8px rgba(255, 255, 255, 0.3), 0 0 20px rgba(255, 220, 240, 0.15);
+}
+.phone.dark-mode .anime-cat .face {
+  background: linear-gradient(172deg, #E8DDE8 0%, #DED4DE 30%, #D8CCD8 65%, #D0C4D0 100%);
+  box-shadow: inset 0 5% 14% rgba(255,255,255,0.3), inset 0 -3% 6% rgba(0,0,0,0.08), 0 3% 8% rgba(0,0,0,0.12);
+}
+.phone.dark-mode .anime-cat .ear {
+  background: linear-gradient(175deg, #C090A0 0%, #B07888 55%, #A06878 100%);
+}
+.phone.dark-mode .anime-cat .ear::after {
+  background: linear-gradient(175deg, #D0B8C8 0%, #C8A8B8 55%, #B898A8 100%);
+}
+.phone.dark-mode .anime-cat .eye {
+  background: radial-gradient(circle at 78% 80%, #fff 0%, #fff 10%, transparent 11%), #3A2A3A;
+}
+.phone.dark-mode .anime-cat .blush {
+  background: radial-gradient(ellipse at center,
+    rgba(220, 160, 180, 0.3) 0%, rgba(200, 170, 185, 0.08) 55%, transparent 100%);
+}
+
+/* === Agnes Image Cat in Dark Mode === */
+.phone.dark-mode .img-cat img {
+  mix-blend-mode: normal;                      /* v6: no multiply on dark backgrounds */
+  filter: brightness(0.9) saturate(0.85) drop-shadow(0 2px 8px rgba(0,0,0,0.2));
+}
+.phone.dark-mode .img-cat.tsundere img { filter: brightness(0.9) saturate(1.05) drop-shadow(0 2px 6px rgba(244,114,182,0.2)); }
+.phone.dark-mode .img-cat.gentle img  { filter: brightness(0.92) saturate(0.85) drop-shadow(0 2px 8px rgba(173,216,230,0.2)); }
+.phone.dark-mode .img-cat.sarcastic img { filter: brightness(0.88) contrast(1.05) drop-shadow(0 2px 6px rgba(100,120,180,0.25)); }
+.phone.dark-mode .img-cat.energetic img { filter: brightness(0.9) saturate(1.1) drop-shadow(0 2px 6px rgba(255,140,100,0.25)); }
+.phone.dark-mode .img-cat.emotionless img { filter: brightness(0.92) saturate(0.55) drop-shadow(0 2px 8px rgba(180,170,190,0.1)); }
+.phone.dark-mode .img-cat.sly img { filter: brightness(0.9) contrast(1.05) drop-shadow(0 2px 6px rgba(140,100,160,0.2)); }
+
+/* === Common Page-Specific Dark Mode Patterns === */
+.phone.dark-mode .account-card { background: #16213E; border-color: rgba(255, 255, 255, 0.06); }
+.phone.dark-mode .account-name { color: #E0D8E8; }
+.phone.dark-mode .account-id { color: #8078A0; }
+.phone.dark-mode .account-arrow { color: #706878; }
+
+/* Font size cards */
+.phone.dark-mode .font-size-card { background: #16213E; border-color: rgba(255, 255, 255, 0.08); }
+.phone.dark-mode .font-size-card .size-label { color: #C0B8D0; }
+.phone.dark-mode .font-size-card.selected { background: rgba(244, 114, 182, 0.15); border-color: #F9A8D4; }
+.phone.dark-mode .font-size-card.selected .size-label { color: #F9A8D4; }
+
+/* Ringtone */
+.phone.dark-mode .ringtone-option:hover { background: rgba(255, 255, 255, 0.04); }
+.phone.dark-mode .ringtone-option.selected { background: rgba(244, 114, 182, 0.12); }
+.phone.dark-mode .ringtone-option .ring-name { color: #D0C8E0; }
+.phone.dark-mode .ringtone-option .ring-desc { color: #8078A0; }
+.phone.dark-mode .ringtone-import {
+  background: rgba(124, 92, 191, 0.08); border-color: rgba(124, 92, 191, 0.2); color: #B794F4;
+}
+
+/* Wallpaper panel */
+.phone.dark-mode .wallpaper-panel {
+  background: rgba(255, 255, 255, 0.04); border-color: rgba(255, 255, 255, 0.06);
+}
+.phone.dark-mode .wallpaper-panel .wp-label { color: #8078A0; }
+
+/* Brand link */
+.phone.dark-mode .brand-link { color: #9088A0; }
+.phone.dark-mode .brand-link:hover { color: #F9A8D4; }
+
+/* Legal content cards */
+.phone.dark-mode .content-card { background: #16213E; border-color: rgba(255, 255, 255, 0.06); }
+.phone.dark-mode .content-card h2 { color: #E0D8E8; }
+.phone.dark-mode .content-card p,
+.phone.dark-mode .content-card li { color: #B0A8C0; }
+.phone.dark-mode .update-date { color: #706878; }
+
+/* Chat bubbles */
+.phone.dark-mode .bubble.bot { background: #2A2A3E; color: #E8E0F0; }
+.phone.dark-mode .bubble.me { background: linear-gradient(135deg, #C44A60, #D46075); }
+.phone.dark-mode .time-divider { color: #706080; }
+.phone.dark-mode .msg-avatar.bot {
+  background: linear-gradient(135deg, #3A2A3E, #4A3A5E);
+  box-shadow: 0 2px 6px rgba(244, 114, 182, 0.2);
+}
+
+/* Input bar — ChatGPT style */
+.phone.dark-mode .input-bar {
+  background: #2A2A3E;
+  border-color: rgba(255, 255, 255, 0.08);
+  box-shadow: 0 1px 6px rgba(0,0,0,0.2), 0 2px 16px rgba(0,0,0,0.15);
+}
+.phone.dark-mode .input-bar:focus-within {
+  border-color: rgba(255, 255, 255, 0.15);
+  box-shadow: 0 1px 8px rgba(0,0,0,0.3), 0 3px 24px rgba(0,0,0,0.2);
+}
+.phone.dark-mode .input-bar textarea { color: #E8E0F0; }
+.phone.dark-mode .input-bar textarea::placeholder { color: #6A6A8A; }
+.phone.dark-mode .input-bar .attach-btn { color: #6A6A8A; }
+.phone.dark-mode .input-bar .attach-btn:hover { background: rgba(255,255,255,0.06); color: #C0C0D0; }
+.phone.dark-mode .send-btn { background: #E8E0F0; color: #1A1A2E; }
+.phone.dark-mode .send-btn:hover { background: #fff; }
+
+/* Long press menu */
+.phone.dark-mode .longpress-menu { background: #2A2A3E; box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4); }
+.phone.dark-mode .longpress-menu .lp-item { color: #E8E0F0; }
+.phone.dark-mode .longpress-menu .lp-item:hover { background: #3A3A5E; }
+
+/* BG picker */
+.phone.dark-mode .bg-picker { background: rgba(26, 26, 46, 0.9); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4); }
+
+/* Notification items */
+.phone.dark-mode .notif-item { background: #16213E; border-color: rgba(255, 255, 255, 0.04); }
+.phone.dark-mode .notif-item.unread { background: rgba(244, 114, 182, 0.06); }
+.phone.dark-mode .notif-title { color: #E0D8E8; }
+.phone.dark-mode .notif-body { color: #9088A0; }
+.phone.dark-mode .notif-time { color: #706878; }
+.phone.dark-mode .notif-dot { box-shadow: 0 0 0 2px #1A1A2E; }
+
+/* Bot cards (list) */
+.phone.dark-mode .bot-card { background: #16213E; border-color: rgba(255, 255, 255, 0.06); }
+.phone.dark-mode .bot-name { color: #E0D8E8; }
+.phone.dark-mode .bot-persona { color: #9088A0; }
+.phone.dark-mode .bot-meta { color: #706878; }
+
+/* Stat cards / quick actions */
+.phone.dark-mode .stat-card { background: #16213E; }
+.phone.dark-mode .stat-label { color: #9088A0; }
+.phone.dark-mode .quick-action { background: #16213E; }
+.phone.dark-mode .quick-action .qa-label { color: #D0C8E0; }
+
+/* Channel cards */
+.phone.dark-mode .channel-card { background: #16213E; border-color: rgba(255, 255, 255, 0.06); }
+
+/* License cards */
+.phone.dark-mode .license-card { background: #16213E; border-color: rgba(255, 255, 255, 0.06); }
+.phone.dark-mode .lib-name { color: #E0D8E8; }
+.phone.dark-mode .lib-desc { color: #9088A0; }
+.phone.dark-mode .license-badge { background: rgba(255, 255, 255, 0.06); color: #B0A8C0; }
+
+/* Desc / tip cards */
+.phone.dark-mode .tip-card { background: rgba(244, 114, 182, 0.06); border-color: rgba(244, 114, 182, 0.12); }
+.phone.dark-mode .perm-item { background: #16213E; }
+
+/* Profile page */
+.phone.dark-mode .field-label { color: #B0A0C0; }
+.phone.dark-mode .radio-option {
+  background: #16213E; border-color: rgba(255, 255, 255, 0.08); color: #C0B8D0;
+}
+.phone.dark-mode .radio-option.selected {
+  background: rgba(244, 114, 182, 0.15); border-color: #F9A8D4; color: #F9A8D4;
+}
+.phone.dark-mode .avatar-wrap { box-shadow: 0 4px 16px rgba(244, 114, 182, 0.2); }
+.phone.dark-mode .avatar-edit-badge { background: #16213E; color: #F9A8D4; }
+
+/* Auth pages */
+.phone.dark-mode .input-group label { color: #B0A0C0; }
+.phone.dark-mode .code-btn {
+  background: rgba(244, 114, 182, 0.1); border-color: rgba(244, 114, 182, 0.3);
+}
+.phone.dark-mode .social-btn { background: #16213E; border-color: rgba(255, 255, 255, 0.08); }
+.phone.dark-mode .social-label { color: #B0A8C0; }
+.phone.dark-mode .privacy-row { color: #B0A8C0; }
+
+/* Empty state */
+.phone.dark-mode .empty-state .title { color: #C0B8D0; }
+.phone.dark-mode .empty-state .desc { color: #8078A0; }
+
+/* Dashboard */
+.phone.dark-mode .greeting { color: #D0C8E0; }
+.phone.dark-mode .username { color: #E0D8E8; }
+.phone.dark-mode .top-btn { background: rgba(255, 255, 255, 0.1); }
+.phone.dark-mode .section-label { color: #8078A0; }
+
+/* Data panel */
+.phone.dark-mode .kpi-card { background: #16213E; }
+.phone.dark-mode .kpi-value { color: #E0D8E8; }
+.phone.dark-mode .kpi-label { color: #9088A0; }
+.phone.dark-mode .chart-card { background: #16213E; }
+.phone.dark-mode .achievement-item { background: #16213E; }
+
+/* Bot settings / create wizard */
+.phone.dark-mode .slider-group label { color: #B0A0C0; }
+.phone.dark-mode .radio-chip {
+  background: #16213E; border-color: rgba(255, 255, 255, 0.08); color: #C0B8D0;
+}
+.phone.dark-mode .radio-chip.selected {
+  background: rgba(244, 114, 182, 0.15); border-color: #F9A8D4; color: #F9A8D4;
+}
+.phone.dark-mode .tag {
+  background: rgba(244, 114, 182, 0.08); color: #FBCFE8;
+}
+.phone.dark-mode .template-card {
+  background: #16213E; border-color: rgba(255, 255, 255, 0.08);
+}
+.phone.dark-mode .template-card .template-name { color: #D0C8E0; }
+.phone.dark-mode .template-card .template-persona { color: #9088A0; }
+.phone.dark-mode .step-dot { background: #4A3A5E; }
+.phone.dark-mode .step-dot.active { background: #F9A8D4; }
+
+/* Danger zone */
+.phone.dark-mode .danger-btn {
+  background: #16213E; border-color: rgba(244, 114, 182, 0.2); color: #F9A8D4;
+}
+.phone.dark-mode .danger-btn:hover { background: #F9A8D4; color: #fff; }
+
+/* Scroll area */
+.phone.dark-mode .scroll-area { scrollbar-color: rgba(255, 255, 255, 0.08) transparent; }
+
+/* Key management */
+.phone.dark-mode .key-card { background: #16213E; border-color: rgba(255, 255, 255, 0.06); }
+.phone.dark-mode .key-name { color: #E0D8E8; }
+.phone.dark-mode .key-value { color: #9088A0; }
+.phone.dark-mode .perm-tag { background: rgba(255, 255, 255, 0.06); color: #B0A8C0; }
+
+/* Splash page */
+.phone.dark-mode .bg-orb { opacity: 0.3; }
+.phone.dark-mode .splash-sub { color: #B0A8C0; }
+.phone.dark-mode .version { color: #706878; }
+
+/* Offline banner */
+.phone.dark-mode .offline-banner { background: linear-gradient(135deg, #8B6914, #9B7924); }
+
+/* Password strength */
+.phone.dark-mode .strength-bar { background: rgba(255, 255, 255, 0.08); }
+
+/* Social login */
+.phone.dark-mode .social-btn { background: #16213E; border-color: rgba(255, 255, 255, 0.08); color: #D0C8E0; }

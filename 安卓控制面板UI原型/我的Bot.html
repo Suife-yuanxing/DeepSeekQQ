@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no">
+<title>Bot管理 — UI 原型</title>
+<link rel="stylesheet" href="shared/tokens.css">
+<link rel="stylesheet" href="shared/base.css">
+<link rel="stylesheet" href="shared/components.css">
+<link rel="stylesheet" href="shared/anime-cat.css">
+<link rel="stylesheet" href="shared/dark-mode.css">
+<link rel="stylesheet" href="shared/effects.css">
+<style>
+/* ===== 我的Bot — 页面专属样式 ===== */
+.scroll-area { padding: 12px 0 8px; }
+
+.title-bar .add-btn {
+  width: 32px; height: 32px; border-radius: 50%;
+  background: rgba(255,255,255,0.2); border: none; cursor: pointer;
+  color: #fff; display: flex; align-items: center; justify-content: center;
+  transition: all 0.2s;
+}
+.title-bar .add-btn:hover { background: rgba(255,255,255,0.35); transform: scale(1.05); }
+.title-bar .add-btn svg { width: 18px; height: 18px; }
+
+/* Bot 卡片 */
+.bot-card {
+  margin: 6px 20px; padding: 16px;
+  background: rgba(255,255,255,0.7); backdrop-filter: blur(8px);
+  border-radius: 18px; display: flex; align-items: center; gap: 14px;
+  border: 1.5px solid rgba(255,255,255,0.7);
+  box-shadow: 0 3px 12px rgba(244, 114, 182,0.05);
+  cursor: pointer; transition: all 0.25s; text-decoration: none; color: inherit;
+}
+.bot-card:hover { transform: translateY(-2px); border-color: rgba(244, 114, 182,0.2); box-shadow: 0 8px 20px rgba(244, 114, 182,0.1); }
+.bot-card:active { transform: scale(0.97); transition: all 0.1s ease; }
+.bot-card.offline { opacity: 0.6; }
+.bot-avatar {
+  width: 52px; height: 52px; border-radius: 50%; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+}
+.av-pink { background: linear-gradient(135deg, #F472B6, #FFB0C0); }
+.av-purple { background: linear-gradient(135deg, #C4B5FD, #B794F4); }
+.av-orange { background: linear-gradient(135deg, #FFB347, #FFC773); }
+.bot-info { flex: 1; min-width: 0; }
+.bot-name { font-size: 16px; font-weight: 800; color: #3A2030; }
+.bot-persona { font-size: 12px; color: #B090A0; margin-top: 2px; }
+.bot-meta { display: flex; gap: 12px; margin-top: 4px; font-size: 11px; color: #C0A0B0; }
+.bot-meta span { display: flex; align-items: center; gap: 3px; }
+.bot-status { display: flex; align-items: center; gap: 6px; font-size: 11px; }
+.status-dot { width: 7px; height: 7px; border-radius: 50%; }
+.status-dot.online { background: #4CAF50; }
+.status-dot.offline { background: #C0A0B0; }
+
+/* 空态 */
+.empty-state { text-align: center; padding: 60px 20px; }
+.empty-state .icon { width: 64px; height: 64px; margin: 0 auto 16px; }
+.empty-state .icon svg { width: 64px; height: 64px; stroke: #C0A0B0; }
+.empty-state .title { font-size: 16px; font-weight: 700; color: #3A2030; margin-bottom: 4px; }
+.empty-state .desc { font-size: 13px; color: #B090A0; margin-bottom: 20px; }
+
+/* 删除按钮 */
+.bot-card .delete-hint {
+  font-size: 10px; color: #F472B6; opacity: 0; transition: opacity 0.2s;
+  margin-left: auto; white-space: nowrap;
+}
+.bot-card:hover .delete-hint { opacity: 0.7; }
+
+/* 加载状态 */
+.loading-state { text-align: center; padding: 40px 20px; color: #C0A0B0; font-size: 13px; }
+</style>
+</head>
+<body>
+<div class="phone">
+  <div class="title-bar">
+    <span class="title">Bot管理</span>
+    <button class="add-btn" onclick="location.href='Bot创建向导.html'" title="新建 Bot">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+    </button>
+  </div>
+  <div class="scroll-area" id="botList">
+    <div class="loading-state">加载中…</div>
+  </div>
+  <div class="bottom-nav" id="bottomNav">
+    <a class="nav-item" href="首页仪表盘.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12l9-9 9 9"/><path d="M5 10v10a1 1 0 001 1h4v-6h4v6h4a1 1 0 001-1V10"/></svg>首页</a>
+    <a class="nav-item" href="聊天页.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v13H8l-4 4v-4H4z"/></svg>聊天</a>
+    <a class="nav-item active"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="5"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/><circle cx="10" cy="7" r="1" fill="currentColor" stroke="none"/><circle cx="14" cy="7" r="1" fill="currentColor" stroke="none"/></svg>Bot管理</a>
+    <a class="nav-item" href="我的.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="12" cy="10" r="3"/><path d="M7 18c0-2 2.2-4 5-4s5 2 5 4"/></svg>我的</a>
+  </div>
+</div>
+<script src="shared/config.js"></script>
+<script src="shared/api.js"></script>
+<script src="shared/app.js"></script>
+<script>
+// ===== 我的Bot — API 数据加载 =====
+(function() {
+  'use strict';
+  if (!API.isLoggedIn()) { location.href = '登录页.html'; return; }
+
+  var AVATAR_COLORS = ['av-pink', 'av-purple', 'av-orange'];
+  var PERSONA_LABELS = { tsundere: '傲娇', gentle: '温柔', sarcastic: '毒舌', energetic: '元气', emotionless: '三无', sly: '腹黑' };
+  var PERSONA_AVATARS = { tsundere: 'agnes-tsundere.png', gentle: 'agnes-gentle.png', sarcastic: 'agnes-sarcastic.png', energetic: 'agnes-energetic.png', emotionless: 'agnes-emotionless.png', sly: 'agnes-sly.png' };
+
+  function renderBots(bots) {
+    var container = document.getElementById('botList');
+    if (!container) return;
+
+    if (!bots || bots.length === 0) {
+      container.innerHTML = '<div class="empty-state"><div class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="12" cy="8" r="5"/><path d="M4 20c0-4 3.6-7 8-7"/></svg></div><div class="title">还没有 Bot</div><div class="desc">点击右上角 + 创建一个吧</div><button class="btn-primary" onclick="location.href=\'Bot创建向导.html\'" style="border:none;border-radius:14px;padding:10px 24px;background:#F472B6;color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;">创建 Bot</button></div>';
+      return;
+    }
+
+    container.innerHTML = bots.map(function(b, i) {
+      var colorCls = AVATAR_COLORS[i % 3];
+      var personaLabel = PERSONA_LABELS[b.personality] || b.personality || '';
+      var avatarFile = PERSONA_AVATARS[b.personality] || 'shared/agnes-cat.png';
+      var isActive = b.is_active !== false;
+      var avatarHtml = b.avatar_url
+        ? '<img src="' + b.avatar_url + '" alt="Bot" style="width:52px;height:52px;border-radius:50%;object-fit:cover;">'
+        : '<div class="img-cat avatar img-md"><img src="shared/' + avatarFile + '" alt="猫娘"></div>';
+
+      return '<div class="bot-card' + (isActive ? '' : ' offline') + '" onclick="goChat(' + b.id + ')">' +
+        '<div class="bot-avatar ' + colorCls + '">' + avatarHtml + '</div>' +
+        '<div class="bot-info">' +
+          '<div class="bot-name">' + _esc(b.name) + (isActive ? '' : '（已停用）') + '</div>' +
+          '<div class="bot-persona">' + _esc(personaLabel) + '</div>' +
+          '<div class="bot-meta"><span>今日 ' + (b.today_count || 0) + ' 条</span><span>Lv.' + (b.level || 0) + '</span></div>' +
+        '</div>' +
+        '<div class="bot-status"><span class="status-dot ' + (isActive ? 'online' : 'offline') + '"></span>' + (isActive ? '在线' : '离线') + '</div>' +
+        '<div class="delete-hint" onclick="event.stopPropagation();confirmDelete(' + b.id + ',\'' + _esc(b.name) + '\')">删除</div>' +
+      '</div>';
+    }).join('');
+  }
+
+  function _esc(s) { return (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;'); }
+
+  // 加载
+  API.listBots().then(function(d) {
+    renderBots(d.bots);
+  }).catch(function(err) {
+    document.getElementById('botList').innerHTML = '<div class="loading-state">加载失败：' + (err.message || '网络错误') + '</div>';
+  });
+
+  // 聊天
+  window.goChat = function(botId) {
+    API.setCurrentBotId(botId);
+    location.href = '聊天页.html?bot_id=' + botId;
+  };
+
+  // 删除确认
+  window.confirmDelete = function(botId, botName) {
+    if (confirm('确定删除 Bot「' + botName + '」吗？\n此操作不可撤销，聊天记录将一并删除。')) {
+      API.deleteBot(botId).then(function() {
+        // 重新加载列表
+        API.listBots().then(function(d) { renderBots(d.bots); });
+      }).catch(function(err) {
+        alert('删除失败：' + (err.message || '未知错误'));
+      });
+    }
+  };
+})();
+</script>
+</body>
+</html>

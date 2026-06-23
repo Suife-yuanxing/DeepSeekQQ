@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no">
+<title>用户协议 — UI 原型</title>
+<link rel="stylesheet" href="shared/tokens.css">
+<link rel="stylesheet" href="shared/base.css">
+<link rel="stylesheet" href="shared/components.css">
+<link rel="stylesheet" href="shared/dark-mode.css">
+<link rel="stylesheet" href="shared/effects.css">
+<style>
+/* ===== 用户协议 — 页面专属样式 ===== */
+.scroll-area { padding: 16px 20px 20px; }
+
+.content-card {
+  background: rgba(255,255,255,0.7); backdrop-filter: blur(8px);
+  border-radius: 16px; padding: 20px; border: 1px solid rgba(255,255,255,0.7);
+}
+.content-card h2 {
+  font-size: 16px; font-weight: 800; color: #3A2030; margin: 20px 0 8px;
+}
+.content-card h2:first-child { margin-top: 0; }
+.content-card p {
+  font-size: 13px; color: #6A5060; line-height: 1.8; margin-bottom: 8px;
+}
+.content-card ul { margin: 8px 0; padding-left: 18px; }
+.content-card li {
+  font-size: 13px; color: #6A5060; line-height: 1.8; margin-bottom: 4px;
+}
+.update-date {
+  text-align: center; font-size: 11px; color: #C0A0B0; padding: 16px 0 8px;
+}
+</style>
+</head>
+<body>
+<div class="phone">
+  <div class="title-bar">
+    <a class="back" href="我的.html">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M15 18l-6-6 6-6"/></svg>
+    </a>
+    <span class="title">用户协议</span>
+  </div>
+  <div class="scroll-area">
+    <div class="content-card">
+      <h2>一、总则</h2>
+      <p>欢迎使用林念念 Bot 控制面板（以下简称"本服务"）。本协议是您与林念念开发团队之间关于使用本服务的法律协议。请您仔细阅读本协议的全部内容。如您不同意本协议的任何条款，请勿使用本服务。您使用本服务即表示您已阅读、理解并同意接受本协议的所有条款约束。</p>
+
+      <h2>二、服务说明</h2>
+      <p>1. 本服务为您提供 AI 猫娘 Bot 的创建、管理、自定义和交互功能，包括但不限于：多 Bot 管理、性格定制、聊天对话、数据看板、API Key 管理等。</p>
+      <p>2. 本服务部分功能依赖第三方 AI 模型服务（如 DeepSeek 等），相关服务的可用性和质量受第三方服务条款约束。</p>
+      <p>3. 我们保留随时修改、暂停或终止部分或全部服务的权利，且无需事先通知。对于重大变更，我们将通过应用内通知或您预留的联系方式提前告知。</p>
+
+      <h2>三、用户行为规范</h2>
+      <p>您在使用本服务时，必须遵守以下规范：</p>
+      <ul>
+        <li>不得利用本服务生成、传播违法信息或从事任何违法活动；</li>
+        <li>不得利用 AI 对话功能生成色情、暴力、仇恨言论等不良内容；</li>
+        <li>不得干扰、破坏本服务的正常运行，包括但不限于：反向工程、恶意注入、滥用 API 接口等；</li>
+        <li>不得冒用他人身份或侵犯他人合法权益；</li>
+        <li>不得将本服务用于任何商业用途，除非事先获得我们的书面授权。</li>
+      </ul>
+      <p>如您违反上述规范，我们有权立即终止您的账号使用权，并保留追究法律责任的权利。</p>
+
+      <h2>四、知识产权</h2>
+      <p>1. 本服务的所有内容和知识产权（包括但不限于：品牌标识、界面设计、软件代码、文档资料）归林念念开发团队所有，受中华人民共和国相关法律法规保护。</p>
+      <p>2. 您通过本服务创建和自定义的 Bot 角色、对话数据等内容的权利归属，依照本协议及相关法律规定处理。</p>
+      <p>3. 未经我们明确书面许可，任何人不得以任何形式复制、修改、分发、出售本服务的任何部分。</p>
+
+      <h2>五、免责声明</h2>
+      <p>1. 本服务按"现状"提供，我们不对服务的及时性、安全性、准确性和完整性做出任何明示或暗示的保证。</p>
+      <p>2. AI 生成的内容为基于算法模型的输出，不代表我们的观点和立场。用户应自行判断 AI 生成内容的准确性和适当性。</p>
+      <p>3. 因网络故障、第三方服务中断、不可抗力等原因导致的服务中断或数据丢失，我们不承担相关责任。</p>
+      <p>4. 您应自行承担使用本服务的风险，并对使用本服务产生的后果负责。</p>
+
+      <h2>六、隐私保护</h2>
+      <p>我们重视您的隐私。关于我们如何收集、使用和保护您的个人信息，请参阅我们的<a href="隐私政策.html" style="color:#F472B6;text-decoration:none;">隐私政策</a>。</p>
+
+      <h2>七、协议修改</h2>
+      <p>我们可能会不时修改本协议。修改后的协议将在本页面发布，并在发布时生效。继续使用本服务即表示您同意修改后的协议。对于重大变更，我们将通过更显著的方式通知您。</p>
+
+      <h2>八、法律适用与争议解决</h2>
+      <p>1. 本协议的订立、执行和解释及争议的解决均适用中华人民共和国法律。</p>
+      <p>2. 如双方就本协议内容或其执行发生任何争议，应首先友好协商解决；协商不成的，任何一方均可向有管辖权的人民法院提起诉讼。</p>
+
+      <h2>九、联系我们</h2>
+      <p>如您对本协议有任何疑问、意见或建议，请通过以下方式联系我们：</p>
+      <p>邮箱：support@niannian.bot<br>在线客服：林念念 App 内 → 设置 → 意见反馈</p>
+    </div>
+    <div class="update-date">更新日期：2026年6月20日</div>
+  </div>
+</div>
+<script src="shared/app.js"></script>
+</body>
+</html>

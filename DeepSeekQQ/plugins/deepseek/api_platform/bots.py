@@ -17,6 +17,7 @@ from pydantic import Field
 
 from .deps import get_current_user
 from .deps import require_bot_owner
+from ..db_platform import clear_bot_memory
 from ..db_platform import create_bot
 from ..db_platform import delete_bot
 from ..db_platform import get_bot
@@ -139,6 +140,14 @@ async def delete_bot_endpoint(bot_id: int, user=Depends(get_current_user)):
     await require_bot_owner(bot_id, user)
     await delete_bot(bot_id)
     return None
+
+
+@router.delete("/{bot_id}/memory")
+async def clear_bot_memory_endpoint(bot_id: int, user=Depends(get_current_user)):
+    """清除 Bot 聊天记忆。H5: ownership 校验。"""
+    await require_bot_owner(bot_id, user)
+    deleted = await clear_bot_memory(bot_id)
+    return {"ok": True, "bot_id": bot_id, "deleted": deleted}
 
 
 def _bot_public(bot: dict) -> dict:

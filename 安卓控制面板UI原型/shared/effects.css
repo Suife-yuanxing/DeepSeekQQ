@@ -1,0 +1,54 @@
+/* ===== 林念念 Bot — Visual Effects ===== */
+/* Ripple + Petals + Orbs */
+
+/* === Click Ripple Effect === */
+.ripple {
+  position: fixed; border-radius: 50%;
+  background: radial-gradient(circle, rgba(244, 114, 182, 0.25) 0%, rgba(244, 114, 182, 0.05) 60%, transparent 70%);
+  transform: translate(-50%, -50%) scale(0);
+  animation: ripple-expand 0.7s ease-out forwards;
+  pointer-events: none; z-index: 9999;
+}
+
+/* === Floating Petals (brand page) === */
+.petal {
+  position: fixed; pointer-events: none; z-index: 0;
+  width: 12px; height: 16px;
+  background: radial-gradient(ellipse at 30% 30%, rgba(244, 182, 210, 0.5), rgba(244, 114, 182, 0.2));
+  border-radius: 50% 0 50% 0;
+  animation: fall linear infinite;
+}
+@keyframes fall {
+  0%   { transform: translateY(-10vh) rotate(0deg) scale(1); opacity: 0.6; }
+  50%  { opacity: 0.9; }
+  100% { transform: translateY(110vh) rotate(720deg) scale(0.4); opacity: 0; }
+}
+
+/* === Floating Orbs (splash page) === */
+.bg-orb {
+  position: absolute; border-radius: 50%;
+  filter: blur(60px); pointer-events: none; z-index: 0;
+}
+@keyframes orb-float-1 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  25%  { transform: translate(30px, -40px) scale(1.12); }
+  50%  { transform: translate(60px, 10px) scale(0.92); }
+  75%  { transform: translate(20px, 50px) scale(1.08); }
+}
+@keyframes orb-float-2 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33%  { transform: translate(-40px, -30px) scale(0.88); }
+  66%  { transform: translate(-30px, 40px) scale(1.1); }
+}
+
+/* === Typing Dots Bounce === */
+@keyframes type-bounce {
+  0%, 100% { transform: translateY(0) scale(0.8); opacity: 0.35; }
+  50% { transform: translateY(-7px) scale(1.15); opacity: 1; }
+}
+
+/* === Status Pulse === */
+@keyframes status-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}

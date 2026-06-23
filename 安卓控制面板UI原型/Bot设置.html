@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no">
+<title>Bot 设置 v2 — UI 原型</title>
+<link rel="stylesheet" href="shared/tokens.css">
+<link rel="stylesheet" href="shared/base.css">
+<link rel="stylesheet" href="shared/components.css">
+<link rel="stylesheet" href="shared/anime-cat.css">
+<link rel="stylesheet" href="shared/dark-mode.css">
+<link rel="stylesheet" href="shared/effects.css">
+<style>
+/* ===== Bot 设置 — 页面专属样式 ===== */
+.scroll-area { padding: 12px 0 8px; }
+
+.title-bar .save-btn {
+  padding: 6px 16px; border-radius: 10px; font-size: 13px; font-weight: 700;
+  background: rgba(255,255,255,0.2); border: none; color: #fff; cursor: pointer;
+  font-family: inherit; transition: all 0.2s;
+}
+.title-bar .save-btn:hover { background: rgba(255,255,255,0.35); }
+
+/* 预览卡片 */
+.preview-card {
+  margin: 8px 20px 12px; padding: 16px;
+  background: linear-gradient(135deg, #FFF0F3, #FFE0E8);
+  border-radius: 16px; text-align: center; border: 1.5px solid rgba(244, 114, 182,0.15);
+}
+.preview-card .preview-label { font-size: 10px; color: #F472B6; font-weight: 700; margin-bottom: 8px; }
+.preview-card .preview-bubble {
+  display: inline-block; background: #fff; border-radius: 14px 14px 14px 4px;
+  padding: 10px 16px; font-size: 13px; color: #4A3040; max-width: 240px;
+  box-shadow: 0 2px 8px rgba(244, 114, 182,0.08);
+}
+
+/* 设置区块 */
+.setting-section { margin: 0 20px 6px; }
+.setting-section .sec-title {
+  font-size: 13px; font-weight: 700; color: #6A5060; margin-bottom: 10px;
+  display: flex; align-items: center; gap: 6px;
+}
+
+/* 滑块 */
+.slider-group { margin-bottom: 14px; }
+.slider-group .slider-label {
+  display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;
+}
+.slider-group .slider-name { font-size: 13px; font-weight: 600; color: #3A2030; }
+.slider-group .slider-val { font-size: 11px; color: #F472B6; font-weight: 700; }
+.slider-group .slider-hint { font-size: 10px; color: #C0A0B0; margin-bottom: 6px; }
+.slider-group input[type="range"] {
+  width: 100%; height: 4px; -webkit-appearance: none; appearance: none;
+  background: linear-gradient(90deg, #FFD0DA, #F472B6);
+  border-radius: 2px; outline: none;
+}
+.slider-group input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none; width: 22px; height: 22px;
+  border-radius: 50%; background: #fff;
+  border: 2.5px solid #F472B6; cursor: pointer;
+  box-shadow: 0 2px 8px rgba(244, 114, 182,0.2);
+  transition: all 0.2s;
+}
+.slider-group input[type="range"]::-webkit-slider-thumb:hover { transform: scale(1.1); }
+
+/* 单选 */
+.radio-group { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 14px; }
+.radio-chip {
+  font-size: 12px; padding: 6px 14px; border-radius: 12px;
+  background: rgba(255,255,255,0.7); color: #B090A0;
+  border: 1.5px solid rgba(244, 114, 182,0.15); cursor: pointer;
+  font-family: inherit; transition: all 0.2s;
+}
+.radio-chip:hover { border-color: #F472B6; }
+.radio-chip.selected { background: #F472B6; color: #fff; border-color: #F472B6; }
+
+/* 输入 */
+.text-input {
+  width: 100%; padding: 10px 14px; border-radius: 12px; font-size: 13px; font-family: inherit;
+  border: 1.5px solid rgba(244, 114, 182,0.2); background: rgba(255,255,255,0.8);
+  outline: none; transition: all 0.25s; color: #3A2030; margin-bottom: 14px;
+}
+.text-input:focus { border-color: #F472B6; background: #fff; }
+
+/* 危险区 */
+.danger-zone {
+  margin: 16px 20px 20px; padding: 16px;
+  background: rgba(255,240,240,0.6); border-radius: 16px;
+  border: 1px dashed rgba(244, 114, 182,0.3);
+}
+.danger-zone .dz-title { font-size: 13px; font-weight: 700; color: #F472B6; margin-bottom: 8px; }
+.danger-zone .dz-desc { font-size: 11px; color: #C090A0; margin-bottom: 10px; }
+.danger-btn {
+  padding: 10px 20px; border-radius: 10px; font-size: 13px; font-weight: 700;
+  background: #fff; color: #F472B6; border: 1.5px solid #F472B6;
+  cursor: pointer; font-family: inherit; transition: all 0.2s;
+}
+.danger-btn:hover { background: #F472B6; color: #fff; }
+
+/* ===== Dark Mode ===== */
+.phone.dark-mode .preview-card { background: linear-gradient(135deg, #2A1A2E, #1E1A2E); border-color: rgba(244, 114, 182,0.15); }
+.phone.dark-mode .preview-card .preview-bubble { background: #16213E; color: #E0D8E8; }
+.phone.dark-mode .setting-section .sec-title { color: #B0A0C0; }
+.phone.dark-mode .slider-group .slider-name { color: #D0C8E0; }
+.phone.dark-mode .slider-group .slider-hint { color: #9088A0; }
+.phone.dark-mode .radio-chip { background: #16213E; border-color: rgba(255,255,255,0.08); color: #C0B8D0; }
+.phone.dark-mode .radio-chip.selected { background: #F472B6; color: #fff; border-color: #F472B6; }
+.phone.dark-mode .text-input { background: #16213E; border-color: rgba(255,255,255,0.08); color: #E0D8E8; }
+.phone.dark-mode .text-input:focus { border-color: #F472B6; background: #1A1A3E; }
+.phone.dark-mode .danger-zone { background: rgba(244, 114, 182,0.06); border-color: rgba(244, 114, 182,0.2); }
+.phone.dark-mode .danger-btn { background: #16213E; border-color: rgba(244, 114, 182,0.2); color: #F472B6; }
+.phone.dark-mode .danger-btn:hover { background: #F472B6; color: #fff; }
+</style>
+</head>
+<body>
+<div class="phone">
+  <div class="title-bar">
+    <a class="back" href="首页仪表盘.html">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M15 18l-6-6 6-6"/></svg>
+    </a>
+    <span class="title" id="botTitle">Bot 设置</span>
+    <button class="save-btn" onclick="showToast('✓ 设置已保存')">保存</button>
+  </div>
+  <div class="scroll-area">
+    <!-- 预览 -->
+    <div class="preview-card">
+      <div class="preview-label">实时预览</div>
+      <div class="preview-bubble" id="previewBubble">嗯，我会用温柔的语气回复你~</div>
+    </div>
+
+    <!-- 性格滑块 -->
+    <div class="setting-section">
+      <div class="sec-title">性格倾向</div>
+      <div class="slider-group">
+        <div class="slider-label"><span class="slider-name">温柔 ↔ 毒舌</span><span class="slider-val" id="valStyle">偏温柔</span></div>
+        <div class="slider-hint">影响回复的语气是偏暖还是偏犀利</div>
+        <input type="range" min="0" max="10" value="3" oninput="updateSlider(this, 'valStyle', ['很毒舌','偏毒舌','略犀利','偏温柔','很温柔','超暖'])">
+      </div>
+      <div class="slider-group">
+        <div class="slider-label"><span class="slider-name">话少 ↔ 话多</span><span class="slider-val" id="valTalk">适中</span></div>
+        <div class="slider-hint">Bot 回复的长度和频率</div>
+        <input type="range" min="0" max="10" value="5" oninput="updateSlider(this, 'valTalk', ['超简短','偏短','适中','偏长','长篇','话痨'])">
+      </div>
+      <div class="slider-group">
+        <div class="slider-label"><span class="slider-name">正式 ↔ 随意</span><span class="slider-val" id="valFormal">偏随意</span></div>
+        <div class="slider-hint">用词偏书面还是口语化</div>
+        <input type="range" min="0" max="10" value="7" oninput="updateSlider(this, 'valFormal', ['很正式','偏正式','适中','偏随意','很随意','超随意'])">
+      </div>
+      <div class="slider-group">
+        <div class="slider-label"><span class="slider-name">被动 ↔ 主动</span><span class="slider-val" id="valInit">偏主动</span></div>
+        <div class="slider-hint">Bot 主动发起话题的程度</div>
+        <input type="range" min="0" max="10" value="6" oninput="updateSlider(this, 'valInit', ['完全被动','偏被动','适中','偏主动','很主动','超粘人'])">
+      </div>
+      <div class="slider-group">
+        <div class="slider-label"><span class="slider-name">情绪表达强度</span><span class="slider-val" id="valEmo">65%</span></div>
+        <div class="slider-hint">外露情绪的程度，高则表情/语气更丰富</div>
+        <input type="range" min="10" max="100" value="65" oninput="valEmo.textContent=this.value+'%'">
+      </div>
+    </div>
+
+    <!-- 回复偏好 -->
+    <div class="setting-section">
+      <div class="sec-title">回复偏好</div>
+      <div class="slider-group">
+        <div class="slider-label"><span class="slider-name">回复长度</span><span class="slider-val" id="valLen">中等</span></div>
+        <div class="slider-hint">单次回复的理想字数范围</div>
+        <input type="range" min="0" max="4" value="2" step="1" oninput="updateSlider(this, 'valLen', ['极短','较短','中等','较长','很长'])">
+      </div>
+      <div class="slider-group">
+        <div class="slider-label"><span class="slider-name">称呼偏好</span></div>
+        <div class="radio-group" id="callGroup">
+          <span class="radio-chip" onclick="selectRadio(this)">主人</span>
+          <span class="radio-chip selected" onclick="selectRadio(this)">哥哥</span>
+          <span class="radio-chip" onclick="selectRadio(this)">姐姐</span>
+          <span class="radio-chip" onclick="selectRadio(this)">名字</span>
+        </div>
+        <input type="text" class="text-input" placeholder="或输入自定义称呼…" value="" style="margin-top:-6px;">
+      </div>
+    </div>
+
+    <!-- 危险区 -->
+    <div class="danger-zone">
+      <div class="dz-title">危险操作</div>
+      <div class="dz-desc">以下操作不可恢复，请谨慎使用</div>
+      <button class="danger-btn" onclick="if(confirm('确定要重置小咪的所有记忆吗？')){showToast('记忆已清除')}">清除聊天记忆</button>
+      <button class="danger-btn" style="margin-left:8px;" onclick="if(confirm('确定要删除小咪吗？此操作不可恢复！')){showToast('Bot 已删除');setTimeout(function(){location.href='我的Bot.html'},800)}">删除此 Bot</button>
+    </div>
+    <div style="height:20px;"></div>
+  </div>
+  <div class="toast" id="toast"></div>
+</div>
+<script src="shared/config.js"></script>
+<script src="shared/api.js"></script>
+<script src="shared/app.js"></script>
+<script>
+// ===== Bot 设置 — API 集成 =====
+if (!API.isLoggedIn()) { location.href = '登录页.html'; }
+
+var BOT_ID = (function() {
+  var m = location.search.match(/bot_id=(\d+)/);
+  if (m) return parseInt(m[1]);
+  var cached = API.getCurrentBotId();
+  if (cached) return cached;
+  return null;
+})();
+
+if (!BOT_ID) { location.href = '我的Bot.html'; }
+
+// UI helpers
+function updateSlider(slider, labelId, labels) {
+  var v = parseInt(slider.value);
+  var idx = Math.min(Math.floor(v / (slider.max / (labels.length - 1))), labels.length - 1);
+  document.getElementById(labelId).textContent = labels[idx] || v;
+}
+function selectRadio(el) {
+  el.parentElement.querySelectorAll('.radio-chip').forEach(function(c) { c.classList.remove('selected'); });
+  el.classList.add('selected');
+}
+
+// Load bot settings
+API.getBot(BOT_ID).then(function(bot) {
+  document.getElementById('botTitle').textContent = (bot.name || 'Bot') + ' 设置';
+  document.getElementById('previewBubble').textContent = '嗯，我会用' + ((bot.persona || {}).catchphrase || '温柔的语气') + '回复你~';
+
+  var p = bot.persona || {};
+  // Sliders: map backend values to DOM
+  var sliderMap = {
+    style_score: [p.style_score != null ? p.style_score : 3, ['很毒舌','偏毒舌','略犀利','偏温柔','很温柔','超暖'], 'valStyle'],
+    talkativeness: [p.talkativeness != null ? p.talkativeness : 5, ['超简短','偏短','适中','偏长','长篇','话痨'], 'valTalk'],
+    formality: [p.formality != null ? p.formality : 7, ['很正式','偏正式','适中','偏随意','很随意','超随意'], 'valFormal'],
+    initiative: [p.initiative != null ? p.initiative : 6, ['完全被动','偏被动','适中','偏主动','很主动','超粘人'], 'valInit'],
+    emotion_intensity: [p.emotion_intensity != null ? p.emotion_intensity : 65, null, 'valEmo'],
+    reply_length: [p.reply_length != null ? p.reply_length : 2, ['极短','较短','中等','较长','很长'], 'valLen'],
+  };
+
+  Object.keys(sliderMap).forEach(function(key) {
+    var v = sliderMap[key];
+    var slider = document.querySelector('input[type="range"][oninput*="' + v[2] + '"]');
+    if (!slider) {
+      // Try finding by value patterns
+      var allSliders = document.querySelectorAll('input[type="range"]');
+      for (var i = 0; i < allSliders.length; i++) {
+        var oninput = allSliders[i].getAttribute('oninput') || '';
+        if (oninput.indexOf(v[2]) !== -1) { slider = allSliders[i]; break; }
+      }
+    }
+    if (slider) {
+      slider.value = v[0];
+      if (v[1]) updateSlider(slider, v[2], v[1]);
+      else if (v[2] === 'valEmo') document.getElementById('valEmo').textContent = v[0] + '%';
+    }
+  });
+
+  // Call preference
+  if (p.call_preference) {
+    var chips = document.querySelectorAll('#callGroup .radio-chip');
+    chips.forEach(function(c) {
+      var val = c.textContent.trim();
+      if ((val === '主人' && p.call_preference === 'master') ||
+          (val === '哥哥' && p.call_preference === 'brother') ||
+          (val === '姐姐' && p.call_preference === 'sister') ||
+          (val === '名字' && p.call_preference === 'name')) {
+        c.classList.add('selected');
+      } else { c.classList.remove('selected'); }
+    });
+  }
+  if (p.custom_call) {
+    document.querySelector('.text-input[placeholder*="自定义称呼"]').value = p.custom_call;
+  }
+}).catch(function(err) {
+  showToast('加载失败：' + (err.message || '未知错误'));
+});
+
+// Save settings
+window.saveSettings = function() {
+  var btn = document.getElementById('saveBtn');
+  btn.disabled = true; btn.textContent = '保存中…';
+
+  // Collect slider values
+  var data = {};
+  var sliderConfigs = [
+    ['valStyle', 'style_score', ['很毒舌','偏毒舌','略犀利','偏温柔','很温柔','超暖']],
+    ['valTalk', 'talkativeness', ['超简短','偏短','适中','偏长','长篇','话痨']],
+    ['valFormal', 'formality', ['很正式','偏正式','适中','偏随意','很随意','超随意']],
+    ['valInit', 'initiative', ['完全被动','偏被动','适中','偏主动','很主动','超粘人']],
+    ['valEmo', 'emotion_intensity', null],
+    ['valLen', 'reply_length', ['极短','较短','中等','较长','很长']],
+  ];
+
+  var allSliders = document.querySelectorAll('input[type="range"]');
+  sliderConfigs.forEach(function(cfg) {
+    for (var i = 0; i < allSliders.length; i++) {
+      var oninput = allSliders[i].getAttribute('oninput') || '';
+      if (oninput.indexOf(cfg[0]) !== -1) {
+        var v = parseInt(allSliders[i].value);
+        if (cfg[2]) {
+          var idx = Math.min(Math.floor(v / (allSliders[i].max / (cfg[2].length - 1))), cfg[2].length - 1);
+          data[cfg[1]] = idx;
+        } else {
+          data[cfg[1]] = v;
+        }
+        break;
+      }
+    }
+  });
+
+  // Call preference
+  var selChip = document.querySelector('#callGroup .radio-chip.selected');
+  if (selChip) {
+    var v = selChip.textContent.trim();
+    if (v === '主人') data.call_preference = 'master';
+    else if (v === '哥哥') data.call_preference = 'brother';
+    else if (v === '姐姐') data.call_preference = 'sister';
+    else if (v === '名字') data.call_preference = 'name';
+    else data.call_preference = 'custom';
+  }
+  var customInput = document.querySelector('.text-input[placeholder*="自定义称呼"]');
+  if (customInput && customInput.value) data.custom_call = customInput.value;
+
+  API.updateBot(BOT_ID, data).then(function() {
+    showToast('设置已保存');
+    btn.disabled = false; btn.textContent = '保存';
+  }).catch(function(err) {
+    showToast('保存失败：' + (err.message || '未知错误'));
+    btn.disabled = false; btn.textContent = '保存';
+  });
+};
+
+// Clear memories
+window.clearMemories = function() {
+  if (!confirm('确定要清除该 Bot 的所有聊天记忆吗？此操作不可恢复！')) return;
+  API.clearBotMemory(BOT_ID).then(function() {
+    showToast('记忆已清除');
+  }).catch(function(err) {
+    showToast('清除失败：' + (err.message || '未知错误'));
+  });
+};
+
+// Delete bot
+window.deleteCurrentBot = function() {
+  if (!confirm('确定要删除该 Bot 吗？此操作不可恢复，聊天记录将一并删除！')) return;
+  API.deleteBot(BOT_ID).then(function() {
+    showToast('Bot 已删除');
+    setTimeout(function() { location.href = '我的Bot.html'; }, 800);
+  }).catch(function(err) {
+    showToast('删除失败：' + (err.message || '未知错误'));
+  });
+};
+</script>
+</body>
+</html>

@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no">
+<title>开源许可 — UI 原型</title>
+<link rel="stylesheet" href="shared/tokens.css">
+<link rel="stylesheet" href="shared/base.css">
+<link rel="stylesheet" href="shared/components.css">
+<link rel="stylesheet" href="shared/dark-mode.css">
+<link rel="stylesheet" href="shared/effects.css">
+<style>
+/* ===== 开源许可 — 页面专属样式 ===== */
+.scroll-area { padding: 16px 0 20px; }
+
+.license-card {
+  margin: 0 20px 8px; padding: 16px; border-radius: 16px;
+  background: rgba(255,255,255,0.7); backdrop-filter: blur(8px);
+  border: 1px solid rgba(255,255,255,0.7);
+}
+.license-card .lib-header { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
+.license-card .lib-name { font-size: 15px; font-weight: 700; color: #3A2030; }
+.license-badge {
+  font-size: 10px; font-weight: 700; padding: 3px 8px; border-radius: 8px;
+  background: rgba(124,92,191,0.08); color: #C4B5FD;
+}
+.license-badge.mit { background: rgba(76,175,80,0.08); color: #4CAF50; }
+.license-badge.apache { background: rgba(255,179,71,0.08); color: #E6A020; }
+.license-badge.bsd { background: rgba(244, 114, 182,0.08); color: #F472B6; }
+.license-card .lib-desc { font-size: 12px; color: #B090A0; line-height: 1.6; }
+.license-card .lib-link { font-size: 11px; color: #C0A0B0; margin-top: 4px; word-break: break-all; }
+
+.footer-note {
+  text-align: center; font-size: 11px; color: #C0A0B0; padding: 12px 20px 8px; line-height: 1.6;
+}
+
+/* ===== Dark Mode (page-specific additions) ===== */
+.phone.dark-mode .license-card { background: #16213E; border-color: rgba(255,255,255,0.06); }
+.phone.dark-mode .license-card .lib-name { color: #D0C8E0; }
+.phone.dark-mode .license-card .lib-desc { color: #A098B0; }
+.phone.dark-mode .license-badge { background: rgba(124,92,191,0.12); color: #B794F4; }
+.phone.dark-mode .license-badge.mit { background: rgba(76,175,80,0.12); color: #81C784; }
+.phone.dark-mode .license-badge.apache { background: rgba(255,179,71,0.12); color: #FFC773; }
+.phone.dark-mode .license-badge.bsd { background: rgba(244, 114, 182,0.12); color: #F9A8D4; }
+</style>
+</head>
+<body>
+<div class="phone">
+  <div class="title-bar">
+    <a class="back" href="我的.html">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M15 18l-6-6 6-6"/></svg>
+    </a>
+    <span class="title">开源许可</span>
+  </div>
+  <div class="scroll-area">
+    <div class="license-card">
+      <div class="lib-header">
+        <span class="lib-name">Flutter</span>
+        <span class="license-badge">BSD-3</span>
+      </div>
+      <div class="lib-desc">Google 的开源 UI 框架，用于构建跨平台移动应用。本应用的 Android 客户端基于 Flutter 构建。</div>
+      <div class="lib-link">flutter.dev · Copyright The Flutter Authors</div>
+    </div>
+
+    <div class="license-card">
+      <div class="lib-header">
+        <span class="lib-name">Dart SDK</span>
+        <span class="license-badge bsd">BSD-3</span>
+      </div>
+      <div class="lib-desc">Dart 编程语言的官方 SDK，Flutter 的底层语言运行时。</div>
+      <div class="lib-link">dart.dev · Copyright The Dart Authors</div>
+    </div>
+
+    <div class="license-card">
+      <div class="lib-header">
+        <span class="lib-name">DeepSeek API Client</span>
+        <span class="license-badge mit">MIT</span>
+      </div>
+      <div class="lib-desc">DeepSeek 大语言模型的 API 客户端库，为 Bot 提供 AI 推理和对话能力。</div>
+      <div class="lib-link">github.com/deepseek-ai · Copyright DeepSeek</div>
+    </div>
+
+    <div class="license-card">
+      <div class="lib-header">
+        <span class="lib-name">flutter_gen_ai_chat_ui</span>
+        <span class="license-badge mit">MIT</span>
+      </div>
+      <div class="lib-desc">Flutter 聊天 UI 组件库，提供消息气泡、流式回复、滚动加载等开箱即用的聊天界面。</div>
+      <div class="lib-link">pub.dev/packages/flutter_gen_ai_chat_ui</div>
+    </div>
+
+    <div class="license-card">
+      <div class="lib-header">
+        <span class="lib-name">dio</span>
+        <span class="license-badge mit">MIT</span>
+      </div>
+      <div class="lib-desc">强大的 Dart HTTP 客户端，支持拦截器、全局配置、FormData、请求取消等特性。</div>
+      <div class="lib-link">pub.dev/packages/dio · Copyright wendux</div>
+    </div>
+
+    <div class="license-card">
+      <div class="lib-header">
+        <span class="lib-name">shared_preferences</span>
+        <span class="license-badge bsd">BSD-3</span>
+      </div>
+      <div class="lib-desc">Flutter 插件，为 Android 和 iOS 提供简单的键值对本地存储能力。</div>
+      <div class="lib-link">pub.dev/packages/shared_preferences</div>
+    </div>
+
+    <div class="license-card">
+      <div class="lib-header">
+        <span class="lib-name">flutter_backdrop_filter</span>
+        <span class="license-badge mit">MIT</span>
+      </div>
+      <div class="lib-desc">在 Flutter 中实现 BackdropFilter 效果，用于玻璃模糊卡片背景。</div>
+      <div class="lib-link">pub.dev/packages/flutter_backdrop_filter</div>
+    </div>
+
+    <div class="license-card">
+      <div class="lib-header">
+        <span class="lib-name">provider</span>
+        <span class="license-badge mit">MIT</span>
+      </div>
+      <div class="lib-desc">Flutter 推荐的状态管理库，简化 Widget 树中的数据传递和状态同步。</div>
+      <div class="lib-link">pub.dev/packages/provider · Copyright Remi Rousselet</div>
+    </div>
+
+    <div class="license-card">
+      <div class="lib-header">
+        <span class="lib-name">go_router</span>
+        <span class="license-badge bsd">BSD-3</span>
+      </div>
+      <div class="lib-desc">Flutter 官方推荐的路由管理库，支持声明式路由、深层链接和导航守卫。</div>
+      <div class="lib-link">pub.dev/packages/go_router</div>
+    </div>
+
+    <div class="license-card">
+      <div class="lib-header">
+        <span class="lib-name">image_picker</span>
+        <span class="license-badge bsd">BSD-3</span>
+      </div>
+      <div class="lib-desc">Flutter 图片选择器插件，支持从相册选取或相机拍摄图片。</div>
+      <div class="lib-link">pub.dev/packages/image_picker</div>
+    </div>
+
+    <div class="license-card">
+      <div class="lib-header">
+        <span class="lib-name">file_picker</span>
+        <span class="license-badge mit">MIT</span>
+      </div>
+      <div class="lib-desc">文件选择器，支持用户从设备中选择音频文件用于自定义通知铃声。</div>
+      <div class="lib-link">pub.dev/packages/file_picker</div>
+    </div>
+
+    <div class="license-card">
+      <div class="lib-header">
+        <span class="lib-name">just_audio</span>
+        <span class="license-badge mit">MIT</span>
+      </div>
+      <div class="lib-desc">Flutter 音频播放插件，用于播放通知铃声和自定义音频。</div>
+      <div class="lib-link">pub.dev/packages/just_audio · Copyright Ryan Heise</div>
+    </div>
+
+    <div class="footer-note">
+      以上为林念念 Bot 控制面板使用的主要开源组件。<br>
+      我们感谢所有开源项目作者的贡献。
+    </div>
+    <div style="height:12px;"></div>
+  </div>
+</div>
+<script src="shared/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,153 @@
+/* ===== 林念念 Bot — Design Tokens v3 ===== */
+/* 第四版马卡龙色系 × LINE贴纸美学 × Claymorphism */
+
+/*
+ * 设计来源：Agnes AI gen_01-04 参考图 + agnes_req.json 提示词
+ * 角色特征：浅灰背景 / 婴儿蓝发 / 软粉腮红 / 薰衣草点缀 / 薄荷绿口音
+ * 情绪导向：治愈 / 温柔 / 轻快 / 卡哇伊
+ */
+
+:root {
+  /* === Primary Palette — 马卡龙软粉 === */
+  --color-primary: #F472B6;
+  --color-primary-light: #F9A8D4;
+  --color-primary-dark: #EC4899;
+  --color-primary-bg: #FFF5FA;
+  --color-primary-ghost: rgba(244, 114, 182, 0.08);
+  --color-primary-border: rgba(244, 114, 182, 0.2);
+  --color-primary-shadow: rgba(244, 114, 182, 0.25);
+
+  /* === Secondary — 婴儿蓝 === */
+  --color-secondary: #ADD8E6;
+  --color-secondary-light: #C5E8F5;
+  --color-secondary-dark: #8BC4D6;
+  --color-secondary-ghost: rgba(173, 216, 230, 0.1);
+  --color-secondary-border: rgba(173, 216, 230, 0.25);
+
+  /* === Accent — 薰衣草紫 === */
+  --color-accent: #C4B5FD;
+  --color-accent-light: #DDD6FE;
+  --color-accent-dark: #A78BFA;
+
+  /* === Semantic === */
+  --color-success: #98FF98;
+  --color-success-light: #B8FFB8;
+  --color-error: #FF6B7A;
+  --color-error-ghost: rgba(255, 107, 122, 0.08);
+  --color-warning: #FBBF24;
+  --color-info: #60A5FA;
+
+  /* === Text (Light Mode) === */
+  --text-primary: #4A4058;
+  --text-secondary: #9CA3AF;
+  --text-muted: #C0B8D0;
+  --text-label: #6B7280;
+
+  /* === Text (Dark Mode) === */
+  --text-dark-primary: #E8E0F0;
+  --text-dark-secondary: #9888B0;
+  --text-dark-muted: #706878;
+
+  /* === Background === */
+  --bg-page: #F5F5F5;
+  --bg-body: #F0F0F0;
+  --bg-dark: #1A1A2E;
+  --bg-dark-card: #16213E;
+  --bg-dark-card-alt: #2A2A3E;
+
+  /* === Body Gradient — 浅灰中性 === */
+  --body-gradient: linear-gradient(150deg, #F0F0F0 0%, #E8E8E8 25%, #F0F0F5 50%, #EDEDF0 75%, #F0F0F0 100%);
+
+  /* === Card === */
+  --card-bg: rgba(255, 255, 255, 0.75);
+  --card-blur: blur(10px);
+  --card-border: 1.5px solid rgba(255, 255, 255, 0.7);
+  --card-shadow: 0 3px 12px rgba(100, 100, 120, 0.06);
+
+  /* === Gradients === */
+  --gradient-primary: linear-gradient(135deg, #F472B6, #F9A8D4);
+  --gradient-primary-dark: linear-gradient(135deg, #EC4899, #F472B6);
+  --gradient-secondary: linear-gradient(135deg, #ADD8E6, #C5E8F5);
+  --gradient-secondary-dark: linear-gradient(135deg, #8BC4D6, #ADD8E6);
+  --gradient-accent: linear-gradient(135deg, #C4B5FD, #DDD6FE);
+  --gradient-success: linear-gradient(135deg, #98FF98, #B8FFB8);
+
+  /* === Border Radius === */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
+  --radius-2xl: 32px;
+  --radius-full: 50%;
+
+  /* === Shadows — 中性灰调 === */
+  --shadow-phone: 0 20px 60px rgba(100, 100, 120, 0.15), 0 0 0 3px rgba(255, 255, 255, 0.5);
+  --shadow-btn: 0 6px 20px rgba(244, 114, 182, 0.25);
+  --shadow-btn-hover: 0 6px 24px rgba(244, 114, 182, 0.4);
+  --shadow-card: 0 3px 12px rgba(100, 100, 120, 0.06);
+  --shadow-card-hover: 0 4px 16px rgba(100, 100, 120, 0.1);
+  --shadow-float: 0 4px 14px rgba(100, 100, 120, 0.2);
+
+  /* === Spacing === */
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 12px;
+  --space-lg: 16px;
+  --space-xl: 20px;
+  --space-2xl: 44px;
+
+  /* === Typography === */
+  --font-family: -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  --font-scale: 1;                              /* 全局字号缩放: 0.85=小 / 1=中 / 1.18=大 */
+  --font-size-xs: calc(10px * var(--font-scale));
+  --font-size-sm: calc(12px * var(--font-scale));
+  --font-size-base: calc(14px * var(--font-scale));
+  --font-size-lg: calc(16px * var(--font-scale));
+  --font-size-xl: calc(17px * var(--font-scale));
+  --font-weight-bold: 700;
+  --font-weight-extrabold: 800;
+
+  /* === Phone Frame === */
+  --phone-width: 360px;
+  --phone-height: 800px;
+
+  /* === Transitions === */
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ease-smooth: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-push: cubic-bezier(0.25, 0.1, 0.25, 1);
+  --transition-fast: 0.15s ease;
+  --transition-base: 0.25s ease;
+  --transition-slow: 0.4s ease;
+
+  /* === Input === */
+  --input-padding: 14px 16px;
+  --input-radius: var(--radius-lg);
+  --input-border: 1.5px solid rgba(180, 180, 200, 0.25);
+  --input-focus-ring: 0 0 0 3px rgba(173, 216, 230, 0.15);
+}
+
+/* === Dark Mode Token Overrides === */
+.phone.dark-mode {
+  --bg-page: var(--bg-dark);
+  /* In dark mode, shift primary one step lighter for readability against dark backgrounds */
+  --color-primary: #F9A8D4;
+  --color-primary-light: #FBCFE8;
+  --color-primary-dark: #F472B6;
+  --color-primary-bg: rgba(249, 168, 212, 0.08);
+  --color-primary-ghost: rgba(249, 168, 212, 0.1);
+  --color-primary-border: rgba(249, 168, 212, 0.2);
+  --color-primary-shadow: rgba(249, 168, 212, 0.3);
+  --card-bg: var(--bg-dark-card);
+  --card-border: 1.5px solid rgba(255, 255, 255, 0.06);
+  --card-shadow: 0 3px 12px rgba(0, 0, 0, 0.15);
+  --text-primary: var(--text-dark-primary);
+  --text-secondary: var(--text-dark-secondary);
+  --text-muted: var(--text-dark-muted);
+  --input-border: 1.5px solid rgba(255, 255, 255, 0.08);
+  --shadow-phone: 0 20px 60px rgba(0, 0, 0, 0.3), 0 0 0 3px rgba(255, 255, 255, 0.1);
+}
+
+/* === Global Font Size Scale === */
+.phone[data-font-size="小"]  { --font-scale: 0.85; }
+.phone[data-font-size="中"]  { --font-scale: 1; }
+.phone[data-font-size="大"]  { --font-scale: 1.18; }

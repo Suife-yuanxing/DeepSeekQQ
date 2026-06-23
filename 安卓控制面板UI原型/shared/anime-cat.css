@@ -1,0 +1,190 @@
+/* ===== 林念念 Bot — Anime Emoji Cat v4 + Agnes Image v5 ===== */
+/* 日系软萌 × Claymorphism × Macaron Pastel */
+/* v4: Pure CSS character (halo + ears + face + eyes + blush + mouth + blink) */
+/* v5: Agnes AI gen_04 image replacement (LINE sticker × chibi nekomimi) */
+
+/* === CSS Character (v4, kept for small avatars & personality variants) === */
+.anime-cat { position: relative; width: 100%; height: 100%; }
+
+/* === Agnes Image Mode (v5) — replaces CSS cat with AI-generated image === */
+.img-cat {
+  position: relative; width: 100%; height: 100%;
+  display: flex; align-items: center; justify-content: center;
+  overflow: hidden;
+}
+.img-cat img {
+  width: 100%; height: 100%;
+  object-fit: contain;
+  mix-blend-mode: multiply;                    /* v6: blend white bg into page background */
+  filter: brightness(1.06) drop-shadow(0 2px 8px rgba(100,100,120,0.12));
+  transition: filter var(--transition-slow, 0.4s ease);
+}
+/* Avatar crop — circular face focus */
+.img-cat.avatar img {
+  border-radius: 50%;
+  object-fit: cover;
+  object-position: 50% 15%; /* focus on face area */
+}
+/* Full character — show body/uniform at smaller scale */
+.img-cat.hero img {
+  object-fit: contain;
+  object-position: center;
+}
+/* Size variants for image mode */
+.img-cat.img-sm { transform: scale(0.72); transform-origin: center center; }
+.img-cat.img-md { transform: scale(0.85); transform-origin: center center; }
+.img-cat.img-lg { transform: scale(1.0); transform-origin: center center; }
+
+/* v6: Halo removed — character blends into page background via mix-blend-mode */
+
+/* 6 Personality filter variants on Agnes image */
+.img-cat.tsundere img { filter: saturate(1.15) drop-shadow(0 2px 6px rgba(244,114,182,0.25)); }
+.img-cat.gentle img  { filter: saturate(0.9) brightness(1.05) drop-shadow(0 2px 8px rgba(173,216,230,0.25)); }
+.img-cat.sarcastic img { filter: saturate(0.85) contrast(1.1) drop-shadow(0 2px 6px rgba(100,120,180,0.3)); }
+.img-cat.energetic img { filter: saturate(1.25) brightness(1.08) drop-shadow(0 2px 6px rgba(255,140,100,0.3)); }
+.img-cat.emotionless img { filter: saturate(0.6) brightness(1.02) drop-shadow(0 2px 8px rgba(180,170,190,0.15)); }
+.img-cat.sly img { filter: saturate(0.95) contrast(1.08) drop-shadow(0 2px 6px rgba(140,100,160,0.25)); }
+
+/* === Halo — white ring above head === */
+.anime-cat::before {
+  content: ''; position: absolute; top: -22%; left: 50%; transform: translateX(-50%);
+  width: 52%; height: 18%;
+  border: 2px solid rgba(255, 255, 255, 0.85);
+  border-radius: 50%;
+  z-index: 3;
+  box-shadow: 0 0 8px rgba(255, 255, 255, 0.6), 0 0 20px rgba(255, 220, 240, 0.3);
+  pointer-events: none;
+}
+
+/* === Ears === */
+.anime-cat .ear {
+  position: absolute; top: -6%;
+  width: 33%; height: 38%;
+  background: linear-gradient(175deg, #F8B4C8 0%, #F098B0 55%, #E8889E 100%);
+  border-radius: 52% 58% 30% 44%;
+  z-index: 0;
+}
+.anime-cat .ear.l { left: 7%; transform: rotate(-12deg); }
+.anime-cat .ear.r { right: 7%; transform: rotate(12deg) scaleX(-1); }
+.anime-cat .ear::after {
+  content: ''; position: absolute;
+  width: 54%; height: 54%;
+  background: linear-gradient(175deg, #FFE8F2 0%, #FFD8E8 55%, #F5C8DC 100%);
+  border-radius: 52% 58% 30% 44%;
+  bottom: 10%; left: 50%; transform: translateX(-50%);
+}
+
+/* === Face === */
+.anime-cat .face {
+  position: absolute; inset: 0;
+  background: linear-gradient(172deg, #FFFAFB 0%, #FFF5F8 30%, #FFEEF4 65%, #FFE8F0 100%);
+  border-radius: 46% 46% 48% 48%;
+  z-index: 1;
+  box-shadow: inset 0 5% 14% rgba(255, 255, 255, 0.6),
+              inset 0 -3% 6% rgba(255, 180, 200, 0.08),
+              0 3% 8% rgba(255, 160, 180, 0.12);
+}
+
+/* === Eyes === */
+.anime-cat .eye {
+  position: absolute; top: 28%;
+  width: 22%; height: 26%;
+  background: radial-gradient(circle at 78% 80%, #fff 0%, #fff 12%, transparent 13%), #5D4050;
+  border-radius: 50%;
+  z-index: 2;
+  overflow: hidden;
+}
+.anime-cat .eye.l { left: 18%; }
+.anime-cat .eye.r { right: 18%; }
+.anime-cat .eye::after {
+  content: ''; position: absolute;
+  top: 4%; left: 10%;
+  width: 40%; height: 40%;
+  background: #fff; border-radius: 50%;
+}
+
+/* === Blush === */
+.anime-cat .blush {
+  position: absolute; top: 42%;
+  width: 22%; height: 12%;
+  background: radial-gradient(ellipse at center,
+    rgba(255, 160, 180, 0.42) 0%, rgba(255, 190, 205, 0.12) 55%, transparent 100%);
+  border-radius: 50%;
+  z-index: 2;
+}
+.anime-cat .blush.l { left: 4%; }
+.anime-cat .blush.r { right: 4%; }
+
+/* === Mouth === */
+.anime-cat .mouth {
+  position: absolute; bottom: 20%; left: 50%; transform: translateX(-50%);
+  width: 30%; height: 14%;
+  z-index: 2;
+}
+.anime-cat .mouth::before {
+  content: ''; position: absolute;
+  top: 0; left: 50%; transform: translateX(-50%);
+  width: 28%; height: 38%;
+  border-radius: 50%;
+  border-bottom: 1.2px solid #D4A0AA;
+}
+.anime-cat .mouth::after {
+  content: ''; position: absolute;
+  bottom: 0; left: 50%; transform: translateX(-50%);
+  width: 100%; height: 52%;
+  border-radius: 0 0 50% 50%;
+  border-bottom: 1.2px solid #D4A0AA;
+}
+
+/* === Blink Animation === */
+@keyframes anime-blink {
+  0%, 44%, 50%, 100% { transform: scaleY(1); }
+  47% { transform: scaleY(0.06); }
+}
+.anime-cat .eye { animation: anime-blink 5s ease-in-out infinite; }
+.anime-cat .eye.r { animation-delay: 0.12s; }
+
+/* === Size Variants === */
+.anime-cat-sm { transform: scale(0.72); transform-origin: center center; }
+.anime-cat-md { transform: scale(0.85); transform-origin: center center; }
+.anime-cat-lg { transform: scale(1.0); transform-origin: center center; }
+
+/* === Personality Color Variants === */
+/* 傲娇 Tsundere */
+.anime-cat.tsundere .blush {
+  background: radial-gradient(ellipse at center,
+    rgba(255, 100, 130, 0.55) 0%, rgba(255, 140, 160, 0.18) 55%, transparent 100%);
+}
+.anime-cat.tsundere .mouth::before,
+.anime-cat.tsundere .mouth::after { border-bottom-color: #C87080; }
+.anime-cat.tsundere .eye {
+  background: radial-gradient(circle at 78% 80%, #fff 0%, #fff 12%, transparent 13%), #4A3040;
+}
+
+/* 温柔 Gentle */
+.anime-cat.gentle .blush {
+  background: radial-gradient(ellipse at center,
+    rgba(255, 180, 200, 0.48) 0%, rgba(255, 200, 215, 0.15) 55%, transparent 100%);
+}
+/* 毒舌 Sarcastic */
+.anime-cat.sarcastic .eye {
+  background: radial-gradient(circle at 78% 80%, #fff 0%, #fff 12%, transparent 13%), #3A4060;
+}
+/* 元気 Energetic */
+.anime-cat.energetic .blush {
+  background: radial-gradient(ellipse at center,
+    rgba(255, 140, 100, 0.5) 0%, rgba(255, 180, 140, 0.18) 55%, transparent 100%);
+}
+/* 三無 Emotionless */
+.anime-cat.emotionless .blush {
+  background: radial-gradient(ellipse at center,
+    rgba(200, 180, 200, 0.2) 0%, rgba(210, 195, 210, 0.08) 55%, transparent 100%);
+}
+.anime-cat.emotionless .mouth::before,
+.anime-cat.emotionless .mouth::after { border-bottom-color: #C8B8C8; }
+/* 腹黒 Sly */
+.anime-cat.sly .eye {
+  background: radial-gradient(circle at 78% 80%, #fff 0%, #fff 12%, transparent 13%), #4A3050;
+}
+.anime-cat.sly .mouth::before,
+.anime-cat.sly .mouth::after { border-bottom-color: #B890A0; }

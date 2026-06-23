@@ -1,0 +1,423 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no">
+<title>林念念 Bot — UI 原型索引 v4</title>
+<link rel="stylesheet" href="shared/tokens.css">
+<link rel="stylesheet" href="shared/anime-cat.css">
+<link rel="stylesheet" href="shared/effects.css">
+<style>
+/* ===== Page-Specific: Index (no phone frame) ===== */
+
+/* Override shared body — this page is fullscreen with layout column */
+body {
+  display: flex; flex-direction: column; align-items: center; padding: 60px 20px;
+  min-height: 100vh;
+  background: linear-gradient(135deg, #FFE0E8 0%, #FFD4DC 25%, #FFE8F0 50%, #FFDDE5 75%, #FFE5EC 100%);
+  background-attachment: fixed;
+  font-family: var(--font-family, -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif);
+  overflow-x: hidden; position: relative;
+  justify-content: flex-start;
+}
+body::before {
+  content: ''; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+  pointer-events: none; z-index: 0;
+  background:
+    radial-gradient(circle at 15% 20%, rgba(244,114,182,0.08) 0%, transparent 50%),
+    radial-gradient(circle at 85% 60%, rgba(255,179,71,0.06) 0%, transparent 50%),
+    radial-gradient(circle at 50% 80%, rgba(196,181,253,0.05) 0%, transparent 50%);
+}
+
+/* Logo breathing with Agnes image */
+.logo .img-cat {
+  animation: logo-breathe 4s ease-in-out infinite;
+}
+@keyframes logo-breathe {
+  0%, 100% { transform: scale(1.1); }
+  50% { transform: scale(1.14); }
+}
+
+/* ===== 内容 ===== */
+.content { position: relative; z-index: 1; }
+.logo { width: 80px; height: 80px; margin: 0 auto 16px; position: relative; }
+
+h1 {
+  font-size: 30px; font-weight: 800;
+  background: linear-gradient(135deg, var(--color-primary, #F472B6), var(--color-accent, #C4B5FD));
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  background-clip: text;
+  margin-bottom: 6px; text-align: center;
+}
+.sub { color: #B090A0; margin-bottom: 44px; font-size: 14px; text-align: center; }
+
+/* ===== 卡片网格 ===== */
+.grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; max-width: 720px; width: 100%; }
+.card {
+  background: rgba(255,255,255,0.65); backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-radius: 20px; padding: 24px 18px;
+  text-decoration: none; color: #4A3040;
+  border: 1.5px solid rgba(255,255,255,0.7);
+  transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  position: relative; overflow: hidden;
+  box-shadow: 0 4px 20px rgba(244, 114, 182,0.08);
+  opacity: 0;
+  animation: card-stagger-in 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+  touch-action: manipulation;
+}
+.card:nth-child(1) { animation-delay: 0.05s; }
+.card:nth-child(2) { animation-delay: 0.1s; }
+.card:nth-child(3) { animation-delay: 0.15s; }
+.card:nth-child(4) { animation-delay: 0.2s; }
+.card:nth-child(5) { animation-delay: 0.25s; }
+.card:nth-child(6) { animation-delay: 0.3s; }
+.card:nth-child(7) { animation-delay: 0.35s; }
+.card:nth-child(8) { animation-delay: 0.4s; }
+.card:nth-child(9) { animation-delay: 0.45s; }
+.card:nth-child(10) { animation-delay: 0.5s; }
+.card:nth-child(11) { animation-delay: 0.55s; }
+.card:nth-child(12) { animation-delay: 0.6s; }
+.card:nth-child(13) { animation-delay: 0.65s; }
+.card:nth-child(14) { animation-delay: 0.7s; }
+.card:nth-child(15) { animation-delay: 0.75s; }
+.card:nth-child(16) { animation-delay: 0.8s; }
+.card:nth-child(17) { animation-delay: 0.85s; }
+.card:nth-child(18) { animation-delay: 0.9s; }
+.card:nth-child(19) { animation-delay: 0.95s; }
+.card:nth-child(20) { animation-delay: 1.0s; }
+
+@keyframes card-stagger-in {
+  from { opacity: 0; transform: translateY(24px) scale(0.94); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+.card:hover {
+  transform: translateY(-4px) scale(1.02);
+  border-color: rgba(244, 114, 182,0.3);
+  box-shadow: 0 12px 32px rgba(244, 114, 182,0.15);
+  background: rgba(255,255,255,0.8);
+}
+.card:active {
+  transform: scale(0.97);
+  transition: all 0.1s ease;
+}
+.card .card-icon { width: 48px; height: 48px; margin-bottom: 14px; }
+.card .card-icon svg { width: 48px; height: 48px; }
+.card .title { font-size: 18px; font-weight: 700; margin-bottom: 6px; color: #3A2030; }
+.card .desc { font-size: 13px; color: #B090A0; line-height: 1.5; }
+.card.special {
+  background: rgba(255,255,255,0.75);
+  border-color: var(--color-primary-border);
+  box-shadow: 0 4px 24px var(--color-primary-shadow);
+}
+.card.special .title { color: var(--color-primary); }
+.note { margin-top: 40px; font-size: 12px; color: #C0A0B0; text-align: center; line-height: 1.8; }
+.badge {
+  display: inline-block; background: var(--gradient-primary);
+  color: #fff; font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 10px;
+  margin-left: 6px; vertical-align: middle;
+}
+
+/* Card icon Agnes image scaling */
+.card .card-icon .img-cat { transform: scale(0.9); }
+
+/* === Reduced Motion === */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+</style>
+</head>
+<body>
+
+<!-- 花瓣 -->
+<script>
+(function() {
+  for (let i = 0; i < 18; i++) {
+    const p = document.createElement('div'); p.className = 'petal';
+    p.style.left = Math.random() * 100 + '%';
+    p.style.width = (8 + Math.random() * 14) + 'px';
+    p.style.height = (8 + Math.random() * 14) + 'px';
+    p.style.animationDuration = (6 + Math.random() * 12) + 's';
+    p.style.animationDelay = Math.random() * 10 + 's';
+    p.style.opacity = (0.3 + Math.random() * 0.5);
+    document.body.appendChild(p);
+  }
+})();
+</script>
+
+<div class="content">
+  <!-- Logo -->
+  <div class="logo">
+    <div class="img-cat hero img-lg">
+      <img src="shared/agnes-cat.png" alt="林念念">
+    </div>
+  </div>
+
+  <h1>林念念 Bot</h1>
+  <p class="sub">UI 原型预览 v4 · Agnes 第四版图片 · 马卡龙色系 · 22 页</p>
+
+  <div class="grid">
+    <a href="品牌色预览.html" class="card special">
+      <div class="card-icon">
+        <svg viewBox="0 0 48 48" fill="none" stroke="#F472B6" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="24" cy="24" r="18"/>
+          <circle cx="24" cy="24" r="11"/>
+          <circle cx="24" cy="24" r="4"/>
+          <path d="M24 6v3M24 39v3M6 24h3M39 24h3M11.3 11.3l2.1 2.1M34.6 34.6l2.1 2.1M11.3 36.7l2.1-2.1M34.6 13.4l2.1-2.1"/>
+        </svg>
+      </div>
+      <div class="title">品牌色系统 <span class="badge">v2</span></div>
+      <div class="desc">完整色板定义 · 亮/暗双模式 · Apple 风格图标</div>
+    </a>
+    <a href="Bot创建向导.html" class="card">
+      <div class="card-icon">
+        <svg viewBox="0 0 48 48" fill="none" stroke="#C4B5FD" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="24" cy="16" r="8"/><circle cx="24" cy="24" r="2"/>
+          <path d="M14 38c0-5.5 4.5-10 10-10s10 4.5 10 10"/><circle cx="24" cy="38" r="1"/>
+          <circle cx="22" cy="15" r="1.5" fill="#C4B5FD" stroke="none"/>
+          <circle cx="26" cy="15" r="1.5" fill="#C4B5FD" stroke="none"/>
+          <path d="M22 20q2 2 4 0" stroke-width="1.2"/>
+        </svg>
+      </div>
+      <div class="title">Bot 创建向导 <span class="badge">v2</span></div>
+      <div class="desc">自定义性格 · 自由人设 · 实时预览</div>
+    </a>
+    <a href="首页仪表盘.html" class="card">
+      <div class="card-icon">
+        <svg viewBox="0 0 48 48" fill="none" stroke="#FFB347" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="6" y="6" width="15" height="15" rx="3"/><rect x="27" y="6" width="15" height="15" rx="3"/>
+          <rect x="6" y="27" width="15" height="15" rx="3"/><rect x="27" y="27" width="15" height="15" rx="3"/>
+        </svg>
+      </div>
+      <div class="title">首页仪表盘 <span class="badge">v2</span></div>
+      <div class="desc">Bot 状态卡片 · 今日数据 · 自定义背景</div>
+    </a>
+    <a href="聊天页.html" class="card">
+      <div class="card-icon">
+        <svg viewBox="0 0 48 48" fill="none" stroke="#F472B6" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M6 10h36v24H18l-6 6v-6H6z" stroke-linejoin="round"/>
+          <circle cx="16" cy="22" r="2" fill="#F472B6" stroke="none"/><circle cx="24" cy="22" r="2" fill="#F472B6" stroke="none"/><circle cx="32" cy="22" r="2" fill="#F472B6" stroke="none"/>
+        </svg>
+      </div>
+      <div class="title">聊天页 <span class="badge">v2</span></div>
+      <div class="desc">自定义壁纸 · 消息气泡 · 流式回复</div>
+    </a>
+    <a href="API Key管理.html" class="card">
+      <div class="card-icon">
+        <svg viewBox="0 0 48 48" fill="none" stroke="#FFB347" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="16" cy="20" r="12"/>
+          <path d="M26 18l10-10M32 4h10v10"/>
+        </svg>
+      </div>
+      <div class="title">API Key <span class="badge">new</span></div>
+      <div class="desc">Key 管理 · 权限控制 · 用量统计</div>
+    </a>
+    <a href="数据面板.html" class="card">
+      <div class="card-icon">
+        <svg viewBox="0 0 48 48" fill="none" stroke="#4CAF50" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="24" width="8" height="18" rx="2"/>
+          <rect x="15" y="14" width="8" height="28" rx="2"/>
+          <rect x="27" y="6" width="8" height="36" rx="2"/>
+        </svg>
+      </div>
+      <div class="title">数据面板 <span class="badge">new</span></div>
+      <div class="desc">心情日历 · 话题偏好 · 好感等级</div>
+    </a>
+    <a href="管理员面板.html" class="card">
+      <div class="card-icon">
+        <svg viewBox="0 0 48 48" fill="none" stroke="#1A1A2E" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="24" cy="24" r="18"/>
+          <rect x="21" y="21" width="6" height="6" rx="1"/>
+          <line x1="24" y1="6" x2="24" y2="14"/>
+          <line x1="24" y1="34" x2="24" y2="42"/>
+          <line x1="6" y1="24" x2="14" y2="24"/>
+          <line x1="34" y1="24" x2="42" y2="24"/>
+        </svg>
+      </div>
+      <div class="title">开发者面板 <span class="badge" style="background:rgba(26,26,46,0.08);color:#1A1A2E;">admin</span></div>
+      <div class="desc">系统监控 · 用户管理 · 日志脱敏</div>
+    </a>
+    <a href="启动页.html" class="card">
+      <div class="card-icon">
+        <svg viewBox="0 0 48 48" fill="none" stroke="#F472B6" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M24 4c-8 0-14 4-14 10s6 10 14 10 14-4 14-10S32 4 24 4z"/>
+          <path d="M10 14c0 6 6 10 14 10s14-4 14-10"/>
+          <path d="M10 14v12c0 6 6 10 14 10s14-4 14-10V14"/>
+        </svg>
+      </div>
+      <div class="title">启动页 <span class="badge">new</span></div>
+      <div class="desc">猫娘 Logo · 渐变背景 · 自动跳转</div>
+    </a>
+    <a href="登录页.html" class="card">
+      <div class="card-icon">
+        <svg viewBox="0 0 48 48" fill="none" stroke="#C4B5FD" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="8" y="6" width="32" height="36" rx="5"/>
+          <circle cx="24" cy="18" r="6"/>
+          <path d="M14 36c0-5.5 4.5-10 10-10s10 4.5 10 10"/>
+        </svg>
+      </div>
+      <div class="title">登录页 <span class="badge">new</span></div>
+      <div class="desc">手机验证码 · 第三方登录 · 猫娘欢迎</div>
+    </a>
+    <a href="注册页.html" class="card">
+      <div class="card-icon">
+        <svg viewBox="0 0 48 48" fill="none" stroke="#FFB347" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M24 4l6 12h12l-10 8 4 12-10-7-10 7 4-12-10-8h12z"/>
+        </svg>
+      </div>
+      <div class="title">注册页 <span class="badge">new</span></div>
+      <div class="desc">注册表单 · 密码强度 · 隐私勾选</div>
+    </a>
+    <a href="我的Bot.html" class="card">
+      <div class="card-icon">
+        <svg viewBox="0 0 48 48" fill="none" stroke="#F472B6" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="16" r="5"/>
+          <circle cx="36" cy="16" r="5"/>
+          <path d="M4 38c0-4 3.6-7 8-7s8 3 8 7"/>
+          <path d="M28 38c0-4 3.6-7 8-7s8 3 8 7"/>
+          <circle cx="10" cy="15" r="1" fill="#F472B6" stroke="none"/>
+          <circle cx="11" cy="15" r="1" fill="#F472B6" stroke="none"/>
+          <circle cx="34" cy="15" r="1" fill="#F472B6" stroke="none"/>
+          <circle cx="35" cy="15" r="1" fill="#F472B6" stroke="none"/>
+        </svg>
+      </div>
+      <div class="title">我的 Bot <span class="badge">new</span></div>
+      <div class="desc">多 Bot 列表 · 在线状态 · 快捷管理</div>
+    </a>
+    <a href="Bot设置.html" class="card">
+      <div class="card-icon">
+        <svg viewBox="0 0 48 48" fill="none" stroke="#C4B5FD" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="24" cy="24" r="4"/>
+          <path d="M24 4v6M24 38v6M4 24h6M38 24h6M9.9 9.9l4.2 4.2M33.9 33.9l4.2 4.2M9.9 38.1l4.2-4.2M33.9 14.1l4.2-4.2"/>
+        </svg>
+      </div>
+      <div class="title">Bot 设置 <span class="badge">new</span></div>
+      <div class="desc">性格滑块 · 称呼偏好 · 危险操作</div>
+    </a>
+    <a href="我的.html" class="card">
+      <div class="card-icon">
+        <svg viewBox="0 0 48 48" fill="none" stroke="#808080" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="24" cy="24" r="3"/>
+          <path d="M29.4 31a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V37a2 2 0 01-4 0v-.09A1.65 1.65 0 0019 35.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 0014.68 31a1.65 1.65 0 00-1.51-1H13a2 2 0 010-4h.09A1.65 1.65 0 0014.6 25a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 0019 20.68a1.65 1.65 0 001-1.51V19a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0029.4 25a1.65 1.65 0 001.51 1H31a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/>
+        </svg>
+      </div>
+      <div class="title">我的 <span class="badge">new</span></div>
+      <div class="desc">通知 · 外观 · 隐私 · 退出登录</div>
+    </a>
+
+    <a href="修改密码.html" class="card">
+      <div class="card-icon">
+        <svg viewBox="0 0 48 48" fill="none" stroke="#F472B6" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="10" y="18" width="28" height="26" rx="4"/>
+          <circle cx="24" cy="10" r="6"/>
+          <path d="M24 14v4"/>
+          <circle cx="24" cy="24" r="3" fill="#F472B6" stroke="none"/>
+        </svg>
+      </div>
+      <div class="title">修改密码 <span class="badge">new</span></div>
+      <div class="desc">密码强度检测 · 验证原密码 · 安全提示</div>
+    </a>
+    <a href="数据权限.html" class="card">
+      <div class="card-icon">
+        <svg viewBox="0 0 48 48" fill="none" stroke="#C4B5FD" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="24" cy="24" r="16"/>
+          <path d="M24 8v12l8 8"/>
+          <circle cx="14" cy="24" r="2" fill="#C4B5FD" stroke="none"/>
+          <circle cx="24" cy="16" r="2" fill="#C4B5FD" stroke="none"/>
+          <circle cx="34" cy="24" r="2" fill="#C4B5FD" stroke="none"/>
+        </svg>
+      </div>
+      <div class="title">数据权限 <span class="badge">new</span></div>
+      <div class="desc">AI 训练开关 · 数据共享 · 个性化控制</div>
+    </a>
+    <a href="黑名单.html" class="card">
+      <div class="card-icon">
+        <svg viewBox="0 0 48 48" fill="none" stroke="#FFB347" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="24" cy="24" r="20"/>
+          <path d="M14 14l20 20"/>
+        </svg>
+      </div>
+      <div class="title">黑名单 <span class="badge">new</span></div>
+      <div class="desc">拉黑用户列表 · 解除拉黑 · 滑出动画</div>
+    </a>
+    <a href="编辑个人资料.html" class="card">
+      <div class="card-icon">
+        <svg viewBox="0 0 48 48" fill="none" stroke="#C4B5FD" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="24" cy="24" r="16"/>
+          <circle cx="24" cy="14" r="5"/>
+          <path d="M12 38c0-6.6 5.4-12 12-12s12 5.4 12 12"/>
+        </svg>
+      </div>
+      <div class="title">编辑个人资料 <span class="badge">new</span></div>
+      <div class="desc">头像更换 · 昵称签名 · 性别生日</div>
+    </a>
+    <a href="通知.html" class="card">
+      <div class="card-icon">
+        <svg viewBox="0 0 48 48" fill="none" stroke="#F472B6" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h42s-3-2-3-9a6 6 0 00-12 0v12a6 6 0 01-12 0V8z"/>
+          <path d="M19.7 37a3 3 0 005.6 0"/>
+        </svg>
+      </div>
+      <div class="title">通知 <span class="badge">new</span></div>
+      <div class="desc">系统通知 · 消息提醒 · 已读/未读</div>
+    </a>
+    <a href="用户协议.html" class="card">
+      <div class="card-icon">
+        <svg viewBox="0 0 48 48" fill="none" stroke="#4CAF50" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="8" y="4" width="32" height="40" rx="4"/>
+          <path d="M18 16h12M18 24h12M18 32h8"/>
+        </svg>
+      </div>
+      <div class="title">用户协议 <span class="badge">new</span></div>
+      <div class="desc">服务条款 · 行为规范 · 知识产权声明</div>
+    </a>
+    <a href="隐私政策.html" class="card">
+      <div class="card-icon">
+        <svg viewBox="0 0 48 48" fill="none" stroke="#C4B5FD" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M24 4l-14 8v12c0 12 14 20 14 20s14-8 14-20V12z"/>
+          <circle cx="24" cy="24" r="12"/>
+          <path d="M24 28v-4M24 18h.01"/>
+        </svg>
+      </div>
+      <div class="title">隐私政策 <span class="badge">new</span></div>
+      <div class="desc">信息收集说明 · 数据安全 · 用户权利</div>
+    </a>
+    <a href="开源许可.html" class="card">
+      <div class="card-icon">
+        <svg viewBox="0 0 48 48" fill="none" stroke="#FFB347" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="24" cy="24" r="20"/>
+          <path d="M24 4v12M24 32v12M4 24h12M32 24h12"/>
+          <path d="M24 16l-4 8h8z"/>
+        </svg>
+      </div>
+      <div class="title">开源许可 <span class="badge">new</span></div>
+      <div class="desc">12 个开源组件 · MIT/Apache/BSD</div>
+    </a>
+  </div>
+
+  <p class="note">
+    v4 更新：马卡龙色系统一（#F472B6 软粉 + #ADD8E6 婴儿蓝）· Agnes AI 第四版图片 · 暗色模式 100% 覆盖<br>
+    文件夹：<code>安卓控制面板UI原型/</code> · 共 22 个原型页面 · 路由覆盖 19/19
+  </p>
+</div>
+
+<script src="shared/config.js"></script>
+<script src="shared/capacitor.js"></script>
+<script>
+/* ===== APK 入口路由 =====
+ * Capacitor 原生环境 → 跳过原型索引，直接进入 App 流程：
+ *   已登录 → 启动页（看品牌动画后自动跳转首页/向导）
+ *   未登录 → 启动页（看品牌动画后自动跳转登录页）
+ * 浏览器环境 → 正常显示原型索引（当前行为）
+ */
+if (window.NativeApp && window.NativeApp.isNative) {
+  location.replace('启动页.html');
+}
+</script>
+<script src="shared/app.js"></script>
+</body>
+</html>

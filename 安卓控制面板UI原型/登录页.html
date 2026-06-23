@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no">
 <title>登录页 — UI 原型</title>
 <link rel="stylesheet" href="shared/tokens.css">
 <link rel="stylesheet" href="shared/base.css">
@@ -121,12 +121,23 @@ h1 { font-size: 22px; font-weight: 800; color: #3A2030; }
   </div>
 </div>
 <script src="shared/config.js"></script>
-<script src="shared/app.js"></script>
+<script src="shared/capacitor.js"></script>
 <script src="shared/api.js"></script>
+<script src="shared/app.js"></script>
 <script>
-// 已登录则直接跳首页
+// 已登录 → 跳过登录页，检查有无 Bot 后跳转
 if (API.isLoggedIn()) {
-  location.replace('首页仪表盘.html');
+  API.listBots().then(function(bots) {
+    if (bots && bots.count > 0) {
+      API.setCurrentBotId(bots.bots[0].id);
+      location.replace('首页仪表盘.html');
+    } else {
+      location.replace('Bot创建向导.html');
+    }
+  }).catch(function() {
+    location.replace('首页仪表盘.html');
+  });
+  // 注意：不继续执行后续登录表单逻辑（页面已被 replace）
 }
 
 async function sendCode() {
@@ -178,18 +189,18 @@ async function handleLogin() {
   try {
     await API.login(phone, code, null);  // 验证码登录（password=null）
     showToast('登录成功');
-    // 登录后判断是否有 Bot → 有跳首页，无跳向导
+    // 登录后判断是否有 Bot → 有跳首页，无跳向导（replace 清历史，不可回退到登录页）
     try {
       var bots = await API.listBots();
       if (bots && bots.count > 0) {
         API.setCurrentBotId(bots.bots[0].id);
-        setTimeout(function() { location.href = '首页仪表盘.html'; }, 300);
+        setTimeout(function() { location.replace('首页仪表盘.html'); }, 300);
       } else {
-        setTimeout(function() { location.href = 'Bot创建向导.html'; }, 300);
+        setTimeout(function() { location.replace('Bot创建向导.html'); }, 300);
       }
     } catch (e) {
       // listBots 失败不阻塞，默认跳首页
-      setTimeout(function() { location.href = '首页仪表盘.html'; }, 300);
+      setTimeout(function() { location.replace('首页仪表盘.html'); }, 300);
     }
   } catch (e) {
     var msg = e.message || '登录失败';

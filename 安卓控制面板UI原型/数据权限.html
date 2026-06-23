@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no">
+<title>数据权限 — UI 原型</title>
+<link rel="stylesheet" href="shared/tokens.css">
+<link rel="stylesheet" href="shared/base.css">
+<link rel="stylesheet" href="shared/components.css">
+<link rel="stylesheet" href="shared/dark-mode.css">
+<link rel="stylesheet" href="shared/effects.css">
+<style>
+/* ===== 数据权限 — 页面专属样式 ===== */
+.scroll-area { padding: 12px 20px 20px; }
+
+/* 说明 */
+.desc-card {
+  padding: 14px 16px; border-radius: 16px;
+  background: rgba(124,92,191,0.05);
+  border: 1px solid rgba(124,92,191,0.12);
+  margin-bottom: 16px;
+}
+.desc-card .desc-title { font-size: 13px; font-weight: 700; color: #C4B5FD; margin-bottom: 4px; }
+.desc-card .desc-text { font-size: 12px; color: #B090A0; line-height: 1.6; }
+
+/* 权限分组 */
+.perm-group { margin-bottom: 20px; }
+.perm-item {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 16px; border-radius: 16px; margin-bottom: 8px;
+  background: rgba(255,255,255,0.7); backdrop-filter: blur(8px);
+}
+.perm-item:last-child { margin-bottom: 0; }
+.perm-item .item-left { flex: 1; }
+.perm-item .item-name { font-size: 14px; font-weight: 600; color: #3A2030; }
+.perm-item .item-desc { font-size: 11px; color: #C0A0B0; margin-top: 2px; }
+
+/* ===== Dark Mode ===== */
+.phone.dark-mode .desc-card { background: rgba(124,92,191,0.08); border-color: rgba(124,92,191,0.15); }
+.phone.dark-mode .perm-item { background: #16213E; }
+.phone.dark-mode .perm-item .item-name { color: #D0C8E0; }
+.phone.dark-mode .perm-item .item-desc { color: #9088A0; }
+</style>
+</head>
+<body>
+<div class="phone">
+  <div class="title-bar">
+    <a class="back" href="我的.html">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M15 18l-6-6 6-6"/></svg>
+    </a>
+    <span class="title">数据权限</span>
+  </div>
+  <div class="scroll-area">
+    <div class="desc-card">
+      <div class="desc-title">管理你的数据如何被使用</div>
+      <div class="desc-text">关闭某些权限不会影响基本聊天功能，但可能影响 Bot 的个性化程度。</div>
+    </div>
+
+    <!-- 模型训练 -->
+    <div class="perm-group">
+      <div class="group-title">AI 训练与改进</div>
+      <div class="perm-item">
+        <div class="item-left">
+          <div class="item-name">聊天数据用于模型训练</div>
+          <div class="item-desc">匿名的对话数据帮助改进 AI 回复质量</div>
+        </div>
+        <label class="toggle-switch">
+          <input type="checkbox" checked>
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+    </div>
+
+    <!-- 个性化 -->
+    <div class="perm-group">
+      <div class="group-title">个性化</div>
+      <div class="perm-item">
+        <div class="item-left">
+          <div class="item-name">学习我的聊天风格</div>
+          <div class="item-desc">Bot 会适应你的语气和话题偏好</div>
+        </div>
+        <label class="toggle-switch">
+          <input type="checkbox" checked>
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+      <div class="perm-item">
+        <div class="item-left">
+          <div class="item-name">记住我的兴趣爱好</div>
+          <div class="item-desc">Bot 会根据你的兴趣推荐话题</div>
+        </div>
+        <label class="toggle-switch">
+          <input type="checkbox" checked>
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+    </div>
+
+    <!-- 数据共享 -->
+    <div class="perm-group">
+      <div class="group-title">数据共享</div>
+      <div class="perm-item">
+        <div class="item-left">
+          <div class="item-name">使用情况统计</div>
+          <div class="item-desc">匿名统计数据用于产品优化</div>
+        </div>
+        <label class="toggle-switch">
+          <input type="checkbox" checked>
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+      <div class="perm-item">
+        <div class="item-left">
+          <div class="item-name">崩溃报告自动发送</div>
+          <div class="item-desc">帮助快速修复 Bug</div>
+        </div>
+        <label class="toggle-switch">
+          <input type="checkbox" checked>
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+      <div class="perm-item">
+        <div class="item-left">
+          <div class="item-name">第三方合作伙伴</div>
+          <div class="item-desc">不会共享可识别身份的信息</div>
+        </div>
+        <label class="toggle-switch">
+          <input type="checkbox">
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+    </div>
+
+    <button class="btn-primary" id="permSaveBtn" onclick="savePermissions()">保存设置</button>
+    <div style="height:20px;"></div>
+  </div>
+  <div class="toast" id="toast"></div>
+</div>
+<script src="shared/config.js"></script>
+<script src="shared/api.js"></script>
+<script src="shared/app.js">
+// Load & save permissions
+function loadPermissions() {
+  API.getDataPermissions().then(function(p) {
+    var checkboxes = document.querySelectorAll('.perm-item input[type="checkbox"]');
+    var keys = ["ai_training", "learn_chat_style", "remember_interests", "usage_statistics", "crash_report", "third_party_sharing"];
+    keys.forEach(function(k, i) { if (checkboxes[i] && p[k] !== undefined) checkboxes[i].checked = p[k]; });
+  }).catch(function() {});
+}
+function savePermissions() {
+  var keys = ["ai_training", "learn_chat_style", "remember_interests", "usage_statistics", "crash_report", "third_party_sharing"];
+  var checkboxes = document.querySelectorAll('.perm-item input[type="checkbox"]');
+  var data = {};
+  keys.forEach(function(k, i) { if (checkboxes[i]) data[k] = checkboxes[i].checked; });
+  API.updateDataPermissions(data).then(function() {
+    showToast("✓ 权限设置已保存");
+  }).catch(function(err) {
+    showToast("保存失败：" + (err.message || "未知错误"));
+  });
+}
+loadPermissions();
+
+</script>
+</body>
+</html>

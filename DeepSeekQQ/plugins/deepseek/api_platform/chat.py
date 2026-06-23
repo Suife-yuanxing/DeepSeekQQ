@@ -179,6 +179,53 @@ async def list_messages(
     }
 
 
+@router.get("/messages/search")
+async def search_messages(
+    q: str = Query(..., min_length=1),
+    bot_id: Optional[int] = Query(None),
+    date_from: Optional[str] = Query(None),
+    date_to: Optional[str] = Query(None),
+    limit: int = Query(50, ge=1, le=200),
+    user=Depends(get_current_user),
+):
+    """全文搜索聊天消息。H5: 如果指定 bot_id 则校验归属。"""
+    from ..db_core import get_db
+    if bot_id is not None:
+        await require_bot_owner(bot_id, user)
+    db = await get_db()
+    parts = ["SELECT * FROM chat_messages WHERE content LIKE ?"]
+    params = [f"%{q}%"]
+    if bot_id is not None:
+        parts.append("AND bot_id = ?")
+        params.append(bot_id)
+    if date_from:
+        from datetime import datetime
+        try:
+            ts = datetime.fromisoformat(date_from).timestamp()
+            parts.append("AND created_at >= ?")
+            params.append(ts)
+        except ValueError:
+            pass
+    if date_to:
+        from datetime import datetime
+        try:
+            ts = datetime.fromisoformat(date_to).timestamp()
+            parts.append("AND created_at <= ?")
+            params.append(ts)
+        except ValueError:
+            pass
+    parts.append("ORDER BY created_at DESC LIMIT ?")
+    params.append(limit)
+    sql = " ".join(parts)
+    async with db.execute(sql, tuple(params)) as cur:
+        rows = await cur.fetchall()
+    return {
+        "messages": [_msg_public(dict(r)) for r in rows],
+        "count": len(rows),
+        "query": q,
+    }
+
+
 # ============================================================
 # WebSocket: 流式聊天
 # ============================================================

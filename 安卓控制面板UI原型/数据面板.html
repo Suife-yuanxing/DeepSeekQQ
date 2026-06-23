@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no">
+<title>我的数据 v2 — UI 原型</title>
+<link rel="stylesheet" href="shared/tokens.css">
+<link rel="stylesheet" href="shared/base.css">
+<link rel="stylesheet" href="shared/components.css">
+<link rel="stylesheet" href="shared/anime-cat.css">
+<link rel="stylesheet" href="shared/dark-mode.css">
+<link rel="stylesheet" href="shared/effects.css">
+<style>
+/* ===== 数据面板 — 页面专属样式 ===== */
+body { background-attachment: fixed; overflow-x: hidden; }
+
+/* Title bar glow + share btn */
+.title-bar { overflow: hidden; }
+.title-bar::after {
+  content: ''; position: absolute; top: -20%; right: -20%;
+  width: 60%; height: 150%;
+  background: radial-gradient(ellipse, rgba(255,255,255,0.08) 0%, transparent 70%);
+  pointer-events: none;
+}
+.title-bar .back { padding: 4px; z-index: 1; }
+.title-bar .title { z-index: 1; }
+.title-bar .share-btn {
+  width: 32px; height: 32px; border-radius: 50%;
+  background: rgba(255,255,255,0.2); border: none; cursor: pointer;
+  color: #fff; display: flex; align-items: center; justify-content: center;
+  z-index: 1; transition: all 0.2s;
+}
+.title-bar .share-btn:hover { background: rgba(255,255,255,0.35); transform: scale(1.05); }
+.title-bar .share-btn svg { width: 18px; height: 18px; }
+
+.scroll-area { padding: 0 0 8px; }
+
+/* Bot 关系卡 */
+.relation-card {
+  margin: 10px 20px 0;
+  background: linear-gradient(135deg, #FFE0E8 0%, #FFD4DC 50%, #FFE8F0 100%);
+  border-radius: 18px; padding: 16px 18px;
+  border: 1.5px solid rgba(244, 114, 182,0.15);
+  display: flex; align-items: center; gap: 14px;
+}
+.relation-avatar {
+  width: 52px; height: 52px; border-radius: 50%;
+  background: linear-gradient(135deg, #F472B6, #FFB0C0);
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+  box-shadow: 0 4px 14px rgba(244, 114, 182,0.25);
+}
+.relation-avatar .img-cat { width: 48px; height: 48px; }
+.relation-info { flex: 1; }
+.relation-name { font-size: 16px; font-weight: 800; color: #3A2030; }
+.relation-days { font-size: 12px; color: #B090A0; margin-top: 2px; }
+.relation-lvl {
+  margin-top: 6px; display: flex; align-items: center; gap: 6px;
+}
+.relation-lvl .lvl-badge {
+  font-size: 10px; font-weight: 700; color: #F472B6;
+  background: rgba(244, 114, 182,0.1); padding: 4px 10px; border-radius: 8px;
+}
+.relation-lvl .lvl-bar-wrap {
+  flex: 1; height: 5px; background: rgba(244, 114, 182,0.1); border-radius: 3px; overflow: hidden;
+}
+.relation-lvl .lvl-bar-fill {
+  height: 100%; width: 72%; background: linear-gradient(90deg, #F472B6, #FFB0C0); border-radius: 3px;
+}
+.relation-lvl .lvl-pct { font-size: 10px; color: #C0A0B0; }
+
+/* KPI 四格 */
+.kpi-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 10px 20px 0; }
+.kpi-card {
+  background: rgba(255,255,255,0.65); backdrop-filter: blur(8px);
+  border-radius: 14px; padding: 14px;
+  border: 1.5px solid rgba(255,255,255,0.7);
+  box-shadow: 0 3px 12px rgba(244, 114, 182,0.04);
+  transition: all 0.25s;
+}
+.kpi-card:active { transform: scale(0.97); }
+.kpi-card .kpi-val { font-size: 28px; font-weight: 800; line-height: 1; }
+.kpi-card .kpi-lbl { font-size: 11px; color: #B090A0; margin-top: 4px; }
+.kpi-val.c-pink { color: #F472B6; }
+.kpi-val.c-purple { color: #C4B5FD; }
+.kpi-val.c-orange { color: #FFB347; }
+.kpi-val.c-green { color: #4CAF50; }
+
+/* 图表卡片 */
+.chart-card {
+  margin: 10px 20px 0;
+  background: rgba(255,255,255,0.65); backdrop-filter: blur(8px);
+  border-radius: 16px; padding: 16px;
+  border: 1.5px solid rgba(255,255,255,0.7);
+  box-shadow: 0 3px 12px rgba(244, 114, 182,0.04);
+}
+.chart-card .chart-title {
+  font-size: 14px; font-weight: 700; color: #3A2030;
+  margin-bottom: 12px; display: flex; align-items: center; justify-content: space-between;
+}
+.chart-card .chart-subtitle { font-size: 10px; color: #C0A0B0; font-weight: 400; }
+
+/* 心情日历 */
+.mood-cal { display: flex; gap: 4px; flex-wrap: wrap; }
+.mood-day {
+  width: 28px; height: 28px; border-radius: 5px; cursor: pointer;
+  transition: all 0.2s; position: relative;
+}
+.mood-day:hover { transform: scale(1.2); z-index: 1; box-shadow: 0 2px 8px rgba(0,0,0,0.15); }
+.mood-day.m0 { background: #F5F0F5; }
+.mood-day.m1 { background: #FFE0E8; }
+.mood-day.m2 { background: #FFB0C0; }
+.mood-day.m3 { background: #FF8095; }
+.mood-day.m4 { background: #F472B6; }
+
+/* 话题排行 */
+.rank-list { display: flex; flex-direction: column; gap: 8px; }
+.rank-item { display: flex; align-items: center; gap: 10px; padding: 8px 0; }
+.rank-icon {
+  width: 32px; height: 32px; border-radius: 50%; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center; font-size: 14px;
+}
+.rank-icon.r1 { background: #FFF0F3; } .rank-icon.r2 { background: #F5F0FF; }
+.rank-icon.r3 { background: #FFF8F0; } .rank-icon.r4 { background: #F0FFF5; }
+.rank-icon.r5 { background: #F0F5FF; }
+.rank-name { flex: 1; font-size: 13px; font-weight: 600; color: #3A2030; }
+.rank-bar-wrap { width: 80px; height: 5px; background: #F5F0F5; border-radius: 3px; overflow: hidden; }
+.rank-bar-fill { height: 100%; border-radius: 3px; }
+.rank-bar-fill.c1 { background: #F472B6; } .rank-bar-fill.c2 { background: #C4B5FD; }
+.rank-bar-fill.c3 { background: #FFB347; } .rank-bar-fill.c4 { background: #4CAF50; }
+.rank-bar-fill.c5 { background: #5B9BD5; }
+.rank-count { font-size: 11px; color: #B090A0; width: 35px; text-align: right; }
+
+/* Bot 了解你 */
+.know-card {
+  margin: 10px 20px 0;
+  background: rgba(255,255,255,0.65); backdrop-filter: blur(8px);
+  border-radius: 16px; padding: 16px;
+  border: 1.5px solid rgba(255,255,255,0.7);
+  box-shadow: 0 3px 12px rgba(244, 114, 182,0.04);
+}
+.know-card .know-title { font-size: 14px; font-weight: 700; color: #3A2030; margin-bottom: 4px; }
+.know-card .know-sub { font-size: 11px; color: #C0A0B0; margin-bottom: 12px; }
+.know-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+.know-tag {
+  font-size: 11px; font-weight: 600; padding: 6px 12px; border-radius: 12px;
+  background: rgba(244, 114, 182,0.06); color: #F472B6;
+}
+
+/* 成就墙 */
+.achieve-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.achieve-item {
+  display: flex; align-items: center; gap: 6px;
+  background: rgba(255,255,255,0.8); border-radius: 12px;
+  padding: 8px 12px; border: 1px solid rgba(255,255,255,0.7);
+  transition: all 0.2s;
+}
+.achieve-item.locked { opacity: 0.4; }
+.achieve-item .ach-icon { font-size: 19px; }
+.achieve-item .ach-name { font-size: 11px; font-weight: 600; color: #3A2030; }
+
+/* 时段柱状图 */
+.bar-chart { display: flex; align-items: flex-end; gap: 2px; height: 64px; }
+.bar-col { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.bar-col .bar {
+  width: 100%; max-width: 22px; border-radius: 3px 3px 0 0;
+  transition: height 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+  cursor: pointer;
+}
+.bar-col .bar:hover { opacity: 0.8; }
+.bar-col .bar.pink { background: linear-gradient(180deg, #F472B6, #FFB0C0); }
+.bar-col .lbl { font-size: 9px; color: #C0A0B0; margin-top: 2px; }
+
+/* ===== Dark Mode ===== */
+.phone.dark-mode .relation-card { background: linear-gradient(135deg, #2A1A2E, #1E1A2E, #2A1A3E); border-color: rgba(244, 114, 182,0.15); }
+.phone.dark-mode .relation-name { color: #E0D8E8; }
+.phone.dark-mode .kpi-card { background: #16213E; border-color: rgba(255,255,255,0.06); }
+.phone.dark-mode .kpi-card .kpi-lbl { color: #9088A0; }
+.phone.dark-mode .chart-card { background: #16213E; border-color: rgba(255,255,255,0.06); }
+.phone.dark-mode .chart-card .chart-title { color: #D0C8E0; }
+.phone.dark-mode .rank-name { color: #D0C8E0; }
+.phone.dark-mode .rank-bar-wrap { background: rgba(255,255,255,0.06); }
+.phone.dark-mode .know-card { background: #16213E; border-color: rgba(255,255,255,0.06); }
+.phone.dark-mode .know-card .know-title { color: #D0C8E0; }
+.phone.dark-mode .know-tag { background: rgba(244, 114, 182,0.08); }
+.phone.dark-mode .achieve-item { background: #16213E; border-color: rgba(255,255,255,0.06); }
+.phone.dark-mode .achieve-item .ach-name { color: #C0B8D0; }
+</style>
+</head>
+<body>
+<div class="phone">
+  <!-- 标题栏 -->
+  <div class="title-bar">
+    <span class="title">我的数据</span>
+    <button class="share-btn" onclick="showToast('📤 分享数据卡片')" title="分享">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+    </button>
+  </div>
+
+  <div class="scroll-area">
+    <!-- 关系卡片 -->
+    <div class="relation-card">
+      <div class="relation-avatar">
+        <div class="img-cat avatar img-md"><img src="shared/agnes-cat.png" alt="猫娘"></div>
+      </div>
+      <div class="relation-info">
+        <div class="relation-name">你和 小咪</div>
+        <div class="relation-days" data-stat="chat_days_relation">已经认识 96 天啦 ✨</div>
+        <div class="relation-lvl">
+          <span class="lvl-badge" data-stat="affection_name">Lv.7 挚友</span>
+          <div class="lvl-bar-wrap"><div class="lvl-bar-fill"></div></div>
+          <span class="lvl-pct" data-stat="affection_progress">72%</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- KPI 指标 -->
+    <div class="kpi-row">
+      <div class="kpi-card">
+        <div class="kpi-val c-pink" data-stat="total_messages">1,283</div>
+        <div class="kpi-lbl">消息总数</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-val c-purple" data-stat="chat_days">96</div>
+        <div class="kpi-lbl">聊天天数</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-val c-orange" data-stat="today_messages">23</div>
+        <div class="kpi-lbl">今日消息</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-val c-green" data-stat="affection">Lv.7</div>
+        <div class="kpi-lbl">好感等级</div>
+      </div>
+    </div>
+
+    <!-- 心情日历 -->
+    <div class="chart-card">
+      <div class="chart-title">心情日历<span class="chart-subtitle">近4周</span></div>
+      <div class="mood-cal" id="moodCal" data-mood-grid></div>
+      <div style="display:flex;align-items:center;gap:8px;margin-top:10px;justify-content:center;">
+        <div style="display:flex;align-items:center;gap:3px;"><div style="width:10px;height:10px;border-radius:2px;background:#F5F0F5;"></div><span style="font-size:9px;color:#C0A0B0;">平淡</span></div>
+        <div style="display:flex;align-items:center;gap:3px;"><div style="width:10px;height:10px;border-radius:2px;background:#FFE0E8;"></div><span style="font-size:9px;color:#C0A0B0;">开心</span></div>
+        <div style="display:flex;align-items:center;gap:3px;"><div style="width:10px;height:10px;border-radius:2px;background:#FFB0C0;"></div><span style="font-size:9px;color:#C0A0B0;">兴奋</span></div>
+        <div style="display:flex;align-items:center;gap:3px;"><div style="width:10px;height:10px;border-radius:2px;background:#F472B6;"></div><span style="font-size:9px;color:#C0A0B0;">甜蜜</span></div>
+      </div>
+    </div>
+
+    <!-- 最常聊的话题 -->
+    <div class="chart-card">
+      <div class="chart-title">最常聊的话题<span class="chart-subtitle">近30天</span></div>
+      <div class="rank-list" data-topics>
+        <div class="rank-item">
+          <div class="rank-icon r1"><svg viewBox="0 0 24 24" fill="none" stroke="#F472B6" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px;"><path d="M4 4h16v13H8l-4 4v-4H4z"/></svg></div>
+          <span class="rank-name">日常闲聊</span>
+          <div class="rank-bar-wrap"><div class="rank-bar-fill c1" style="width:100%;"></div></div>
+          <span class="rank-count">342</span>
+        </div>
+        <div class="rank-item">
+          <div class="rank-icon r2"><svg viewBox="0 0 24 24" fill="none" stroke="#C4B5FD" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px;"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg></div>
+          <span class="rank-name">天气/出行</span>
+          <div class="rank-bar-wrap"><div class="rank-bar-fill c2" style="width:64%;"></div></div>
+          <span class="rank-count">218</span>
+        </div>
+        <div class="rank-item">
+          <div class="rank-icon r3"><svg viewBox="0 0 24 24" fill="none" stroke="#FFB347" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px;"><path d="M18 8h1a4 4 0 010 8h-1M2 8h16v9a4 4 0 01-4 4H6a4 4 0 01-4-4V8zM6 1v3M10 1v3M14 1v3"/></svg></div>
+          <span class="rank-name">美食推荐</span>
+          <div class="rank-bar-wrap"><div class="rank-bar-fill c3" style="width:46%;"></div></div>
+          <span class="rank-count">156</span>
+        </div>
+        <div class="rank-item">
+          <div class="rank-icon r4"><svg viewBox="0 0 24 24" fill="none" stroke="#4CAF50" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px;"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg></div>
+          <span class="rank-name">音乐/娱乐</span>
+          <div class="rank-bar-wrap"><div class="rank-bar-fill c4" style="width:32%;"></div></div>
+          <span class="rank-count">108</span>
+        </div>
+        <div class="rank-item">
+          <div class="rank-icon r5"><svg viewBox="0 0 24 24" fill="none" stroke="#5B9BD5" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px;"><path d="M9 18h6M10 22h4M15.09 14c.18-.98.65-1.74 1.41-2.5A4.65 4.65 0 0018 8 6 6 0 006 8c0 1 .23 2.23 1.5 3.5A4.61 4.61 0 018.91 14"/></svg></div>
+          <span class="rank-name">学习/提问</span>
+          <div class="rank-bar-wrap"><div class="rank-bar-fill c5" style="width:20%;"></div></div>
+          <span class="rank-count">67</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 互动时段 -->
+    <div class="chart-card">
+      <div class="chart-title">你常找小咪的时间<span class="chart-subtitle">近30天</span></div>
+      <div class="bar-chart">
+        <div class="bar-col"><div class="bar pink" style="height:8px;" title="0-3时"></div><div class="lbl">0</div></div>
+        <div class="bar-col"><div class="bar pink" style="height:6px;" title="3-6时"></div><div class="lbl">3</div></div>
+        <div class="bar-col"><div class="bar pink" style="height:10px;" title="6-9时"></div><div class="lbl">6</div></div>
+        <div class="bar-col"><div class="bar pink" style="height:28px;" title="9-12时"></div><div class="lbl">9</div></div>
+        <div class="bar-col"><div class="bar pink" style="height:38px;" title="12-15时"></div><div class="lbl">12</div></div>
+        <div class="bar-col"><div class="bar pink" style="height:44px;" title="15-18时"></div><div class="lbl">15</div></div>
+        <div class="bar-col"><div class="bar pink" style="height:58px;" title="18-21时"></div><div class="lbl">18</div></div>
+        <div class="bar-col"><div class="bar pink" style="height:64px;" title="21-24时 高峰"></div><div class="lbl">21</div></div>
+      </div>
+      <div style="font-size:10px;color:#C0A0B0;text-align:center;margin-top:6px;">🌙 你是个夜猫子，晚上 9 点后最活跃</div>
+    </div>
+
+    <!-- Bot 了解你 -->
+    <div class="know-card">
+      <div class="know-title">小咪了解的关于你</div>
+      <div class="know-sub">基于你们的聊天记录自动总结</div>
+      <div class="know-tags">
+        <span class="know-tag">📍 住在上海</span>
+        <span class="know-tag">🎂 6月生日</span>
+        <span class="know-tag">🐱 喜欢猫</span>
+        <span class="know-tag">🍣 爱吃日料</span>
+        <span class="know-tag">🎮 玩原神</span>
+        <span class="know-tag">☕ 每天喝咖啡</span>
+        <span class="know-tag">🏃 周末跑步</span>
+        <span class="know-tag">🎬 喜欢悬疑片</span>
+      </div>
+    </div>
+
+    <!-- 成就墙 -->
+    <div class="chart-card">
+      <div class="chart-title">成就墙<span class="chart-subtitle">已解锁 5/9</span></div>
+      <div class="achieve-row" data-achievements>
+        <div class="achieve-item"><span class="ach-icon"><span style="color:#4CAF50;font-weight:700;">●</span></span><span class="ach-name">初次见面</span></div>
+        <div class="achieve-item"><span class="ach-icon"><span style="color:#FFB347;font-weight:700;">●</span></span><span class="ach-name">连续7天聊天</span></div>
+        <div class="achieve-item"><span class="ach-icon"><span style="color:#F472B6;font-weight:700;">●</span></span><span class="ach-name">1000条消息</span></div>
+        <div class="achieve-item"><span class="ach-icon"><span style="color:#F472B6;font-weight:700;">●</span></span><span class="ach-name">好感Lv.5</span></div>
+        <div class="achieve-item"><span class="ach-icon"><span style="color:#FFB347;font-weight:700;">●</span></span><span class="ach-name">聊了5个话题</span></div>
+        <div class="achieve-item locked"><span class="ach-icon"><span style="color:#C0A0B0;font-weight:700;">●</span></span><span class="ach-name">好感Lv.10</span></div>
+        <div class="achieve-item locked"><span class="ach-icon"><span style="color:#C0A0B0;font-weight:700;">●</span></span><span class="ach-name">连续30天</span></div>
+        <div class="achieve-item locked"><span class="ach-icon"><span style="color:#C0A0B0;font-weight:700;">●</span></span><span class="ach-name">一起过生日</span></div>
+        <div class="achieve-item locked"><span class="ach-icon"><span style="color:#C0A0B0;font-weight:700;">●</span></span><span class="ach-name">年度用户</span></div>
+      </div>
+    </div>
+    <div style="height:20px;"></div>
+  </div>
+
+  <!-- 底部导航 -->
+  <div class="bottom-nav" id="bottomNav">
+    <a class="nav-item" href="首页仪表盘.html">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12l9-9 9 9"/><path d="M5 10v10a1 1 0 001 1h4v-6h4v6h4a1 1 0 001-1V10"/></svg>
+      首页
+    </a>
+    <a class="nav-item" href="聊天页.html">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v13H8l-4 4v-4H4z"/></svg>
+      聊天
+    </a>
+    <a class="nav-item" href="我的Bot.html">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="5"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/><circle cx="10" cy="7" r="1" fill="currentColor" stroke="none"/><circle cx="14" cy="7" r="1" fill="currentColor" stroke="none"/></svg>
+      Bot管理
+    </a>
+    <a class="nav-item active" href="我的.html">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="12" cy="10" r="3"/><path d="M7 18c0-2 2.2-4 5-4s5 2 5 4"/></svg>
+      我的
+    </a>
+  </div>
+</div>
+<script src="shared/config.js"></script>
+<script src="shared/api.js"></script>
+<script src="shared/app.js"></script>
+<script>
+
+// Load stats data for first bot
+if (API.isLoggedIn()) {
+  var STAT_BOT_ID = API.getCurrentBotId();
+  function loadStats() {
+    if (!STAT_BOT_ID) {
+      API.listBots().then(function(d) {
+        if (d.bots && d.bots.length > 0) { STAT_BOT_ID = d.bots[0].id; loadStatsData(); }
+      });
+    } else { loadStatsData(); }
+  }
+
+  function _esc(s) { return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+  function loadStatsData() {
+    // Summary
+    API.getStatsSummary(STAT_BOT_ID).then(function(s) {
+      var totalEl = document.querySelector('[data-stat="total_messages"]');
+      var daysEl = document.querySelector('[data-stat="chat_days"]');
+      var todayEl = document.querySelector('[data-stat="today_messages"]');
+      var affEl = document.querySelector('[data-stat="affection"]');
+      if (totalEl) totalEl.textContent = s.total_messages || 0;
+      if (daysEl) daysEl.textContent = s.chat_days || 0;
+      if (todayEl) todayEl.textContent = s.today_messages || 0;
+      if (affEl) affEl.textContent = (s.affection_title || 'Lv.0');
+      // Update relation card
+      var relNameEl = document.querySelector('[data-stat="affection_name"]');
+      var relProgEl = document.querySelector('[data-stat="affection_progress"]');
+      if (relNameEl) relNameEl.textContent = 'Lv.' + (s.affection_level || 0) + ' ' + (s.affection_title || '');
+      if (relProgEl) relProgEl.textContent = (s.affection_progress || 0) + '%';
+    }).catch(function() {});
+
+    // Mood calendar
+    API.getStatsMood({ bot_id: STAT_BOT_ID, days: 28 }).then(function(d) {
+      var container = document.querySelector('[data-mood-grid]');
+      if (container && d.mood_data) {
+        container.innerHTML = d.mood_data.map(function(m) {
+          // Derive mood level from avg_valence (0-1 scale), fallback to msg count
+          var valence = m.avg_valence;
+          var level = 0, label = '平淡', emoji = '😐';
+          if (valence !== undefined) {
+            if (valence >= 0.75) { level = 4; label = '甜蜜'; emoji = '🥰'; }
+            else if (valence >= 0.6) { level = 3; label = '兴奋'; emoji = '😊'; }
+            else if (valence >= 0.45) { level = 2; label = '开心'; emoji = '🙂'; }
+            else if (valence >= 0.3) { level = 1; label = '平淡'; emoji = '😐'; }
+            else { level = 0; label = '低落'; emoji = '😞'; }
+          } else if (m.total_msgs) {
+            // Fallback: more messages → happier
+            if (m.total_msgs >= 50) { level = 3; label = '活跃'; emoji = '😊'; }
+            else if (m.total_msgs >= 20) { level = 2; label = '一般'; emoji = '🙂'; }
+            else { level = 1; label = '安静'; emoji = '😐'; }
+          }
+          return '<div class="mood-day m' + level + '" title="' + (m.date || '') + ' · ' + label + '">' + emoji + '</div>';
+        }).join('');
+      }
+    }).catch(function() {});
+
+    // Topics
+    API.getStatsTopics({ bot_id: STAT_BOT_ID, days: 30 }).then(function(d) {
+      var container = document.querySelector('[data-topics]');
+      var icons = ['r1','r2','r3','r4','r5'];
+      var svgIcons = [
+        '<svg viewBox="0 0 24 24" fill="none" stroke="#F472B6" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px;"><path d="M4 4h16v13H8l-4 4v-4H4z"/></svg>',
+        '<svg viewBox="0 0 24 24" fill="none" stroke="#C4B5FD" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px;"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>',
+        '<svg viewBox="0 0 24 24" fill="none" stroke="#FFB347" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px;"><path d="M18 8h1a4 4 0 010 8h-1M2 8h16v9a4 4 0 01-4 4H6a4 4 0 01-4-4V8zM6 1v3M10 1v3M14 1v3"/></svg>',
+        '<svg viewBox="0 0 24 24" fill="none" stroke="#4CAF50" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px;"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>',
+        '<svg viewBox="0 0 24 24" fill="none" stroke="#5B9BD5" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px;"><path d="M9 18h6M10 22h4M15.09 14c.18-.98.65-1.74 1.41-2.5A4.65 4.65 0 0018 8 6 6 0 006 8c0 1 .23 2.23 1.5 3.5A4.61 4.61 0 018.91 14"/></svg>'
+      ];
+      var barColors = ['c1','c2','c3','c4','c5'];
+      if (container && d.topics) {
+        var maxCount = d.topics[0] ? d.topics[0].count : 1;
+        container.innerHTML = d.topics.slice(0, 5).map(function(t, i) {
+          var pct = Math.round(t.count / maxCount * 100);
+          return '<div class="rank-item">' +
+            '<div class="rank-icon ' + icons[i] + '">' + svgIcons[i] + '</div>' +
+            '<span class="rank-name">' + _esc(t.topic_name) + '</span>' +
+            '<div class="rank-bar-wrap"><div class="rank-bar-fill ' + barColors[i] + '" style="width:' + pct + '%;"></div></div>' +
+            '<span class="rank-count">' + t.count + '</span>' +
+          '</div>';
+        }).join('');
+      }
+    }).catch(function() {});
+
+    // Achievements
+    API.getStatsAchievements(STAT_BOT_ID).then(function(d) {
+      var container = document.querySelector('[data-achievements]');
+      if (container && d.achievements) {
+        container.innerHTML = d.achievements.map(function(a) {
+          return '<div class="ach-item' + (a.unlocked ? ' unlocked' : ' locked') + '">' +
+            '<span class="ach-icon">' + (a.unlocked ? '🏆' : '🔒') + '</span>' +
+            '<span class="ach-name">' + a.name + '</span>' +
+          '</div>';
+        }).join('');
+      }
+    }).catch(function() {});
+  }
+
+  // Also load relation data
+  function loadRelation() {
+    API.getStatsRelation(STAT_BOT_ID).then(function(r) {
+      var daysEl = document.querySelector('[data-stat="chat_days_relation"]');
+      if (daysEl) daysEl.textContent = '已经认识 ' + (r.days_since_first_chat || 0) + ' 天啦 ✨';
+    }).catch(function() {});
+  }
+
+  loadStats();
+  loadRelation();
+}
+
+
+// 心情日历 — 由 API 动态加载（见 loadStatsData）
+</script>
+</body>
+</html>

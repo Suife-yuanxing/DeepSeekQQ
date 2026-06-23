@@ -90,20 +90,21 @@
 
 - [ ] 空态 / 加载态 / 网络错误态的全局组件设计（计划 Phase 5.3）
 - [ ] 图片消息 / 语音消息的 Flutter Widget 规格
-- [x] 核心 4 页 API 接通（注册/登录/Bot创建/聊天）— 2026-06-22 ✅
-- [x] WebView 套壳 APK（Capacitor）— 内测期方案，计划中
-- [ ] 其余 23 页逐个接通真 API
+- [x] 全部 19 页功能页 API 接通 — 2026-06-23 ✅
+- [x] WebView 套壳 APK（Capacitor）— 内测期方案，已完成
+- [ ] 后端新增端点部署到服务器（`DELETE /bots/{id}/memory`、`GET /messages/search`）
+- [ ] 完整测试套件回归验证
 
-## 后端对接状态（2026-06-22）
+## 后端对接状态（2026-06-23）
 
 Phase 1 后端 **17/17 Task 全部完成**，8766 端口在服务器 `lhins-n2eeuw4m` 运行中。
 
 | 维度 | 值 |
 |------|-----|
 | 后端 | FastAPI 8766，systemd `deepseek-api.service` active |
-| 端点 | ~85 个（含 JWT 认证 + 6 API Key 端点 + WS 流式聊天） |
+| 端点 | 76 个（含 JWT 双 Token 认证 + API Key KMS + WS 流式聊天 + 统计聚合 + 管理员面板） |
 | 测试 | 1318/1318 全绿 |
-| 前端对接 | **核心 4 页已接通**（注册/登录/Bot创建/聊天），`shared/api.js` 提供统一 API 客户端 |
+| 前端对接 | **19/19 功能页全部接通**，6 个纯静态页无需 API（index/品牌色/协议/许可/隐私/设置重定向） |
 
 ### 新增共享资源
 
@@ -112,20 +113,39 @@ Phase 1 后端 **17/17 Task 全部完成**，8766 端口在服务器 `lhins-n2ee
 | `config.js` | 29 | 服务器地址配置（localStorage/Capacitor/同源 三级优先级） |
 | `api.js` | 267 | API 客户端：fetch 封装 + JWT 自动刷新（F6）+ WebSocket + client_id 幂等 |
 
-### 已接通真 API 的页面
+### 已接通真 API 的页面（19/19 功能页）
 
 | 页面 | 对接端点 | 说明 |
 |------|------|------|
+| 启动页.html | `/health` | 版本校验 + 服务器状态 |
 | 注册页.html | `/auth/sms` + `/auth/register` | 真验证码 + 真注册，注册成功跳向导 |
 | 登录页.html | `/auth/sms` + `/auth/login` | 真验证码 + 真登录，已登录自动跳首页 |
+| 首页仪表盘.html | `GET /dashboard` + `GET /bots` | 聚合数据一键加载 + Bot 列表 |
+| 聊天页.html | `/chat/ws` + `GET /messages` | 真 WS 流式逐字 + 历史拉取 + client_id 幂等 + 断线重连 |
+| 我的Bot.html | `GET /bots` | Bot 列表 + 数量统计 |
 | Bot创建向导.html | `POST /bots` | 3 步完成 → 调 createBot → 跳聊天页 `?bot_id=` |
-| 聊天页.html | `/chat/ws` + `/messages` | 真 WS 流式逐字 + 历史拉取 + 断线重连 |
+| Bot设置.html | `GET/PUT /bots/{id}` + `DELETE /bots/{id}` + `DELETE /bots/{id}/memory` | 滑块 6 维 + 称呼偏好 + 危险操作（删除/清记忆） |
+| API Key管理.html | `/api-keys` CRUD + `/api-keys/usage-summary` | Key 列表/创建/吊销/复制 + 用量概览 |
+| 数据面板.html | `/stats/{bot_id}/summary` + `/stats/mood` + `/stats/topics` + `/stats/achievements` | 心情日历 + 话题排行 + 成就墙 + 关系卡片 |
+| 我的.html | `/user/profile` + `/user/settings` + `/auth/logout` | 个人中心 + 全部设置 + 快捷入口 |
+| 修改密码.html | `/auth/change-password` | 原密码验证 + 新密码强度检测 |
+| 数据权限.html | `/user/data-permissions` | 6 项隐私开关（AI 训练/个性化/数据共享等） |
+| 黑名单.html | `/user/blacklist` | 拉黑列表 + 解除拉黑 |
+| 编辑个人资料.html | `GET/PATCH /user/profile` + `POST /user/avatar` | 头像/昵称/性别/生日 |
+| 通知.html | `/notifications` + `/notifications/unread-count` + `/notifications/read-all` | 系统/消息/Bot/更新 4 类分组 |
+| QQ通道.html | `/channel/qq/status` + `/channel/qq/settings` | QQ 连接状态 + 自动回复开关 |
+| 微信通道.html | `/channel/wechat/status` + `/channel/wechat/bind` | 微信绑定状态 + 扫码绑定 |
+| 管理员面板.html | `/admin/system-metrics` + `/admin/users` + `/admin/bots` + `/admin/tokens` | 系统健康 + 用户/Bot 管理 + Token 统计 |
+
+> **6 个纯静态页无需 API**：[index.html](index.html)（导航索引）、[品牌色预览.html](品牌色预览.html)（设计工具）、[用户协议.html](用户协议.html)、[隐私政策.html](隐私政策.html)、[开源许可.html](开源许可.html)、[设置.html](设置.html)（301 → 我的.html）
 
 ## 更新日志
 
+- **2026-06-23**：前后端 API 全部对接完成 — 新增 3 个后端端点（`DELETE /bots/{id}/memory` 清除聊天记忆、`GET /messages/search` 全文搜索、`clear_bot_memory()` db 函数）；修复 3 个前端页面（API Key管理.html 静态脚本→完整 API 动态加载含 provider 选择器、数据面板.html 添加 10 个 `data-*` 属性 + JS 字段名对齐后端响应 `moods`→`mood_data`/`affection_name`→`affection_title`/valence→mood 5 级离散化、管理员面板.html 添加 5 个 `data-*` 属性 + 升级 JS 完整映射 6 列表格列 + 动态 Bot 表格）；19/19 功能页全部接通，6 个纯静态页无需 API；后端端点总计 76 个
+
 - **2026-06-22**：APP 落地核心 4 页接通 8766 后端 — 新建 `shared/api.js`（fetch + JWT 自动刷新 + WebSocket）+ `shared/config.js`（服务器地址）；注册页/登录页 接真 SMS + register/login API；Bot创建向导 接 createBot API 成功后跳聊天页 `?bot_id=`；聊天页 接真 WS（子协议 `bearer.<jwt>`）+ 流式逐字追加 + 历史消息拉取 + client_id 幂等去重 + 断线 3s 重连；`server.py` 加 StaticFiles 托管原型目录到 8766 根路径（浏览器调试用）；Capacitor WebView 套壳 APK 计划中导航胶囊从独立双定时器改为回调链式同步（380ms slide + 420ms compress → onComplete 回调跳转，消除 ~120ms 偏差）；胶囊形状 22px→14px 圆角长方形；方向性拉伸偏差（左滑偏左/右滑偏右）；聊天页附件按钮接入完整上传功能（相册/拍照/文件 → 图片压缩 400px JPEG + 文件卡片智能图标 + 灯箱预览 ESC 关闭）；聊天输入框默认 scale(0.96) → focus-within 弹簧弹至 scale(1)；我的页隐藏滚动条、聊天页滚动条缩至 3px + 不透明度 0.10；导航延迟 920→800ms 与胶囊同步；暗色模式全面覆盖新增组件
-126	
-127	- **2026-06-21f**：聊天输入 ChatGPT 风格 + 背景同步全局化 + 细节打磨 — 聊天输入栏改为统一白色胶囊（26px 圆角/无边框 textarea/暗色圆形发送上箭头/双层阴影）；背景色同步从 4 页补全至 shared/app.js 实现全站 25 页覆盖 + storage 跨标签实时同步；通知页拼接列表项→独立圆角卡片（16px）；编辑资料性别"保密"→"自定义"+ 模板标签（沃尔玛购物袋/武装直升机）；API Key 管理表单透明度 0.97+blur 消穿模、权限复选框垂直对齐+中文解释（聊天对话/图像生成/语音合成/记忆存储）、新增 API Key 输入框
+
+- **2026-06-21f**：聊天输入 ChatGPT 风格 + 背景同步全局化 + 细节打磨 — 聊天输入栏改为统一白色胶囊（26px 圆角/无边框 textarea/暗色圆形发送上箭头/双层阴影）；背景色同步从 4 页补全至 shared/app.js 实现全站 25 页覆盖 + storage 跨标签实时同步；通知页拼接列表项→独立圆角卡片（16px）；编辑资料性别"保密"→"自定义"+ 模板标签（沃尔玛购物袋/武装直升机）；API Key 管理表单透明度 0.97+blur 消穿模、权限复选框垂直对齐+中文解释（聊天对话/图像生成/语音合成/记忆存储）、新增 API Key 输入框
 
 - **2026-06-21e**：v9 马卡龙色系统一落地 — 全部 26 文件色值对齐 `#F472B6`；tokens.css 新增 Dark Mode Token Overrides（12 个变量）；components.css/effects.css/base.css 硬编码色值 → CSS 变量；dark-mode.css 全面迁移 v9 色系；品牌色预览.html 升级 v3；index.html 修复重复 CSS+版本号；README.md 路由 19/19+色值修正；设置.html 301 重定向至 我的.html
 
