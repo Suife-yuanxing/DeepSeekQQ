@@ -176,3 +176,73 @@ async def wechat_status(user=Depends(get_current_user)):
         "wechat_name": "已绑定" if any_bound else "",
         "bots": all_status,
     }
+
+
+# ── QQ 断开 ──────────────────────────────────────────────────
+
+@router.post("/qq/disconnect")
+async def disconnect_qq(user=Depends(get_current_user)):
+    """断开 QQ 通道连接。将所有 Bot 的 QQ 通道状态设为 disconnected。"""
+    from ..db_platform import get_bots_by_user
+    bots = await get_bots_by_user(user["id"])
+    count = 0
+    for bot in bots:
+        await update_channel_status(bot["id"], "qq", "disconnected")
+        count += 1
+    return {"ok": True, "disconnected_bots": count}
+
+
+# ── 微信绑定/断开 ─────────────────────────────────────────────
+
+@router.post("/wechat/bind")
+async def bind_wechat(
+    bot_id: int = Query(...),
+    user=Depends(get_current_user),
+):
+    """发起微信通道绑定（MVP：模拟扫码流程）。
+
+    完整版需要对接 ClawBot iLink SDK 获取真实扫码 URL。
+    当前 P0 精简版返回模拟绑定状态。
+    """
+    await require_bot_owner(bot_id, user)
+    # 状态设为 "binding" 表示等待扫码确认
+    await update_channel_status(bot_id, "wechat", "binding")
+    return {
+        "ok": True,
+        "bot_id": bot_id,
+        "status": "binding",
+        "qr_url": "",  # TODO: 对接 ClawBot iLink SDK 返回真实扫码 URL
+        "expires_in": 300,
+        "hint": "MVP 模拟：3 秒后自动完成绑定",
+    }
+
+
+@router.get("/wechat/bind/status")
+async def wechat_bind_status(
+    bot_id: int = Query(...),
+    user=Depends(get_current_user),
+):
+    """查询微信绑定状态（扫码轮询用）。"""
+    await require_bot_owner(bot_id, user)
+    channels = await get_channel_status(bot_id)
+    wechat = None
+    for c in channels:
+        if c["channel"] == "wechat":
+            wechat = c
+            break
+    return {
+        "bot_id": bot_id,
+        "status": wechat["status"] if wechat else "disconnected",
+        "connected": wechat["status"] == "connected" if wechat else False,
+    }
+
+
+@router.delete("/wechat/disconnect")
+async def disconnect_wechat(
+    bot_id: int = Query(...),
+    user=Depends(get_current_user),
+):
+    """断开微信通道连接。"""
+    await require_bot_owner(bot_id, user)
+    await update_channel_status(bot_id, "wechat", "disconnected")
+    return {"ok": True, "bot_id": bot_id}

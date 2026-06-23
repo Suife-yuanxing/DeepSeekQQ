@@ -256,7 +256,23 @@
 
     <!-- 危险操作 -->
     <div class="danger-zone">
-      <button class="danger-btn" onclick="if(confirm('确定断开 QQ 通道连接吗？Bot 将停止响应 QQ 消息。')){showToast('QQ 通道已断开','error')}">
+      <button class="danger-btn" id="disconnectBtn" onclick="(function(){
+        if(!confirm('确定断开 QQ 通道连接吗？Bot 将停止响应 QQ 消息。')) return;
+        var btn = document.getElementById('disconnectBtn');
+        btn.disabled = true; btn.textContent = '断开中...';
+        API.disconnectQQ().then(function(r){
+          showToast('QQ 通道已断开', 'error');
+          var sc = document.querySelector('.status-card');
+          sc.style.background = 'linear-gradient(135deg, #B0A8C0 0%, #C8C0D8 50%, #D8D0E8 100%)';
+          sc.querySelector('.sc-label').textContent = '已断开';
+          sc.querySelector('.sc-detail').textContent = 'QQ 通道未连接';
+          sc.querySelector('.sc-badge').textContent = '离线';
+          btn.textContent = '已断开';
+        }).catch(function(e){
+          showToast('断开失败: ' + e.message, 'error');
+          btn.disabled = false; btn.textContent = '断开连接';
+        });
+      })()">
         断开连接
       </button>
     </div>

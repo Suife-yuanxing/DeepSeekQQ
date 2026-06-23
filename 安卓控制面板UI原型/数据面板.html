@@ -285,38 +285,31 @@ body { background-attachment: fixed; overflow-x: hidden; }
     <!-- 互动时段 -->
     <div class="chart-card">
       <div class="chart-title">你常找小咪的时间<span class="chart-subtitle">近30天</span></div>
-      <div class="bar-chart">
-        <div class="bar-col"><div class="bar pink" style="height:8px;" title="0-3时"></div><div class="lbl">0</div></div>
-        <div class="bar-col"><div class="bar pink" style="height:6px;" title="3-6时"></div><div class="lbl">3</div></div>
-        <div class="bar-col"><div class="bar pink" style="height:10px;" title="6-9时"></div><div class="lbl">6</div></div>
-        <div class="bar-col"><div class="bar pink" style="height:28px;" title="9-12时"></div><div class="lbl">9</div></div>
-        <div class="bar-col"><div class="bar pink" style="height:38px;" title="12-15时"></div><div class="lbl">12</div></div>
-        <div class="bar-col"><div class="bar pink" style="height:44px;" title="15-18时"></div><div class="lbl">15</div></div>
-        <div class="bar-col"><div class="bar pink" style="height:58px;" title="18-21时"></div><div class="lbl">18</div></div>
-        <div class="bar-col"><div class="bar pink" style="height:64px;" title="21-24时 高峰"></div><div class="lbl">21</div></div>
+      <div class="bar-chart" id="activeHoursChart">
+        <div class="bar-col"><div class="bar pink" style="height:4px;" title="加载中..."></div><div class="lbl">0</div></div>
+        <div class="bar-col"><div class="bar pink" style="height:4px;" title="加载中..."></div><div class="lbl">3</div></div>
+        <div class="bar-col"><div class="bar pink" style="height:4px;" title="加载中..."></div><div class="lbl">6</div></div>
+        <div class="bar-col"><div class="bar pink" style="height:4px;" title="加载中..."></div><div class="lbl">9</div></div>
+        <div class="bar-col"><div class="bar pink" style="height:4px;" title="加载中..."></div><div class="lbl">12</div></div>
+        <div class="bar-col"><div class="bar pink" style="height:4px;" title="加载中..."></div><div class="lbl">15</div></div>
+        <div class="bar-col"><div class="bar pink" style="height:4px;" title="加载中..."></div><div class="lbl">18</div></div>
+        <div class="bar-col"><div class="bar pink" style="height:4px;" title="加载中..."></div><div class="lbl">21</div></div>
       </div>
-      <div style="font-size:10px;color:#C0A0B0;text-align:center;margin-top:6px;">🌙 你是个夜猫子，晚上 9 点后最活跃</div>
+      <div id="hourInsight" style="font-size:10px;color:#C0A0B0;text-align:center;margin-top:6px;">加载中...</div>
     </div>
 
     <!-- Bot 了解你 -->
     <div class="know-card">
       <div class="know-title">小咪了解的关于你</div>
       <div class="know-sub">基于你们的聊天记录自动总结</div>
-      <div class="know-tags">
-        <span class="know-tag">📍 住在上海</span>
-        <span class="know-tag">🎂 6月生日</span>
-        <span class="know-tag">🐱 喜欢猫</span>
-        <span class="know-tag">🍣 爱吃日料</span>
-        <span class="know-tag">🎮 玩原神</span>
-        <span class="know-tag">☕ 每天喝咖啡</span>
-        <span class="know-tag">🏃 周末跑步</span>
-        <span class="know-tag">🎬 喜欢悬疑片</span>
+      <div class="know-tags" data-user-profile>
+        <span class="know-tag">加载中...</span>
       </div>
     </div>
 
     <!-- 成就墙 -->
     <div class="chart-card">
-      <div class="chart-title">成就墙<span class="chart-subtitle">已解锁 5/9</span></div>
+      <div class="chart-title">成就墙<span class="chart-subtitle" data-ach-subtitle>已解锁 ?/?</span></div>
       <div class="achieve-row" data-achievements>
         <div class="achieve-item"><span class="ach-icon"><span style="color:#4CAF50;font-weight:700;">●</span></span><span class="ach-name">初次见面</span></div>
         <div class="achieve-item"><span class="ach-icon"><span style="color:#FFB347;font-weight:700;">●</span></span><span class="ach-name">连续7天聊天</span></div>
@@ -328,6 +321,16 @@ body { background-attachment: fixed; overflow-x: hidden; }
         <div class="achieve-item locked"><span class="ach-icon"><span style="color:#C0A0B0;font-weight:700;">●</span></span><span class="ach-name">一起过生日</span></div>
         <div class="achieve-item locked"><span class="ach-icon"><span style="color:#C0A0B0;font-weight:700;">●</span></span><span class="ach-name">年度用户</span></div>
       </div>
+    </div>
+    <!-- 消息搜索 -->
+    <div class="chart-card" style="margin-top:10px;">
+      <div class="chart-title">搜索聊天记录<span class="chart-subtitle">全文检索</span></div>
+      <form id="searchForm" style="display:flex;gap:8px;margin-bottom:8px;">
+        <input id="searchInput" type="text" placeholder="输入关键词..." style="flex:1;padding:10px 14px;border-radius:12px;border:1.5px solid rgba(244,114,182,0.15);font-size:13px;font-family:inherit;background:rgba(255,255,255,0.8);outline:none;color:#3A2030;">
+        <button type="submit" style="padding:10px 16px;border-radius:12px;background:linear-gradient(135deg,#F472B6,#FFB0C0);color:#fff;border:none;font-size:13px;font-weight:700;font-family:inherit;cursor:pointer;white-space:nowrap;">🔍 搜索</button>
+      </form>
+      <div id="searchCount" style="font-size:10px;color:#C0A0B0;margin-bottom:6px;"></div>
+      <div id="searchResults" style="max-height:200px;overflow-y:auto;"></div>
     </div>
     <div style="height:20px;"></div>
   </div>
@@ -363,29 +366,51 @@ if (API.isLoggedIn()) {
   function loadStats() {
     if (!STAT_BOT_ID) {
       API.listBots().then(function(d) {
-        if (d.bots && d.bots.length > 0) { STAT_BOT_ID = d.bots[0].id; loadStatsData(); }
+        if (d.bots && d.bots.length > 0) { STAT_BOT_ID = d.bots[0].id; loadAllData(); }
       });
-    } else { loadStatsData(); }
+    } else { loadAllData(); }
   }
 
   function _esc(s) { return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 
-  function loadStatsData() {
-    // Summary
+  function animateKPI(el, target) {
+    if (!el || target === undefined) return;
+    var duration = 600, start = performance.now();
+    var initial = parseInt(el.textContent) || 0;
+    function tick(now) {
+      var p = Math.min((now - start) / duration, 1);
+      var eased = 1 - Math.pow(1 - p, 3);
+      el.textContent = Math.round(initial + (target - initial) * eased);
+      if (p < 1) requestAnimationFrame(tick);
+      else el.textContent = target;
+    }
+    requestAnimationFrame(tick);
+  }
+
+  function loadAllData() {
+    // Summary + KPIs
     API.getStatsSummary(STAT_BOT_ID).then(function(s) {
       var totalEl = document.querySelector('[data-stat="total_messages"]');
       var daysEl = document.querySelector('[data-stat="chat_days"]');
       var todayEl = document.querySelector('[data-stat="today_messages"]');
       var affEl = document.querySelector('[data-stat="affection"]');
-      if (totalEl) totalEl.textContent = s.total_messages || 0;
-      if (daysEl) daysEl.textContent = s.chat_days || 0;
-      if (todayEl) todayEl.textContent = s.today_messages || 0;
+      if (totalEl) animateKPI(totalEl, s.total_messages || 0);
+      if (daysEl) animateKPI(daysEl, s.chat_days || 0);
+      if (todayEl) animateKPI(todayEl, s.today_messages || 0);
       if (affEl) affEl.textContent = (s.affection_title || 'Lv.0');
       // Update relation card
       var relNameEl = document.querySelector('[data-stat="affection_name"]');
       var relProgEl = document.querySelector('[data-stat="affection_progress"]');
+      var relLvlBar = document.querySelector('.lvl-bar-fill');
       if (relNameEl) relNameEl.textContent = 'Lv.' + (s.affection_level || 0) + ' ' + (s.affection_title || '');
       if (relProgEl) relProgEl.textContent = (s.affection_progress || 0) + '%';
+      if (relLvlBar) relLvlBar.style.width = (s.affection_progress || 0) + '%';
+    }).catch(function() {});
+
+    // Relation
+    API.getStatsRelation(STAT_BOT_ID).then(function(r) {
+      var daysEl = document.querySelector('[data-stat="chat_days_relation"]');
+      if (daysEl) daysEl.textContent = '已经认识 ' + (r.days_since_first_chat || 0) + ' 天啦 ✨';
     }).catch(function() {});
 
     // Mood calendar
@@ -393,22 +418,20 @@ if (API.isLoggedIn()) {
       var container = document.querySelector('[data-mood-grid]');
       if (container && d.mood_data) {
         container.innerHTML = d.mood_data.map(function(m) {
-          // Derive mood level from avg_valence (0-1 scale), fallback to msg count
           var valence = m.avg_valence;
-          var level = 0, label = '平淡', emoji = '😐';
+          var level = 0, label = '平淡';
           if (valence !== undefined) {
-            if (valence >= 0.75) { level = 4; label = '甜蜜'; emoji = '🥰'; }
-            else if (valence >= 0.6) { level = 3; label = '兴奋'; emoji = '😊'; }
-            else if (valence >= 0.45) { level = 2; label = '开心'; emoji = '🙂'; }
-            else if (valence >= 0.3) { level = 1; label = '平淡'; emoji = '😐'; }
-            else { level = 0; label = '低落'; emoji = '😞'; }
+            if (valence >= 0.75) { level = 4; label = '甜蜜'; }
+            else if (valence >= 0.6) { level = 3; label = '兴奋'; }
+            else if (valence >= 0.45) { level = 2; label = '开心'; }
+            else if (valence >= 0.3) { level = 1; label = '平淡'; }
+            else { level = 0; label = '低落'; }
           } else if (m.total_msgs) {
-            // Fallback: more messages → happier
-            if (m.total_msgs >= 50) { level = 3; label = '活跃'; emoji = '😊'; }
-            else if (m.total_msgs >= 20) { level = 2; label = '一般'; emoji = '🙂'; }
-            else { level = 1; label = '安静'; emoji = '😐'; }
+            if (m.total_msgs >= 50) { level = 3; label = '活跃'; }
+            else if (m.total_msgs >= 20) { level = 2; label = '一般'; }
+            else { level = 1; label = '安静'; }
           }
-          return '<div class="mood-day m' + level + '" title="' + (m.date || '') + ' · ' + label + '">' + emoji + '</div>';
+          return '<div class="mood-day m' + level + '" title="' + (m.date || '') + ' · ' + label + ' · ' + (m.total_msgs||0) + '条" onclick="showToast(\'' + (m.date||'') + ': ' + label + ' (' + (m.total_msgs||0) + '条消息)\')"></div>';
         }).join('');
       }
     }).catch(function() {});
@@ -439,34 +462,124 @@ if (API.isLoggedIn()) {
       }
     }).catch(function() {});
 
+    // Active hours — wire to real API
+    API.getStatsActiveHours({ bot_id: STAT_BOT_ID, days: 30 }).then(function(d) {
+      var container = document.getElementById('activeHoursChart');
+      if (container && d.hours) {
+        var maxH = 1;
+        d.hours.forEach(function(h) { if (h.count > maxH) maxH = h.count; });
+        // Build 8 3-hour blocks: 0-3, 3-6, ..., 21-24
+        var blocks = [0,3,6,9,12,15,18,21];
+        var blockCounts = [0,0,0,0,0,0,0,0];
+        d.hours.forEach(function(h) {
+          var idx = Math.floor((h.hour || 0) / 3);
+          if (idx >= 0 && idx < 8) blockCounts[idx] += h.count || 0;
+        });
+        container.innerHTML = blocks.map(function(blk, i) {
+          var h = Math.round(blockCounts[i] / maxH * 64);
+          return '<div class="bar-col">' +
+            '<div class="bar pink" style="height:' + Math.max(h, 4) + 'px;" title="' + blk + '-' + (blk+3) + '时: ' + blockCounts[i] + '条"></div>' +
+            '<div class="lbl">' + blk + '</div></div>';
+        }).join('');
+        // Update insight text
+        var peakIdx = blockCounts.indexOf(Math.max.apply(null, blockCounts));
+        var insightEl = document.getElementById('hourInsight');
+        if (insightEl && peakIdx >= 0) {
+          var peakLabel = blocks[peakIdx] + '-' + (blocks[peakIdx]+3);
+          insightEl.textContent = peakIdx >= 5 ? '🌙 你是个夜猫子，晚上 ' + peakLabel + ' 时最活跃' :
+            peakIdx >= 3 ? '☀️ 下午 ' + peakLabel + ' 时是你最常聊天的时段' :
+            '🌅 早上 ' + peakLabel + ' 时是你最活跃的时段';
+        }
+      }
+    }).catch(function() {});
+
+    // User profile tags
+    API.getStatsUserProfile(STAT_BOT_ID).then(function(d) {
+      var container = document.querySelector('[data-user-profile]');
+      if (container && d.tags && d.tags.length) {
+        container.innerHTML = d.tags.map(function(t) {
+          return '<span class="know-tag">' + _esc(t) + '</span>';
+        }).join('');
+      }
+    }).catch(function() {});
+
     // Achievements
     API.getStatsAchievements(STAT_BOT_ID).then(function(d) {
       var container = document.querySelector('[data-achievements]');
       if (container && d.achievements) {
+        var unlocked = d.achievements.filter(function(a) { return a.unlocked; }).length;
+        var total = d.achievements.length;
+        var subtitle = document.querySelector('.chart-subtitle[data-ach-subtitle]');
+        if (subtitle) subtitle.textContent = '已解锁 ' + unlocked + '/' + total;
         container.innerHTML = d.achievements.map(function(a) {
-          return '<div class="ach-item' + (a.unlocked ? ' unlocked' : ' locked') + '">' +
-            '<span class="ach-icon">' + (a.unlocked ? '🏆' : '🔒') + '</span>' +
-            '<span class="ach-name">' + a.name + '</span>' +
+          return '<div class="achieve-item' + (a.unlocked ? '' : ' locked') + '">' +
+            '<span class="ach-icon">' + (a.unlocked ? a.icon || '🏆' : '🔒') + '</span>' +
+            '<span class="ach-name">' + _esc(a.name) + '</span>' +
+            (a.unlocked_at ? '<span class="ach-date" style="font-size:9px;color:#C0A0B0;margin-left:auto;">' + new Date(a.unlocked_at*1000).toLocaleDateString('zh-CN', {month:'short',day:'numeric'}) + '</span>' : '') +
           '</div>';
         }).join('');
       }
     }).catch(function() {});
   }
 
-  // Also load relation data
-  function loadRelation() {
-    API.getStatsRelation(STAT_BOT_ID).then(function(r) {
-      var daysEl = document.querySelector('[data-stat="chat_days_relation"]');
-      if (daysEl) daysEl.textContent = '已经认识 ' + (r.days_since_first_chat || 0) + ' 天啦 ✨';
-    }).catch(function() {});
+  // Share
+  var shareBtn = document.querySelector('.share-btn');
+  if (shareBtn) {
+    shareBtn.onclick = function() {
+      if (!STAT_BOT_ID) { showToast('暂无数据可分享', 'error'); return; }
+      API.shareStats(STAT_BOT_ID).then(function(r) {
+        if (r.share_url) {
+          if (navigator.share) {
+            navigator.share({ title: '我的 Bot 数据', url: r.share_url });
+          } else {
+            navigator.clipboard.writeText(r.share_url).then(function() {
+              showToast('📤 分享链接已复制！');
+            });
+          }
+        } else {
+          showToast('📤 分享卡片已生成');
+        }
+      }).catch(function(e) {
+        showToast('分享失败: ' + e.message, 'error');
+      });
+    };
+  }
+
+  // Message search
+  var searchForm = document.getElementById('searchForm');
+  if (searchForm) {
+    searchForm.onsubmit = function(e) {
+      e.preventDefault();
+      var q = document.getElementById('searchInput').value.trim();
+      if (!q) return;
+      var results = document.getElementById('searchResults');
+      var countEl = document.getElementById('searchCount');
+      results.innerHTML = '<div style="text-align:center;padding:20px;color:#C0A0B0;">搜索中...</div>';
+      API.searchMessages(q, STAT_BOT_ID).then(function(d) {
+        countEl.textContent = '找到 ' + d.count + ' 条';
+        if (!d.messages || !d.messages.length) {
+          results.innerHTML = '<div style="text-align:center;padding:20px;color:#C0A0B0;">未找到匹配的消息</div>';
+          return;
+        }
+        results.innerHTML = d.messages.map(function(m) {
+          var dt = new Date(m.time * 1000);
+          var timeStr = dt.toLocaleDateString('zh-CN', {month:'short', day:'numeric'}) + ' ' + dt.toLocaleTimeString('zh-CN', {hour:'2-digit', minute:'2-digit'});
+          return '<div style="padding:10px 0;border-bottom:1px solid rgba(0,0,0,0.04);">' +
+            '<div style="display:flex;justify-content:space-between;margin-bottom:3px;">' +
+              '<span style="font-size:10px;color:#C0A0B0;">' + timeStr + '</span>' +
+              '<span style="font-size:10px;color:#F472B6;font-weight:600;">' + _esc(m.role) + '</span>' +
+            '</div>' +
+            '<div style="font-size:12px;color:#3A2030;line-height:1.4;">' + _esc(m.content).substring(0, 200) + '</div>' +
+          '</div>';
+        }).join('');
+      }).catch(function(e) {
+        results.innerHTML = '<div style="text-align:center;padding:20px;color:#F472B6;">搜索失败: ' + e.message + '</div>';
+      });
+    };
   }
 
   loadStats();
-  loadRelation();
 }
-
-
-// 心情日历 — 由 API 动态加载（见 loadStatsData）
 </script>
 </body>
 </html>

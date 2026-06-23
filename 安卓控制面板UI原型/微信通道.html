@@ -264,28 +264,43 @@
 
 <script>
 function handleBind() {
-  // 模拟绑定流程弹窗
-  if (confirm('模拟绑定流程：\n\n1. 将打开微信扫码页面\n2. 扫码后选择授权范围\n3. 确认绑定\n\n（原型演示，点击确定模拟完成）')) {
+  if (!API.isLoggedIn()) { showToast('请先登录', 'error'); return; }
+  // 获取用户第一个 Bot 用于绑定
+  API.listBots().then(function(r){
+    var bots = r.bots || [];
+    if (!bots.length) { showToast('请先创建一个 Bot', 'error'); return; }
+    var botId = bots[0].id;
+    if (!confirm('确认绑定微信通道？\n\n1. 扫码验证身份\n2. 选择授权范围\n3. 确认绑定')) return;
     var btn = document.querySelector('.bind-btn');
     btn.textContent = '绑定中...';
     btn.disabled = true;
     btn.style.opacity = '0.7';
-    setTimeout(function() {
-      showToast('微信通道绑定成功！', 'success');
-      btn.textContent = '已绑定 ✓';
-      btn.style.background = 'linear-gradient(135deg, #4CAF50, #66BB6A)';
-      btn.style.boxShadow = '0 6px 18px rgba(76,175,80,0.25)';
-      // 更新状态卡片
-      var sc = document.querySelector('.status-card');
-      sc.style.background = 'linear-gradient(135deg, #4CAF50 0%, #66BB6A 50%, #81C784 100%)';
-      sc.style.boxShadow = '0 8px 24px rgba(76,175,80,0.25)';
-      sc.querySelector('.sc-label').textContent = '已连接';
-      sc.querySelector('.sc-detail').textContent = '微信 Bot · 运行正常';
-      sc.querySelector('.sc-badge').textContent = 'v1.0.0';
-      // 更新图标
-      sc.querySelector('.sc-icon svg').innerHTML = '<circle cx="12" cy="12" r="10"/><path d="M7 13l3 3 7-7"/>';
-    }, 1500);
-  }
+    API.bindWechat(botId).then(function(res){
+      // MVP 模拟：3秒后自动设为已连接（生产用真实扫码回调）
+      setTimeout(function(){
+        showToast('微信通道绑定成功！', 'success');
+        btn.textContent = '已绑定 ✓';
+        btn.style.background = 'linear-gradient(135deg, #4CAF50, #66BB6A)';
+        btn.style.boxShadow = '0 6px 18px rgba(76,175,80,0.25)';
+        var sc = document.querySelector('.status-card');
+        sc.style.background = 'linear-gradient(135deg, #4CAF50 0%, #66BB6A 50%, #81C784 100%)';
+        sc.style.boxShadow = '0 8px 24px rgba(76,175,80,0.25)';
+        sc.querySelector('.sc-label').textContent = '已连接';
+        sc.querySelector('.sc-detail').textContent = '微信 Bot · 运行正常';
+        sc.querySelector('.sc-badge').textContent = 'v1.0.0';
+        sc.querySelector('.sc-icon svg').innerHTML = '<circle cx="12" cy="12" r="10"/><path d="M7 13l3 3 7-7"/>';
+        btn.disabled = false;
+        btn.style.opacity = '1';
+      }, 3000);
+    }).catch(function(e){
+      showToast('绑定失败: ' + e.message, 'error');
+      btn.textContent = '立即绑定';
+      btn.disabled = false;
+      btn.style.opacity = '1';
+    });
+  }).catch(function(e){
+    showToast('获取 Bot 列表失败: ' + e.message, 'error');
+  });
 }
 </script>
 <script src="shared/config.js"></script>

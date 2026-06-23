@@ -369,3 +369,131 @@
     transition: none;
   }
 }
+
+/* ================================================================
+   Global State Components — empty / loading / error / network-error
+   Usage: <div class="state-empty">...</div>
+   ================================================================ */
+
+/* === Shared state container === */
+.state-empty,
+.state-loading,
+.state-error,
+.state-network-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 24px;
+  text-align: center;
+  min-height: 180px;
+}
+
+/* === Empty State === */
+.state-empty .state-icon {
+  width: 72px; height: 72px; border-radius: 50%;
+  background: rgba(244, 114, 182, 0.06);
+  display: flex; align-items: center; justify-content: center;
+  margin-bottom: 16px;
+  font-size: 32px;
+}
+.state-empty .state-title {
+  font-size: 15px; font-weight: 700; color: #3A2030;
+  margin-bottom: 6px;
+}
+.state-empty .state-desc {
+  font-size: 12px; color: #B090A0; max-width: 240px; line-height: 1.5;
+  margin-bottom: 16px;
+}
+.state-empty .state-action {
+  font-size: 13px; font-weight: 600; color: #F472B6;
+  cursor: pointer; padding: 8px 20px;
+  border-radius: 12px; border: 1.5px solid rgba(244,114,182,0.2);
+  background: rgba(255,255,255,0.7); font-family: inherit;
+  transition: all 0.2s;
+}
+.state-empty .state-action:hover { background: #F472B6; color: #fff; border-color: #F472B6; }
+
+/* === Loading State === */
+.state-loading .state-spinner {
+  width: 40px; height: 40px; border-radius: 50%;
+  border: 3px solid rgba(244, 114, 182, 0.12);
+  border-top-color: #F472B6;
+  animation: state-spin 0.7s linear infinite;
+  margin-bottom: 16px;
+}
+@keyframes state-spin { to { transform: rotate(360deg); } }
+.state-loading .state-text {
+  font-size: 13px; color: #B090A0;
+}
+
+/* === Error State === */
+.state-error .state-icon {
+  width: 64px; height: 64px; border-radius: 50%;
+  background: rgba(255, 71, 87, 0.06);
+  display: flex; align-items: center; justify-content: center;
+  margin-bottom: 16px; font-size: 24px;
+}
+.state-error .state-title {
+  font-size: 15px; font-weight: 700; color: #3A2030;
+  margin-bottom: 6px;
+}
+.state-error .state-desc {
+  font-size: 12px; color: #B090A0; max-width: 260px; line-height: 1.5;
+  margin-bottom: 16px;
+}
+.state-error .state-retry {
+  font-size: 13px; font-weight: 600; color: #F472B6;
+  cursor: pointer; padding: 8px 20px;
+  border-radius: 12px; border: 1.5px solid rgba(255,71,87,0.15);
+  background: rgba(255,255,255,0.7); font-family: inherit;
+  transition: all 0.2s;
+}
+.state-error .state-retry:hover { background: #FF4757; color: #fff; border-color: #FF4757; }
+
+/* === Network Error (offline banner) === */
+.state-network-error {
+  background: linear-gradient(135deg, #FFF5F5 0%, #FFE8E8 100%);
+  border-radius: 16px; margin: 12px 20px;
+  padding: 20px 16px; min-height: auto;
+}
+.state-network-error .state-icon { font-size: 28px; margin-bottom: 8px; }
+.state-network-error .state-title { color: #D63031; }
+.state-network-error .state-desc { color: #E17055; }
+.state-network-error .state-retry {
+  color: #D63031; border-color: rgba(214,48,49,0.2);
+}
+.state-network-error .state-retry:hover { background: #D63031; color: #fff; border-color: #D63031; }
+
+/* === Inline loading skeleton (placeholder shimmer) === */
+.skeleton {
+  background: linear-gradient(90deg, #F0E8F0 25%, #E8E0F0 50%, #F0E8F0 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+  border-radius: 8px;
+}
+@keyframes shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+.skeleton-line { height: 12px; margin-bottom: 8px; }
+.skeleton-line.short { width: 60%; }
+.skeleton-line.medium { width: 80%; }
+.skeleton-card { height: 72px; border-radius: 16px; margin-bottom: 10px; }
+.skeleton-avatar { width: 48px; height: 48px; border-radius: 50%; flex-shrink: 0; }
+
+/* === Dark Mode overrides for state components === */
+.phone.dark-mode .state-empty .state-title,
+.phone.dark-mode .state-error .state-title { color: #E0D8E8; }
+.phone.dark-mode .state-empty .state-desc,
+.phone.dark-mode .state-loading .state-text,
+.phone.dark-mode .state-error .state-desc { color: #8078A0; }
+.phone.dark-mode .state-empty .state-action,
+.phone.dark-mode .state-error .state-retry { background: #16213E; }
+.phone.dark-mode .state-network-error {
+  background: linear-gradient(135deg, #2A1A1A 0%, #1E1212 100%);
+}
+.phone.dark-mode .state-network-error .state-title { color: #FF6B6B; }
+.phone.dark-mode .state-network-error .state-desc { color: #E08888; }
+.phone.dark-mode .skeleton { background: linear-gradient(90deg, #1E1A2E 25%, #2A1A3E 50%, #1E1A2E 75%); background-size: 200% 100%; }
+

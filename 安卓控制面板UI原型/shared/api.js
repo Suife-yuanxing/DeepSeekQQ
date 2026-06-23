@@ -585,6 +585,30 @@ var API = (function() {
     return r.json();
   }
 
+  async function disconnectQQ() {
+    var r = await _fetch('/channel/qq/disconnect', { method: 'POST' });
+    if (!r.ok) throw new Error(await _parseError(r));
+    return r.json();
+  }
+
+  async function bindWechat(botId) {
+    var r = await _fetch('/channel/wechat/bind?bot_id=' + botId, { method: 'POST' });
+    if (!r.ok) throw new Error(await _parseError(r));
+    return r.json();
+  }
+
+  async function getWechatBindStatus(botId) {
+    var r = await _fetch('/channel/wechat/bind/status?bot_id=' + botId);
+    if (!r.ok) throw new Error(await _parseError(r));
+    return r.json();
+  }
+
+  async function disconnectWechat(botId) {
+    var r = await _fetch('/channel/wechat/disconnect?bot_id=' + botId, { method: 'DELETE' });
+    if (!r.ok) throw new Error(await _parseError(r));
+    return r.json();
+  }
+
   // ================================================================
   //  额度
   // ================================================================
@@ -761,6 +785,9 @@ var API = (function() {
     getQQRecentMessages: getQQRecentMessages,
     getQQSettings: getQQSettings, updateQQSettings: updateQQSettings,
     getWechatStatus: getWechatStatus,
+    disconnectQQ: disconnectQQ,
+    bindWechat: bindWechat, getWechatBindStatus: getWechatBindStatus,
+    disconnectWechat: disconnectWechat,
     // quota
     getQuota: getQuota, getQuotaStatus: getQuotaStatus,
     // api keys

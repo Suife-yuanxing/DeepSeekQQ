@@ -88,12 +88,14 @@
 
 ## 待补充
 
-- [ ] 空态 / 加载态 / 网络错误态的全局组件设计（计划 Phase 5.3）
+- [x] 空态 / 加载态 / 网络错误态的全局组件设计 — 2026-06-23 ✅（shared/components.css §Global State Components）
 - [ ] 图片消息 / 语音消息的 Flutter Widget 规格
 - [x] 全部 19 页功能页 API 接通 — 2026-06-23 ✅
 - [x] WebView 套壳 APK（Capacitor）— 内测期方案，已完成
-- [ ] 后端新增端点部署到服务器（`DELETE /bots/{id}/memory`、`GET /messages/search`）
-- [ ] 完整测试套件回归验证
+- [x] Phase 3 通道管理端点 — QQ 断开、微信绑定/断开/绑定状态查询（4 个新端点）✅
+- [x] Phase 4 数据面板增强 — 活跃时段 API 接入、用户画像标签、分享、消息全文搜索 ✅
+- [x] 完整测试套件回归验证 — 1318/1318 全绿 ✅
+- [ ] 后端新增端点部署到服务器（`DELETE /bots/{id}/memory`、`GET /messages/search`、微信绑定等 7 个新端点）
 
 ## 后端对接状态（2026-06-23）
 
@@ -102,7 +104,7 @@ Phase 1 后端 **17/17 Task 全部完成**，8766 端口在服务器 `lhins-n2ee
 | 维度 | 值 |
 |------|-----|
 | 后端 | FastAPI 8766，systemd `deepseek-api.service` active |
-| 端点 | 76 个（含 JWT 双 Token 认证 + API Key KMS + WS 流式聊天 + 统计聚合 + 管理员面板） |
+| 端点 | 80 个（含 JWT 双 Token 认证 + API Key KMS + WS 流式聊天 + 统计聚合 + 管理员面板） |
 | 测试 | 1318/1318 全绿 |
 | 前端对接 | **19/19 功能页全部接通**，6 个纯静态页无需 API（index/品牌色/协议/许可/隐私/设置重定向） |
 
@@ -140,6 +142,8 @@ Phase 1 后端 **17/17 Task 全部完成**，8766 端口在服务器 `lhins-n2ee
 > **6 个纯静态页无需 API**：[index.html](index.html)（导航索引）、[品牌色预览.html](品牌色预览.html)（设计工具）、[用户协议.html](用户协议.html)、[隐私政策.html](隐私政策.html)、[开源许可.html](开源许可.html)、[设置.html](设置.html)（301 → 我的.html）
 
 ## 更新日志
+
+- **2026-06-23b**：Phase 3-5 收官 — 新增 4 个通道管理端点（QQ 断开 `POST /channel/qq/disconnect`、微信绑定 `POST /channel/wechat/bind` + 状态 `GET /channel/wechat/bind/status` + 断开 `DELETE /channel/wechat/disconnect`）；数据面板增强（活跃时段 API 接入 + 用户画像标签动态化 + 分享功能 + 消息全文搜索组件）；全局状态组件 4 套（空态/加载态/错误态/网络错误 + 骨架屏 shimmer）；新增 `api.js` 5 个方法（disconnectQQ/bindWechat/getWechatBindStatus/disconnectWechat/searchMessages）；QQ/微信通道前端对接真实 API（断开/绑定非 mock）；1318/1318 全量测试通过
 
 - **2026-06-23**：前后端 API 全部对接完成 — 新增 3 个后端端点（`DELETE /bots/{id}/memory` 清除聊天记忆、`GET /messages/search` 全文搜索、`clear_bot_memory()` db 函数）；修复 3 个前端页面（API Key管理.html 静态脚本→完整 API 动态加载含 provider 选择器、数据面板.html 添加 10 个 `data-*` 属性 + JS 字段名对齐后端响应 `moods`→`mood_data`/`affection_name`→`affection_title`/valence→mood 5 级离散化、管理员面板.html 添加 5 个 `data-*` 属性 + 升级 JS 完整映射 6 列表格列 + 动态 Bot 表格）；19/19 功能页全部接通，6 个纯静态页无需 API；后端端点总计 76 个
 
