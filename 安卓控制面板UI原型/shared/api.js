@@ -88,16 +88,19 @@ var API = (function() {
     var resp = await fetch(_apiBase() + path, Object.assign({}, options, { headers: headers }));
     // 401 → 尝试刷新一次重试
     if (resp.status === 401 && !options._retried) {
+      // 测试模式（mock token）→ 不刷新、不清 token，保持测试会话
+      // 各页面自行 catch 并降级为空状态，便于离线/UI 测试
+      var _tk = getAccessToken();
+      if (_tk && _tk.indexOf('dev.mock.') === 0) {
+        throw new Error('测试模式：后端不可达');
+      }
       var ok = await refreshAccessToken();
       if (ok) {
         options._retried = true;
         return _fetch(path, options);
       }
-      // 刷新失败 → 跳登录
+      // 刷新失败 → 清 token（不再强制跳登录，由各页面自行处理）
       clearTokens();
-      if (!location.pathname.endsWith('登录页.html') && !location.pathname.endsWith('注册页.html')) {
-        location.href = '登录页.html';
-      }
       throw new Error('未登录');
     }
     return resp;
@@ -111,12 +114,13 @@ var API = (function() {
     if (token) headers['Authorization'] = 'Bearer ' + token;
     var resp = await fetch(_apiBase() + path, Object.assign({}, options, { method: 'POST', headers: headers, body: formData }));
     if (resp.status === 401 && !options._retried) {
+      var _tk = getAccessToken();
+      if (_tk && _tk.indexOf('dev.mock.') === 0) {
+        throw new Error('测试模式：后端不可达');
+      }
       var ok = await refreshAccessToken();
       if (ok) { options._retried = true; return _upload(path, formData, options); }
       clearTokens();
-      if (!location.pathname.endsWith('登录页.html') && !location.pathname.endsWith('注册页.html')) {
-        location.href = '登录页.html';
-      }
       throw new Error('未登录');
     }
     return resp;

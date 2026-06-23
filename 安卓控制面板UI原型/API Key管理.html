@@ -302,7 +302,7 @@ body { background-attachment: fixed; overflow-x: hidden; }
 // ===== API Key 管理 — API 动态加载 =====
 (function() {
   'use strict';
-  if (!API.isLoggedIn()) { location.href = '登录页.html'; return; }
+  // 未登录时显示空态（不强制跳转）
 
   var currentTab = 'keys';
 

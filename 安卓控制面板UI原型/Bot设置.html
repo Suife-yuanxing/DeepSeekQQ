@@ -119,7 +119,7 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M15 18l-6-6 6-6"/></svg>
     </a>
     <span class="title" id="botTitle">Bot 设置</span>
-    <button class="save-btn" onclick="showToast('✓ 设置已保存')">保存</button>
+    <button class="save-btn" id="saveBtn" onclick="saveSettings()">保存</button>
   </div>
   <div class="scroll-area">
     <!-- 预览 -->
@@ -182,8 +182,8 @@
     <div class="danger-zone">
       <div class="dz-title">危险操作</div>
       <div class="dz-desc">以下操作不可恢复，请谨慎使用</div>
-      <button class="danger-btn" onclick="if(confirm('确定要重置小咪的所有记忆吗？')){showToast('记忆已清除')}">清除聊天记忆</button>
-      <button class="danger-btn" style="margin-left:8px;" onclick="if(confirm('确定要删除小咪吗？此操作不可恢复！')){showToast('Bot 已删除');setTimeout(function(){location.href='我的Bot.html'},800)}">删除此 Bot</button>
+      <button class="danger-btn" onclick="clearMemories()">清除聊天记忆</button>
+      <button class="danger-btn" style="margin-left:8px;" onclick="deleteCurrentBot()">删除此 Bot</button>
     </div>
     <div style="height:20px;"></div>
   </div>
@@ -194,7 +194,7 @@
 <script src="shared/app.js"></script>
 <script>
 // ===== Bot 设置 — API 集成 =====
-if (!API.isLoggedIn()) { location.href = '登录页.html'; }
+// 未登录时页面正常显示（API 调用会静默失败）
 
 var BOT_ID = (function() {
   var m = location.search.match(/bot_id=(\d+)/);

@@ -5,11 +5,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no">
 <title>聊天页 v2 — UI 原型</title>
 <link rel="stylesheet" href="shared/tokens.css">
+<link rel="stylesheet" href="shared/base.css">
 <link rel="stylesheet" href="shared/components.css">
 <link rel="stylesheet" href="shared/anime-cat.css">
 <link rel="stylesheet" href="shared/dark-mode.css">
 <link rel="stylesheet" href="shared/effects.css">
-<script src="shared/capacitor.js"></script>
+<script src="shared/native.js"></script>
 <style>
 /* ===== Animation System (UI/UX Pro Max v2) ===== */
 /* Page enter — unique CHAT version: translateX (NOT scale+Y like standard) */
@@ -72,10 +73,11 @@ body {
   overflow-x: hidden;
 }
 
-/* ===== 手机框 (chat overrides base.css phone with its own page-push-enter) ===== */
+/* ===== 手机框 — 仅保留与 base.css 默认不同的视觉差异 =====
+   尺寸/定位/圆角/overflow/display/flex-direction 交给 base.css 默认 +
+   [data-platform="native"] 全屏覆盖规则，避免页面 <style> 盖掉 native 全屏适配
+   （原硬编码 360×800+relative 导致真机 1080×2376 只显示居中小框 + 两侧黑边）。 */
 .phone {
-  width: 360px; height: 800px; border-radius: 32px; overflow: hidden;
-  position: relative; display: flex; flex-direction: column;
   background: var(--bg-page, #F5F5F5);
   box-shadow: 0 20px 60px rgba(244,114,182,0.2), 0 0 0 3px rgba(255,255,255,0.5);
   animation: page-push-enter 0.35s cubic-bezier(0.25, 0.1, 0.25, 1) both;
@@ -110,7 +112,7 @@ body {
 
 /* ===== 标题栏 (chat-specific: with ::after glow + avatar-wrap) ===== */
 .title-bar {
-  background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-light) 100%);
+  background: var(--gradient-header, linear-gradient(135deg, var(--color-primary), var(--color-primary-light)));
   padding: 44px 14px 10px; display: flex; align-items: center; gap: 10px;
   color: #fff; position: relative; overflow: hidden; z-index: 10;
   border-radius: 0 0 20px 20px;
@@ -154,13 +156,6 @@ body {
   display: flex; align-items: center; color: #fff; text-decoration: none;
 }
 .title-bar .menu svg { width: 20px; height: 20px; }
-
-/* ===== 离线横幅 ===== */
-.offline-banner {
-  background: linear-gradient(135deg, #FFB347, #FFC773); color: #fff;
-  text-align: center; padding: 7px; font-size: 12px; display: none; z-index: 10;
-  border-radius: 0 0 14px 14px;
-}
 
 /* ===== 消息列表 ===== */
 .message-list {
@@ -385,35 +380,6 @@ body {
 .longpress-menu .lp-item:hover { background: #FFF0F3; }
 .longpress-menu .lp-item.danger { color: #F472B6; font-weight: 600; }
 
-/* ===== 模拟键盘 ===== */
-.keyboard-sim {
-  position: absolute; bottom: 60px; left: 0; right: 0;
-  height: 280px; background: #E5E5E8; border-radius: 12px 12px 0 0;
-  display: none; z-index: 15; padding: 8px;
-}
-.phone.keyboard-open .keyboard-sim { display: block; }
-.phone.keyboard-open .bottom-nav { display: none; }
-.phone.keyboard-open .input-bar { margin-bottom: 8px; border-radius: 24px; }
-.kb-row { display: flex; gap: 4px; margin-bottom: 4px; justify-content: center; }
-.kb-key {
-  width: 30px; height: 38px; border-radius: 6px; background: #fff;
-  display: flex; align-items: center; justify-content: center;
-  font-size: 13px; color: #333; box-shadow: 0 1px 2px rgba(0,0,0,0.1);
-  cursor: pointer; font-family: inherit;
-}
-.kb-key:active { background: #D0D0D5; }
-.kb-key.space { width: 180px; }
-.kb-key.done { width: 60px; background: #F472B6; color: #fff; font-size: 11px; }
-
-/* 模拟键盘切换按钮 */
-.kb-toggle {
-  position: absolute; bottom: 70px; right: 10px; z-index: 25;
-  background: rgba(0,0,0,0.06); border: none; border-radius: 8px;
-  padding: 3px 10px; font-size: 10px; color: #B090A0;
-  cursor: pointer; font-family: inherit; transition: all 0.2s;
-}
-.kb-toggle:hover { background: rgba(0,0,0,0.1); color: #6A5060; }
-
 /* ===== 页面专用暗色模式覆盖 ===== */
 /* (Most are handled by shared/dark-mode.css: bubbles, input-bar, bottom-nav, title-bar, longpress-menu, bg-picker, offline-banner) */
 
@@ -546,21 +512,6 @@ body {
   <input type="file" id="uploadImageInput" accept="image/*" style="display:none;" onchange="handleFileSelected(event, 'image')">
   <input type="file" id="uploadCameraInput" accept="image/*" capture="environment" style="display:none;" onchange="handleFileSelected(event, 'image')">
   <input type="file" id="uploadFileInput" style="display:none;" onchange="handleFileSelected(event, 'file')">
-
-  <!-- 离线横幅 -->
-  <div class="offline-banner" id="offlineBanner">⚠ 网络连接中断，消息将在恢复后自动发送</div>
-
-  <!-- 模拟键盘 -->
-  <div class="keyboard-sim" id="keyboardSim">
-    <div class="kb-row"><span class="kb-key">Q</span><span class="kb-key">W</span><span class="kb-key">E</span><span class="kb-key">R</span><span class="kb-key">T</span><span class="kb-key">Y</span><span class="kb-key">U</span><span class="kb-key">I</span><span class="kb-key">O</span><span class="kb-key">P</span></div>
-    <div class="kb-row"><span class="kb-key">A</span><span class="kb-key">S</span><span class="kb-key">D</span><span class="kb-key">F</span><span class="kb-key">G</span><span class="kb-key">H</span><span class="kb-key">J</span><span class="kb-key">K</span><span class="kb-key">L</span></div>
-    <div class="kb-row"><span class="kb-key" style="width:42px;">⇧</span><span class="kb-key">Z</span><span class="kb-key">X</span><span class="kb-key">C</span><span class="kb-key">V</span><span class="kb-key">B</span><span class="kb-key">N</span><span class="kb-key">M</span><span class="kb-key" style="width:42px;">⌫</span></div>
-    <div class="kb-row"><span class="kb-key" style="width:32px;">123</span><span class="kb-key space">空格</span><span class="kb-key done" onclick="toggleKeyboard()">完成</span></div>
-  </div>
-
-  <!-- 键盘模拟按钮 -->
-  <button class="kb-toggle" id="kbToggle" onclick="toggleKeyboard()" title="模拟键盘弹出">⌨ 键盘</button>
-  <button class="kb-toggle" id="offlineToggle" onclick="simulateOffline()" title="模拟断网" style="bottom:100px;">📡 断网</button>
 
   <!-- 标题栏 -->
   <div class="title-bar">
@@ -718,32 +669,6 @@ body {
     row.style.animationDelay = (i * 0.06) + 's';
   });
 })();
-
-// ===== 离线状态监听 =====
-window.addEventListener('offline', function() {
-  document.getElementById('offlineBanner').style.display = 'block';
-});
-window.addEventListener('online', function() {
-  document.getElementById('offlineBanner').style.display = 'none';
-});
-function simulateOffline() {
-  var banner = document.getElementById('offlineBanner');
-  if (banner.style.display === 'block') {
-    banner.style.display = 'none';
-  } else {
-    banner.style.display = 'block';
-    setTimeout(function() { banner.style.display = 'none'; }, 3000);
-  }
-}
-
-// ===== 键盘模拟 =====
-function toggleKeyboard() {
-  var phone = document.querySelector('.phone');
-  phone.classList.toggle('keyboard-open');
-  if (phone.classList.contains('keyboard-open')) {
-    document.getElementById('messageList').scrollTop = document.getElementById('messageList').scrollHeight;
-  }
-}
 
 function toggleBgPicker() {
   document.getElementById('bgPicker').classList.toggle('show');
@@ -1191,10 +1116,8 @@ window.addEventListener('storage', function(e) {
   }
   API.setCurrentBotId(botId);
 
-  if (!API.isLoggedIn()) {
-    if (typeof showToast === 'function') showToast('请先登录');
-    setTimeout(function() { location.href = '登录页.html'; }, 800);
-    return;
+  if (typeof showToast === 'function' && !API.isLoggedIn()) {
+    showToast('离线模式：消息功能需要登录');
   }
 
   window._chat = { botId: parseInt(botId, 10), pendingBotBubble: null, _manualClose: false };

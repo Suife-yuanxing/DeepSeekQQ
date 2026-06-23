@@ -168,19 +168,42 @@ function applyGenderTemplate(value) {
 }
 
 function changeAvatar() {
-  // 轮换猫娘人格变体 (v4 支持 gentle / tsundere / energetic / 默认)
-  var personas = ['gentle', 'tsundere', 'energetic', ''];
-  var labels = ['温柔', '傲娇', '元气', '默认'];
-  var idx = personas.indexOf(currentPersona);
-  idx = (idx + 1) % personas.length;
-  currentPersona = personas[idx];
+  // 触发文件选择器上传真实头像（调 API.uploadAvatar）
+  var fileInput = document.getElementById('avatarFileInput');
+  if (!fileInput) {
+    fileInput = document.createElement('input');
+    fileInput.type = 'file';
+    fileInput.id = 'avatarFileInput';
+    fileInput.accept = 'image/jpeg,image/png,image/webp,image/gif';
+    fileInput.style.display = 'none';
+    document.body.appendChild(fileInput);
+    fileInput.addEventListener('change', handleAvatarSelected);
+  }
+  fileInput.click();
+}
 
-  var cat = document.querySelector('#avatarDisplay .img-cat');
-  cat.className = 'img-cat avatar img-lg';
-  if (currentPersona) cat.classList.add(currentPersona);
-  cat.style.cssText = 'transform:scale(1.2);margin:0 auto;';
-
-  showToast('头像风格：' + labels[idx]);
+function handleAvatarSelected(e) {
+  var file = e.target.files && e.target.files[0];
+  if (!file) return;
+  if (file.size > 2 * 1024 * 1024) { showToast('头像最大 2MB'); return; }
+  showToast('上传中…');
+  if (typeof API === 'undefined' || !API.uploadAvatar) { showToast('上传功能不可用'); return; }
+  API.uploadAvatar(file).then(function(r) {
+    // 用返回的 avatar_url 替换头像显示
+    var wrap = document.getElementById('avatarDisplay');
+    if (wrap && r.avatar_url) {
+      wrap.innerHTML = '<img src="' + r.avatar_url + '" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">' +
+        '<div class="avatar-edit-badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4 12.5-12.5z"/></svg></div>';
+    }
+    showToast('头像已更新');
+    // 同步到 current_user
+    try {
+      var u = API.getCurrentUser();
+      if (u) { u.avatar_url = r.avatar_url; API.setCurrentUser(u); }
+    } catch (e2) {}
+  }).catch(function(err) {
+    showToast('上传失败：' + (err.message || '未知错误'));
+  });
 }
 
 function saveProfile() {
@@ -191,14 +214,28 @@ function saveProfile() {
     var customVal = document.getElementById('customGender').value.trim();
     finalGender = customVal || '自定义';
   }
-  showToast('个人资料已保存（性别：' + finalGender + '）');
-  setTimeout(function(){ location.href = '我的.html'; }, 1200);
+  // Call real API if logged in
+  if (typeof API !== 'undefined' && API.isLoggedIn && API.isLoggedIn()) {
+    var data = { nickname: nickname, gender: finalGender };
+    var bioEl = document.getElementById('bio');
+    if (bioEl && bioEl.value.trim()) data.bio = bioEl.value.trim();
+    API.updateProfile(data).then(function() {
+      showToast('个人资料已保存');
+      setTimeout(function(){ location.href = '我的.html'; }, 1200);
+    }).catch(function(err) {
+      showToast('保存失败：' + (err.message || '未知错误'));
+    });
+  } else {
+    showToast('个人资料已保存（性别：' + finalGender + '）');
+    setTimeout(function(){ location.href = '我的.html'; }, 1200);
+  }
 }
 </script>
 
 <script src="shared/config.js"></script>
 <script src="shared/api.js"></script>
-<script src="shared/app.js">
+<script src="shared/app.js"></script>
+<script>
 // Load user profile
 if (API.isLoggedIn()) {
   API.getProfile().then(function(user) {
@@ -215,23 +252,6 @@ if (API.isLoggedIn()) {
     }
   }).catch(function() {});
 }
-// Override save to use API
-var origSaveProfile = window.saveProfile;
-window.saveProfile = function() {
-  var data = {};
-  var nickEl = document.querySelector('[data-field="nickname"]') || document.getElementById('nicknameInput');
-  var bioEl = document.querySelector('[data-field="bio"]') || document.getElementById('bioInput');
-  if (nickEl && nickEl.value) data.nickname = nickEl.value;
-  if (bioEl && bioEl.value) data.bio = bioEl.value;
-  var selChip = document.querySelector('.radio-chip.selected');
-  if (selChip) data.gender = selChip.getAttribute('data-value');
-  API.updateProfile(data).then(function() {
-    if (window.showToast) showToast('保存成功');
-  }).catch(function(err) {
-    if (window.showToast) showToast('保存失败：' + (err.message || '未知错误'));
-  });
-};
-
 </script>
 </body>
 </html>

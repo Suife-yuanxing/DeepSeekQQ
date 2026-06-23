@@ -18,7 +18,17 @@
 
   // 预注入的默认值（构建时替换 <服务器公网IP>）
   if (!window.APP_CONFIG.server_base) {
-    if (window.NativeApp && window.NativeApp.isNative) {
+    // 直接检测原生注入的 NativeBridge（addJavascriptInterface 注入，
+    // 一定先于任何 <script> 存在），不依赖 native.js 是否已加载/执行时序。
+    // 修复：12 个页面未加载 native.js 导致 window.NativeApp 不存在 →
+    // 走 location.origin(=file://) 分支 → API 请求打到 file:///api/v1/ 全失败。
+    var _isNative = false;
+    try {
+      if (window.NativeBridge && typeof window.NativeBridge.isNative === 'function') {
+        _isNative = window.NativeBridge.isNative();
+      }
+    } catch (e) { _isNative = false; }
+    if (_isNative || (window.NativeApp && window.NativeApp.isNative)) {
       // APK 内：默认指向公网服务器
       window.APP_CONFIG.server_base = 'http://129.211.7.67:8766';
     } else {

@@ -88,6 +88,7 @@
     <a class="nav-item" href="我的.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="12" cy="10" r="3"/><path d="M7 18c0-2 2.2-4 5-4s5 2 5 4"/></svg>我的</a>
   </div>
 </div>
+<script src="shared/native.js"></script>
 <script src="shared/config.js"></script>
 <script src="shared/api.js"></script>
 <script src="shared/app.js"></script>
@@ -95,7 +96,7 @@
 // ===== 我的Bot — API 数据加载 =====
 (function() {
   'use strict';
-  if (!API.isLoggedIn()) { location.href = '登录页.html'; return; }
+  // 未登录时显示空态（不强制跳转）
 
   var AVATAR_COLORS = ['av-pink', 'av-purple', 'av-orange'];
   var PERSONA_LABELS = { tsundere: '傲娇', gentle: '温柔', sarcastic: '毒舌', energetic: '元气', emotionless: '三无', sly: '腹黑' };

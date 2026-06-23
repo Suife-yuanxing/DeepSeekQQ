@@ -152,7 +152,7 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8 12h8"/></svg>
       </div>
       <div class="sc-info">
-        <div class="sc-label">未绑定</div>
+        <div class="sc-label" data-wx-status>未绑定</div>
         <div class="sc-detail">微信通道未激活</div>
       </div>
       <div class="sc-badge">待设置</div>
@@ -276,22 +276,21 @@ function handleBind() {
     btn.disabled = true;
     btn.style.opacity = '0.7';
     API.bindWechat(botId).then(function(res){
-      // MVP 模拟：3秒后自动设为已连接（生产用真实扫码回调）
-      setTimeout(function(){
-        showToast('微信通道绑定成功！', 'success');
-        btn.textContent = '已绑定 ✓';
-        btn.style.background = 'linear-gradient(135deg, #4CAF50, #66BB6A)';
-        btn.style.boxShadow = '0 6px 18px rgba(76,175,80,0.25)';
-        var sc = document.querySelector('.status-card');
-        sc.style.background = 'linear-gradient(135deg, #4CAF50 0%, #66BB6A 50%, #81C784 100%)';
-        sc.style.boxShadow = '0 8px 24px rgba(76,175,80,0.25)';
-        sc.querySelector('.sc-label').textContent = '已连接';
-        sc.querySelector('.sc-detail').textContent = '微信 Bot · 运行正常';
-        sc.querySelector('.sc-badge').textContent = 'v1.0.0';
-        sc.querySelector('.sc-icon svg').innerHTML = '<circle cx="12" cy="12" r="10"/><path d="M7 13l3 3 7-7"/>';
-        btn.disabled = false;
-        btn.style.opacity = '1';
-      }, 3000);
+      showToast('微信通道绑定成功！', 'success');
+      btn.textContent = '已绑定 ✓';
+      btn.style.background = 'linear-gradient(135deg, #4CAF50, #66BB6A)';
+      btn.style.boxShadow = '0 6px 18px rgba(76,175,80,0.25)';
+      var sc = document.querySelector('.status-card');
+      sc.style.background = 'linear-gradient(135deg, #4CAF50 0%, #66BB6A 50%, #81C784 100%)';
+      sc.style.boxShadow = '0 8px 24px rgba(76,175,80,0.25)';
+      sc.querySelector('.sc-label').textContent = '已连接';
+      sc.querySelector('.sc-detail').textContent = '微信 Bot · 运行正常';
+      sc.querySelector('.sc-badge').textContent = 'v1.0.0';
+      sc.querySelector('.sc-icon svg').innerHTML = '<circle cx="12" cy="12" r="10"/><path d="M7 13l3 3 7-7"/>';
+      btn.disabled = false;
+      btn.style.opacity = '1';
+      // 刷新状态
+      if (typeof loadWxStatus === 'function') loadWxStatus();
     }).catch(function(e){
       showToast('绑定失败: ' + e.message, 'error');
       btn.textContent = '立即绑定';
@@ -305,7 +304,8 @@ function handleBind() {
 </script>
 <script src="shared/config.js"></script>
 <script src="shared/api.js"></script>
-<script src="shared/app.js">
+<script src="shared/app.js"></script>
+<script>
 // Load WeChat channel status
 if (API.isLoggedIn()) {
   function loadWxStatus() {
@@ -320,7 +320,6 @@ if (API.isLoggedIn()) {
   }
   loadWxStatus();
 }
-
 </script>
 </body>
 </html>

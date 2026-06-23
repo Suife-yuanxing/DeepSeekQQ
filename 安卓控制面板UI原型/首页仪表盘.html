@@ -10,7 +10,7 @@
 <link rel="stylesheet" href="shared/anime-cat.css">
 <link rel="stylesheet" href="shared/dark-mode.css">
 <link rel="stylesheet" href="shared/effects.css">
-<script src="shared/capacitor.js"></script>
+<script src="shared/native.js"></script>
 <style>
 /* ===== Page-Specific: 首页仪表盘 v2 ===== */
 
@@ -49,7 +49,7 @@
 
 /* ===== 顶部 ===== */
 .top-bar {
-  padding: 48px 20px 10px;
+  padding: 44px 14px 10px;
   display: flex; justify-content: space-between; align-items: center;
 }
 .top-bar .greeting { font-size: 13px; color: #C090A0; }
@@ -210,23 +210,19 @@
   </div>
 
   <div class="scroll-area">
-    <!-- Bot 卡片 -->
-    <div class="bot-card" onclick="location.href='我的Bot.html'">
+    <!-- Bot 卡片（骨架屏占位，API 返回后填充） -->
+    <div class="bot-card" id="dashboardBotCard" style="cursor:pointer;">
       <div class="row">
         <div class="bot-info">
           <div class="bot-avatar">
-            <div class="img-cat avatar img-md"><img src="shared/agnes-cat.png" alt="猫娘"></div>
-            <div class="avatar-edit-badge" onclick="event.stopPropagation();alert('→ 更换Bot头像（支持拍照/相册/默认猫娘）')">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg>
-            </div>
+            <div class="skeleton skeleton-avatar"></div>
           </div>
           <div>
-            <div class="bot-name">小咪</div>
-            <div class="bot-persona">傲娇 · 17岁</div>
-            <div class="bot-status">● 在线</div>
+            <div class="skeleton skeleton-line medium" style="width:80px;height:16px;margin-bottom:6px;"></div>
+            <div class="skeleton skeleton-line short" style="width:60px;height:10px;"></div>
           </div>
         </div>
-        <button class="switch-btn">切换</button>
+        <div class="skeleton" style="width:48px;height:28px;border-radius:12px;"></div>
       </div>
     </div>
 
@@ -234,15 +230,15 @@
     <div class="section-label">今日数据</div>
     <div class="stats-row">
       <div class="stat-card">
-        <div class="stat-value c-pink">23</div>
+        <div class="stat-value c-pink" id="statMessages">--</div>
         <div class="stat-label">消息数</div>
       </div>
       <div class="stat-card">
-        <div class="stat-value c-purple">18</div>
-        <div class="stat-label">好友数</div>
+        <div class="stat-value c-purple" id="statBots">--</div>
+        <div class="stat-label">Bot数</div>
       </div>
       <div class="stat-card">
-        <div class="stat-value c-orange">85%</div>
+        <div class="stat-value c-orange" id="statActive">--</div>
         <div class="stat-label">活跃度</div>
       </div>
     </div>
@@ -323,32 +319,6 @@
 </div>
 
 <script>
-// ===== Stat Counter Animation =====
-(function() {
-  var statValues = document.querySelectorAll('.stat-value');
-  statValues.forEach(function(el) {
-    var text = el.textContent.trim();
-    var isPercent = text.includes('%');
-    var target = parseFloat(text);
-    if (isNaN(target)) return;
-    var duration = 800;
-    var start = performance.now();
-    function update(now) {
-      var progress = Math.min((now - start) / duration, 1);
-      // Ease out cubic
-      var eased = 1 - Math.pow(1 - progress, 3);
-      var current = Math.round(target * eased);
-      el.textContent = isPercent ? current + '%' : current;
-      if (progress < 1) requestAnimationFrame(update);
-      else el.textContent = text; // restore original
-    }
-    el.textContent = isPercent ? '0%' : '0';
-    requestAnimationFrame(update);
-  });
-})();
-</script>
-
-<script>
 // ===== 聊天背景全局同步 =====
 (function() {
   var CHAT_BG_KEY = 'chatBg';
@@ -387,47 +357,44 @@
 (function() {
   'use strict';
 
-  // 未登录 → 跳转
-  if (!API.isLoggedIn()) {
-    location.href = '登录页.html';
-    return;
-  }
+  function _e(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 
-  // ── 加载仪表盘数据 ──
+  // ── 加载仪表盘数据（未登录则显示空态）──
   API.getDashboard().then(function(d) {
     // 问候语 + 用户名
     var greetEl = document.querySelector('.greeting');
     var nameEl = document.querySelector('.username');
-    if (greetEl) greetEl.textContent = d.greeting;
-    if (nameEl) nameEl.textContent = d.user.nickname;
+    if (greetEl) greetEl.textContent = d.greeting || '欢迎回来';
+    if (nameEl) nameEl.textContent = (d.user && d.user.nickname) || '用户';
 
-    // Bot 卡片（取第一个 Bot）
-    var botCard = document.querySelector('.bot-card');
-    if (d.bots.length > 0) {
+    // Bot 卡片 — 动态填充骨架屏
+    var botCard = document.getElementById('dashboardBotCard');
+    if (d.bots && d.bots.length > 0) {
       var b = d.bots[0];
-      var nameEl2 = botCard && botCard.querySelector('.bot-name');
-      var personaEl = botCard && botCard.querySelector('.bot-persona');
-      var statusEl = botCard && botCard.querySelector('.bot-status');
-      if (nameEl2) nameEl2.textContent = b.name;
-      if (personaEl) personaEl.textContent = (b.personality || '') + ' · ' + (b.is_active ? '活跃' : '离线');
-      if (statusEl) statusEl.innerHTML = b.is_active ? '<span style="color:#4CAF50;">●</span> 在线' : '<span style="color:#C0A0B0;">●</span> 离线';
-      // 存储当前 bot_id 用于聊天跳转
+      var avatarSrc = b.avatar_url || 'shared/agnes-cat.png';
+      botCard.innerHTML = '<div class="row">' +
+        '<div class="bot-info">' +
+          '<div class="bot-avatar"><div class="img-cat avatar img-md"><img src="' + avatarSrc + '" alt="猫娘"></div></div>' +
+          '<div><div class="bot-name">' + _e(b.name || 'Bot') + '</div>' +
+          '<div class="bot-persona">' + _e(b.personality || '') + ' · ' + (b.is_active ? '活跃' : '离线') + '</div>' +
+          '<div class="bot-status">' + (b.is_active ? '<span style="color:#4CAF50;">●</span> 在线' : '<span style="color:#C0A0B0;">●</span> 离线') + '</div></div>' +
+        '</div>' +
+        '<button class="switch-btn" onclick="event.stopPropagation();location.href=\'我的Bot.html\'">切换</button>' +
+        '</div>';
       API.setCurrentBotId(b.id);
       botCard.onclick = function() { location.href = '聊天页.html?bot_id=' + b.id; };
     } else {
-      if (botCard) {
-        botCard.innerHTML = '<div class="row"><div class="bot-info"><div style="font-size:14px;opacity:0.8;">还没有 Bot，去创建一个吧</div></div></div>';
-        botCard.onclick = function() { location.href = 'Bot创建向导.html'; };
-      }
+      botCard.innerHTML = '<div class="row"><div class="bot-info"><div style="font-size:14px;opacity:0.7;">还没有 Bot，去创建一个吧</div></div></div>';
+      botCard.onclick = function() { location.href = 'Bot创建向导.html'; };
     }
 
-    // 今日数据
-    var statCards = document.querySelectorAll('.stat-value');
-    if (statCards.length >= 3) {
-      statCards[0].textContent = d.today.messages || 0;
-      statCards[1].textContent = d.bots.length || 0;
-      statCards[2].textContent = d.today.tier === 'platform' ? '平台' : '自有';
-    }
+    // 今日数据 — 按 ID 更新
+    var msgEl = document.getElementById('statMessages');
+    var botsEl = document.getElementById('statBots');
+    var activeEl = document.getElementById('statActive');
+    if (msgEl) msgEl.textContent = (d.today && d.today.messages) || 0;
+    if (botsEl) botsEl.textContent = (d.bots && d.bots.length) || 0;
+    if (activeEl) activeEl.textContent = (d.today && d.today.tier) ? d.today.tier : '--';
 
     // 通道状态
     var chCards = document.querySelectorAll('.channel-card');
@@ -476,6 +443,12 @@
     animateStats();
   }).catch(function(err) {
     console.error('Dashboard load error:', err);
+    // API 失败 → 显示未登录状态
+    var botCard = document.getElementById('dashboardBotCard');
+    if (botCard) {
+      botCard.innerHTML = '<div class="row"><div class="bot-info"><div style="font-size:14px;opacity:0.7;">请先登录查看 Bot</div></div></div>';
+      botCard.onclick = function() { location.href = '登录页.html'; };
+    }
   });
 
   // ── 统计动画 ──

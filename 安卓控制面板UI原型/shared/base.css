@@ -26,8 +26,9 @@ body {
 }
 
 /* === Title Bar === */
+/* 统一引用 --gradient-header，消除各页面硬编码不同渐变导致的顶部色块不同步 */
 .title-bar {
-  background: linear-gradient(135deg, var(--color-primary, #F472B6), var(--color-primary-light, #F9A8D4));
+  background: var(--gradient-header, linear-gradient(135deg, #F472B6, #F9A8D4));
   padding: 44px 14px 10px;
   display: flex; align-items: center; gap: 10px;
   color: #fff;
@@ -66,13 +67,15 @@ body {
    策略：position:fixed（兼容所有 Android WebView 4.4+）
    沉浸式：标题栏渐变延伸至状态栏背后，底部适配导航栏
    ================================================ */
-[data-platform="capacitor"] body {
+[data-platform="capacitor"] body,
+[data-platform="native"] body {
   background: #000 !important;
   margin: 0; padding: 0;
   overflow: hidden;
 }
 
-[data-platform="capacitor"] .phone {
+[data-platform="capacitor"] .phone,
+[data-platform="native"] .phone {
   /* position:fixed → 最兼容方案（Android 4.4+），比 100dvh 兼容性强得多 */
   position: fixed;
   top: 0; left: 0; right: 0; bottom: 0;
@@ -85,32 +88,42 @@ body {
   /* 安全区域 — 各子元素自行处理 */
 }
 
-/* 标题栏渐变延伸至状态栏背后（状态栏透明后可见） */
-[data-platform="capacitor"] .title-bar {
-  padding-top: calc(44px + env(safe-area-inset-top, 0px));
+/* 标题栏顶部留白 — 固定 44px（不再加 safe-area-inset-top）。
+   原值 calc(44px + env(safe-area-inset-top)) 在 OPPO 等设备上约 84px，
+   导致首页/聊天/我的 顶部比 Bot管理页低 ~40px。统一为 44px 与 Bot管理页对齐，
+   状态栏图标在透明状态栏下可见于粉色 header 之上（沉浸式设计可接受）。 */
+[data-platform="capacitor"] .title-bar,
+[data-platform="native"] .title-bar {
+  padding-top: 44px;
   padding-bottom: 10px;
 }
 
 /* 页面顶部区域（无 title-bar 的页面如启动页/登录页） */
-[data-platform="capacitor"] .header {
-  padding-top: calc(60px + env(safe-area-inset-top, 0px));
+[data-platform="capacitor"] .header,
+[data-platform="native"] .header {
+  padding-top: 44px;
 }
 
 /* 可滚动内容区 — 底部留出导航栏安全距离 */
-[data-platform="capacitor"] .scroll-area {
+[data-platform="capacitor"] .scroll-area,
+[data-platform="native"] .scroll-area {
   padding-bottom: calc(20px + env(safe-area-inset-bottom, 0px));
 }
 
 /* 底部固定元素 — 适配导航栏 */
 [data-platform="capacitor"] .bottom-nav,
 [data-platform="capacitor"] .bottom-bar,
-[data-platform="capacitor"] .footer {
+[data-platform="capacitor"] .footer,
+[data-platform="native"] .bottom-nav,
+[data-platform="native"] .bottom-bar,
+[data-platform="native"] .footer {
   padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px));
 }
 
-/* 顶部栏通用安全区 */
-[data-platform="capacitor"] .top-bar {
-  padding-top: calc(48px + env(safe-area-inset-top, 0px));
+/* 顶部栏通用 — 固定 48px（与 title-bar 的 44px 视觉接近，统一抬升） */
+[data-platform="capacitor"] .top-bar,
+[data-platform="native"] .top-bar {
+  padding-top: 48px;
 }
 
 /* === Reduced Motion === */

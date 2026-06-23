@@ -311,10 +311,10 @@
   pointer-events: none;
   /* position/size set via JS to match .nav-item bounding rect */
   transition:
-    left   0.38s var(--ease-spring, cubic-bezier(0.34, 1.56, 0.64, 1)),
-    width  0.42s var(--ease-spring, cubic-bezier(0.34, 1.56, 0.64, 1)),
-    top    0.38s var(--ease-spring, cubic-bezier(0.34, 1.56, 0.64, 1)),
-    height 0.38s var(--ease-spring, cubic-bezier(0.34, 1.56, 0.64, 1));
+    left   0.22s var(--ease-spring, cubic-bezier(0.34, 1.56, 0.64, 1)),
+    width  0.25s var(--ease-spring, cubic-bezier(0.34, 1.56, 0.64, 1)),
+    top    0.22s var(--ease-spring, cubic-bezier(0.34, 1.56, 0.64, 1)),
+    height 0.22s var(--ease-spring, cubic-bezier(0.34, 1.56, 0.64, 1));
 }
 
 /* ===== Trail t1 — 45ms lag, 5px blur, higher opacity for visible smear ===== */
@@ -327,10 +327,10 @@
   pointer-events: none;
   filter: blur(5px);
   transition:
-    left   0.38s var(--ease-spring, cubic-bezier(0.34, 1.56, 0.64, 1)) 0.045s,
-    width  0.42s var(--ease-spring, cubic-bezier(0.34, 1.56, 0.64, 1)) 0.045s,
-    top    0.38s var(--ease-spring, cubic-bezier(0.34, 1.56, 0.64, 1)) 0.045s,
-    height 0.38s var(--ease-spring, cubic-bezier(0.34, 1.56, 0.64, 1)) 0.045s;
+    left   0.22s var(--ease-spring, cubic-bezier(0.34, 1.56, 0.64, 1)) 0.045s,
+    width  0.25s var(--ease-spring, cubic-bezier(0.34, 1.56, 0.64, 1)) 0.045s,
+    top    0.22s var(--ease-spring, cubic-bezier(0.34, 1.56, 0.64, 1)) 0.045s,
+    height 0.22s var(--ease-spring, cubic-bezier(0.34, 1.56, 0.64, 1)) 0.045s;
 }
 
 /* ===== Trail t2 — 90ms lag, 10px blur, faint wide glow ===== */
@@ -343,10 +343,10 @@
   pointer-events: none;
   filter: blur(10px);
   transition:
-    left   0.38s var(--ease-spring, cubic-bezier(0.34, 1.56, 0.64, 1)) 0.09s,
-    width  0.42s var(--ease-spring, cubic-bezier(0.34, 1.56, 0.64, 1)) 0.09s,
-    top    0.38s var(--ease-spring, cubic-bezier(0.34, 1.56, 0.64, 1)) 0.09s,
-    height 0.38s var(--ease-spring, cubic-bezier(0.34, 1.56, 0.64, 1)) 0.09s;
+    left   0.22s var(--ease-spring, cubic-bezier(0.34, 1.56, 0.64, 1)) 0.09s,
+    width  0.25s var(--ease-spring, cubic-bezier(0.34, 1.56, 0.64, 1)) 0.09s,
+    top    0.22s var(--ease-spring, cubic-bezier(0.34, 1.56, 0.64, 1)) 0.09s,
+    height 0.22s var(--ease-spring, cubic-bezier(0.34, 1.56, 0.64, 1)) 0.09s;
 }
 
 /* ===== Spring bounce keyframe — used by JS for icon on tap ===== */

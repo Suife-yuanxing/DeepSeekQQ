@@ -67,6 +67,9 @@
   /* === Gradients === */
   --gradient-primary: linear-gradient(135deg, #F472B6, #F9A8D4);
   --gradient-primary-dark: linear-gradient(135deg, #EC4899, #F472B6);
+  /* 统一页面顶部色块渐变 — 所有 .title-bar / .header 引用此变量，
+     消除各页面硬编码不同渐变导致的"顶部色块不同步"问题。 */
+  --gradient-header: linear-gradient(135deg, #F472B6 0%, #F9A8D4 100%);
   --gradient-secondary: linear-gradient(135deg, #ADD8E6, #C5E8F5);
   --gradient-secondary-dark: linear-gradient(135deg, #8BC4D6, #ADD8E6);
   --gradient-accent: linear-gradient(135deg, #C4B5FD, #DDD6FE);

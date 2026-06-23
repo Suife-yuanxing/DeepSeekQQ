@@ -81,61 +81,19 @@
     <div id="blockListInner">
     <div class="loading-state" style="text-align:center;padding:40px;color:#C0A0B0;">加载中…</div>
     </div>
-    <div class="desc-card" style="display:none;">
+    <div class="desc-card">
       被拉黑的用户无法给你发消息或查看你的 Bot。解除拉黑后，历史消息不会恢复。
     </div>
 
-    <!-- 用户 1 -->
-    <div class="user-card" id="user1">
-      <div class="user-avatar av-1">A</div>
-      <div class="user-info">
-        <div class="user-name">广告号_推广001</div>
-        <div class="user-reason">拉黑原因：发送垃圾广告</div>
-      </div>
-      <div style="text-align:right;">
-        <div class="user-time">3天前</div>
-        <button class="unblock-btn" style="margin-top:6px;" onclick="removeUser('user1')">解除</button>
+    <!-- 添加拉黑入口 -->
+    <div class="add-block-card" style="margin:8px 20px;padding:14px 16px;background:rgba(244,114,182,0.06);border:1.5px dashed rgba(244,114,182,0.3);border-radius:16px;display:flex;align-items:center;gap:10px;cursor:pointer;" onclick="showAddBlockDialog()">
+      <div style="width:36px;height:36px;border-radius:50%;background:#F472B6;color:#fff;display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:700;">+</div>
+      <div style="flex:1;">
+        <div style="font-size:14px;font-weight:700;color:#F472B6;">添加拉黑用户</div>
+        <div style="font-size:11px;color:#B090A0;">输入用户 ID 和原因</div>
       </div>
     </div>
 
-    <!-- 用户 2 -->
-    <div class="user-card" id="user2">
-      <div class="user-avatar av-2">S</div>
-      <div class="user-info">
-        <div class="user-name">骚扰用户_002</div>
-        <div class="user-reason">拉黑原因：频繁骚扰</div>
-      </div>
-      <div style="text-align:right;">
-        <div class="user-time">1周前</div>
-        <button class="unblock-btn" style="margin-top:6px;" onclick="removeUser('user2')">解除</button>
-      </div>
-    </div>
-
-    <!-- 用户 3 -->
-    <div class="user-card" id="user3">
-      <div class="user-avatar av-3">M</div>
-      <div class="user-info">
-        <div class="user-name">恶意刷屏_003</div>
-        <div class="user-reason">拉黑原因：刷屏攻击</div>
-      </div>
-      <div style="text-align:right;">
-        <div class="user-time">2周前</div>
-        <button class="unblock-btn" style="margin-top:6px;" onclick="removeUser('user3')">解除</button>
-      </div>
-    </div>
-
-    <!-- 用户 4 -->
-    <div class="user-card" id="user4">
-      <div class="user-avatar av-4">T</div>
-      <div class="user-info">
-        <div class="user-name">诈骗账号_004</div>
-        <div class="user-reason">拉黑原因：诈骗信息</div>
-      </div>
-      <div style="text-align:right;">
-        <div class="user-time">1个月前</div>
-        <button class="unblock-btn" style="margin-top:6px;" onclick="removeUser('user4')">解除</button>
-      </div>
-    </div>
 
     <div style="height:20px;"></div>
   </div>
@@ -189,6 +147,22 @@ function removeBlock(id) {
     showToast('已解除拉黑');
   }).catch(function(err) {
     showToast('解除失败：' + (err.message || '未知错误'));
+  });
+}
+
+// 添加拉黑用户（简单 prompt 收集用户 ID + 原因）
+function showAddBlockDialog() {
+  var uid = prompt('输入要拉黑的用户 ID（数字）：');
+  if (!uid) return;
+  uid = parseInt(uid, 10);
+  if (!uid || uid <= 0) { showToast('用户 ID 无效'); return; }
+  var reason = prompt('拉黑原因（选填）：') || '';
+  var name = prompt('用户昵称（选填）：') || '';
+  API.addToBlacklist(uid, name, reason).then(function() {
+    showToast('已拉黑用户 ' + uid);
+    loadBlacklist();
+  }).catch(function(err) {
+    showToast('拉黑失败：' + (err.message || '未知错误'));
   });
 }
 

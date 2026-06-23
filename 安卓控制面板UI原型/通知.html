@@ -128,7 +128,7 @@
 // ===== 通知 — API 数据加载 =====
 (function() {
   'use strict';
-  if (!API.isLoggedIn()) { location.href = '登录页.html'; return; }
+  // 未登录时显示空态（不强制跳转）
 
   var TYPE_ICONS = { system: 'sys', msg: 'msg', bot: 'bot', update: 'update' };
   var TYPE_SVG = {

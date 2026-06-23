@@ -117,7 +117,7 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4 20-7z"/></svg>
       </div>
       <div class="sc-info">
-        <div class="sc-label">已连接</div>
+        <div class="sc-label" data-qq-status>已连接</div>
         <div class="sc-detail">QQ Bot · 运行正常</div>
       </div>
       <div class="sc-badge">v1.2.0</div>
@@ -128,7 +128,7 @@
     <div class="info-card">
       <div class="info-row">
         <span class="ir-label">QQ 号</span>
-        <span class="ir-value">3073****21</span>
+        <span class="ir-value" data-qq-number>3073****21</span>
       </div>
       <div class="info-row">
         <span class="ir-label">Bot 类型</span>
@@ -152,11 +152,11 @@
     <div class="group-title" style="margin:14px 20px 6px;">今日统计</div>
     <div class="stat-mini-row">
       <div class="stat-mini">
-        <div class="sm-value sm-green" id="msgCount">156</div>
+        <div class="sm-value sm-green" id="msgCount" data-msg-count>156</div>
         <div class="sm-label">收发消息</div>
       </div>
       <div class="stat-mini">
-        <div class="sm-value sm-pink" id="groupCount">12</div>
+        <div class="sm-value sm-pink" id="groupCount" data-group-count>12</div>
         <div class="sm-label">活跃群聊</div>
       </div>
       <div class="stat-mini">
@@ -219,7 +219,7 @@
 
     <!-- 消息日志预览 -->
     <div class="group-title" style="margin:14px 20px 6px;">最近消息</div>
-    <div class="info-card" style="padding:0; overflow:hidden;">
+    <div class="info-card" style="padding:0; overflow:hidden;" data-recent-msgs>
       <div class="setting-item" style="margin:0; border-radius:0; background:transparent;">
         <div style="display:flex; align-items:center; gap:10px; width:100%;">
           <div style="width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,#F472B6,#FFB0C0);display:flex;align-items:center;justify-content:center;">
@@ -324,7 +324,8 @@
 </script>
 <script src="shared/config.js"></script>
 <script src="shared/api.js"></script>
-<script src="shared/app.js">
+<script src="shared/app.js"></script>
+<script>
 // Load QQ channel status
 if (API.isLoggedIn()) {
   function loadQQStatus() {
@@ -346,17 +347,24 @@ if (API.isLoggedIn()) {
     }).catch(function() {});
     API.getQQRecentMessages(3).then(function(d) {
       var container = document.querySelector('[data-recent-msgs]');
-      if (container && d.messages) {
-        container.innerHTML = d.messages.map(function(m) {
-          return '<div class="msg-item"><span class="msg-source">' + (m.source || '') + '</span><span class="msg-text">' + (m.content || '') + '</span></div>';
-        }).join('');
-      }
+      if (!container || !d.messages || !d.messages.length) return;
+      container.innerHTML = d.messages.map(function(m) {
+        var src = m.source || m.sender || '';
+        var txt = m.content || m.text || '';
+        var t = m.time ? new Date(m.time * 1000).toLocaleTimeString('zh-CN', {hour:'2-digit',minute:'2-digit'}) : '';
+        return '<div class="setting-item" style="margin:0;border-radius:0;background:transparent;">' +
+          '<div style="display:flex;align-items:center;gap:10px;width:100%;">' +
+            '<div style="width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,#F472B6,#FFB0C0);display:flex;align-items:center;justify-content:center;color:#fff;font-size:14px;font-weight:800;">' + (src.charAt(0) || '?') + '</div>' +
+            '<div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:700;color:#3A2030;">' + src + '</div>' +
+            '<div style="font-size:12px;color:#B090A0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + txt + '</div></div>' +
+            '<span style="font-size:10px;color:#C0A0B0;">' + t + '</span>' +
+          '</div></div>';
+      }).join('');
     }).catch(function() {});
   }
   loadQQStatus();
   setInterval(loadQQStatus, 30000); // auto refresh every 30s
 }
-
 </script>
 </body>
 </html>

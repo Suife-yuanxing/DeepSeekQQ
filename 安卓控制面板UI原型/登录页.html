@@ -12,7 +12,7 @@
 <link rel="stylesheet" href="shared/effects.css">
 <style>
 /* ===== 登录页 — 页面专属样式 ===== */
-.header { padding: 60px 20px 20px; text-align: center; }
+.header { padding: 44px 14px 10px; text-align: center; }
 .img-cat.img-md { width: 64px; height: 64px; margin: 0 auto 14px; }
 h1 { font-size: 22px; font-weight: 800; color: #3A2030; }
 .greeting { font-size: 13px; color: #C090A0; margin-top: 4px; }
@@ -89,6 +89,7 @@ h1 { font-size: 22px; font-weight: 800; color: #3A2030; }
   </div>
   <div class="footer">
     <a href="注册页.html">还没有账号？去注册 →</a>
+    <button type="button" class="test-login-btn" onclick="testLogin()" title="跳过登录，用于离线/UI 测试" style="display:block;margin:14px auto 0;padding:10px 18px;border-radius:14px;border:1.5px dashed rgba(244,114,182,0.5);background:rgba(244,114,182,0.06);color:#F472B6;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;">🧪 测试直登（跳过登录）</button>
     <div class="social-login">
       <div style="text-align:center;">
         <button class="social-btn" onclick="showToast('QQ登录 — 即将支持')" title="QQ登录">
@@ -121,7 +122,7 @@ h1 { font-size: 22px; font-weight: 800; color: #3A2030; }
   </div>
 </div>
 <script src="shared/config.js"></script>
-<script src="shared/capacitor.js"></script>
+<script src="shared/native.js"></script>
 <script src="shared/api.js"></script>
 <script src="shared/app.js"></script>
 <script>
@@ -138,6 +139,18 @@ if (API.isLoggedIn()) {
     location.replace('首页仪表盘.html');
   });
   // 注意：不继续执行后续登录表单逻辑（页面已被 replace）
+}
+
+// 测试直登：注入 mock token，跳过登录用于 UI/离线测试
+function testLogin() {
+  localStorage.setItem('access_token', 'dev.mock.token.skip.login');
+  localStorage.setItem('refresh_token', 'dev.mock.refresh.token');
+  localStorage.setItem('current_user', JSON.stringify({
+    id: 0, nickname: '测试用户', phone: '13800000000',
+    avatar_url: null, is_admin: false, created_at: new Date().toISOString()
+  }));
+  showToast('已进入测试模式（离线）');
+  setTimeout(function(){ location.replace('首页仪表盘.html'); }, 200);
 }
 
 async function sendCode() {

@@ -10,14 +10,14 @@
 <link rel="stylesheet" href="shared/anime-cat.css">
 <link rel="stylesheet" href="shared/dark-mode.css">
 <link rel="stylesheet" href="shared/effects.css">
-<script src="shared/capacitor.js"></script>
+<script src="shared/native.js"></script>
 <style>
 /* ===== Page-Specific: Bot 创建向导 v2 ===== */
 
 /* ===== Header (replaces standard title-bar) ===== */
 .header {
-  background: linear-gradient(135deg, #F472B6 0%, #F9A8D4 50%, #FFB0A0 100%);
-  color: #fff; padding: 48px 20px 14px; text-align: center; position: relative; overflow: hidden;
+  background: var(--gradient-header, linear-gradient(135deg, #F472B6, #F9A8D4));
+  color: #fff; padding: 44px 14px 10px; text-align: center; position: relative; overflow: hidden;
 }
 .header::after {
   content: ''; position: absolute; bottom: 0; left: 0; width: 100%; height: 30px;
@@ -369,6 +369,9 @@
 <script src="shared/app.js"></script>
 <script src="shared/api.js"></script>
 <script>
+// ── 登录守卫：未登录跳回登录页
+if (!API.isLoggedIn()) { location.replace('登录页.html'); }
+
 let step = 1;
 let personaClass = 'tsundere';
 let personaLabel = '自定义';
@@ -429,12 +432,7 @@ function nextStep() {
 }
 
 async function createBotAndFinish() {
-  // 未登录保护（直接打开向导页时）
-  if (!API.isLoggedIn()) {
-    showToast('请先登录');
-    setTimeout(function() { location.href = '登录页.html'; }, 600);
-    return;
-  }
+  // 未登录时暂存配置到本地（localStorage），登录后自动同步
   var name = document.getElementById('botName').value.trim() || '小咪';
   var cp = document.getElementById('catchphrase').value.trim();
   var ageVal = document.getElementById('age').value.trim();
@@ -544,6 +542,5 @@ function renderStep() {
 }
 </script>
 
-<script src="shared/app.js"></script>
 </body>
 </html>

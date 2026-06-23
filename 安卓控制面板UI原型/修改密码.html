@@ -101,7 +101,7 @@
 <script src="shared/api.js"></script>
 <script src="shared/app.js"></script>
 <script>
-if (!API.isLoggedIn()) { location.href = '登录页.html'; }
+// 未登录时 API 调用静默失败（不强制跳转）
 function checkStrength(val) {
   const segs = document.querySelectorAll('#strengthBar .strength-seg');
   const text = document.getElementById('strengthText');

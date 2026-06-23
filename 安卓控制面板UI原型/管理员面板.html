@@ -325,11 +325,11 @@ body { background-attachment: fixed; overflow-x: hidden; }
 
     <!-- 快捷操作 -->
     <div class="quick-actions">
-      <button class="qa-btn" onclick="showToast('备份已开始，预计 30 秒完成')">
+      <button class="qa-btn" onclick="doCreateBackup()">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
         一键备份
       </button>
-      <button class="qa-btn" onclick="showToast('日志快照已生成')">
+      <button class="qa-btn" onclick="doLogSnapshot()">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
         日志快照
       </button>
@@ -438,40 +438,9 @@ body { background-attachment: fixed; overflow-x: hidden; }
       </div>
       <div class="sh-count">本月</div>
     </div>
-    <div class="table-card" style="padding:6px 16px 8px;">
-      <div class="token-item">
-        <div class="tk-rank r1">1</div>
-        <span class="tk-name">小明</span>
-        <div class="tk-bar-wrap"><div class="tk-bar-fill" style="width:100%;"></div></div>
-        <div class="tk-val">128K</div>
-      </div>
-      <div class="token-item">
-        <div class="tk-rank r2">2</div>
-        <span class="tk-name">小美</span>
-        <div class="tk-bar-wrap"><div class="tk-bar-fill" style="width:72%;"></div></div>
-        <div class="tk-val">92K</div>
-      </div>
-      <div class="token-item">
-        <div class="tk-rank r3">3</div>
-        <span class="tk-name">小刚</span>
-        <div class="tk-bar-wrap"><div class="tk-bar-fill" style="width:51%;"></div></div>
-        <div class="tk-val">65K</div>
-      </div>
-      <div class="token-item">
-        <div class="tk-rank rn">4</div>
-        <span class="tk-name">小红</span>
-        <div class="tk-bar-wrap"><div class="tk-bar-fill" style="width:35%;"></div></div>
-        <div class="tk-val">45K</div>
-      </div>
-      <div class="token-item">
-        <div class="tk-rank rn">5</div>
-        <span class="tk-name">阿杰</span>
-        <div class="tk-bar-wrap"><div class="tk-bar-fill" style="width:18%;"></div></div>
-        <div class="tk-val">23K</div>
-      </div>
-      <div class="token-summary">
-        本月合计 <strong>&yen;17.82</strong> · 预估全月 <strong>&yen;26.50</strong>
-      </div>
+    <div class="table-card" style="padding:6px 16px 8px;" data-container="tokens-ranking">
+      <div class="token-item"><span style="color:var(--text-secondary);font-size:13px;padding:12px 0;display:block;text-align:center;">加载中…</span></div>
+      <div class="token-summary" data-container="tokens-summary">加载中…</div>
     </div>
 
     <!-- 备份管理 -->
@@ -482,37 +451,14 @@ body { background-attachment: fixed; overflow-x: hidden; }
         </div>
         备份管理
       </div>
-      <div class="sh-count">5 份</div>
+      <div class="sh-count" data-container="backups-count">--</div>
     </div>
-    <div class="backup-card">
-      <div class="backup-info">
-        <div class="bi-name">auto_backup_2026-06-21_14:30.db</div>
-        <div class="bi-time">今天 14:30 · 自动备份</div>
-        <div class="bi-detail">142 MB · sha256 校验通过</div>
-      </div>
-      <div class="backup-actions">
-        <button class="ba-btn" title="下载" onclick="showToast('开始下载备份文件')">
-          <svg viewBox="0 0 24 24" fill="none" stroke="var(--text-secondary)" stroke-width="2.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-        </button>
-        <button class="ba-btn caution" title="恢复" onclick="showToast('恢复将覆盖当前数据，请确认')">
-          <svg viewBox="0 0 24 24" fill="none" stroke="var(--color-error)" stroke-width="2.5"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg>
-        </button>
-      </div>
+    <div data-container="backups" style="padding:0 16px;">
+      <div class="backup-card"><div class="backup-info"><div class="bi-name">加载中…</div></div></div>
     </div>
-    <div class="backup-card" style="margin-top:6px;">
-      <div class="backup-info">
-        <div class="bi-name">auto_backup_2026-06-20_02:00.db</div>
-        <div class="bi-time">昨天 02:00 · 定时备份</div>
-        <div class="bi-detail">138 MB · sha256 校验通过</div>
-      </div>
-      <div class="backup-actions">
-        <button class="ba-btn" title="下载" onclick="showToast('开始下载备份文件')">
-          <svg viewBox="0 0 24 24" fill="none" stroke="var(--text-secondary)" stroke-width="2.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-        </button>
-        <button class="ba-btn caution" title="恢复" onclick="showToast('恢复将覆盖当前数据，请确认')">
-          <svg viewBox="0 0 24 24" fill="none" stroke="var(--color-error)" stroke-width="2.5"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg>
-        </button>
-      </div>
+    <div style="padding:8px 16px 16px;display:flex;gap:8px;">
+      <button class="ba-btn" onclick="doCreateBackup()" style="padding:10px 18px;background:var(--color-primary,#F472B6);color:#fff;border:none;border-radius:12px;font-size:13px;font-weight:600;cursor:pointer;">一键备份</button>
+      <button class="ba-btn caution" onclick="doLogSnapshot()" style="padding:10px 18px;background:var(--color-warning,#FBBF24);color:#1a1a2e;border:none;border-radius:12px;font-size:13px;font-weight:600;cursor:pointer;">日志快照</button>
     </div>
 
     <!-- 系统日志 -->
@@ -532,20 +478,8 @@ body { background-attachment: fixed; overflow-x: hidden; }
       <button class="log-filter" onclick="filterLogs('error', this)">ERROR</button>
       <button class="log-filter" onclick="filterLogs('debug', this)">DEBUG</button>
     </div>
-    <div class="log-card" id="logContainer">
-      <div class="log-line" data-level="info"><span class="log-time">14:30:01</span><span class="log-level l-info">INFO</span><span class="log-msg">deepseek-api: WebSocket client connected (user_id=1, bot_id=3)</span></div>
-      <div class="log-line" data-level="info"><span class="log-time">14:29:58</span><span class="log-level l-info">INFO</span><span class="log-msg">deepseek-bot: QQ message routed to bot "小咪" (user_id=1)</span></div>
-      <div class="log-line" data-level="debug"><span class="log-time">14:29:45</span><span class="log-level l-debug">DEBUG</span><span class="log-msg">Pipeline: stage_emotion VA=(0.62, 0.38) express_style="playful"</span></div>
-      <div class="log-line" data-level="warn"><span class="log-time">14:29:32</span><span class="log-level l-warn">WARN</span><span class="log-msg">LLM queue: platform key queue depth=8 (limit=10)</span></div>
-      <div class="log-line" data-level="info"><span class="log-time">14:29:15</span><span class="log-level l-info">INFO</span><span class="log-msg">deepseek-api: POST /api/v1/bots/3/messages (201, 45ms)</span></div>
-      <div class="log-line" data-level="error"><span class="log-time">14:28:50</span><span class="log-level l-error">ERROR</span><span class="log-msg">NapCat connection timeout (retry 3/5, next in 10s)</span></div>
-      <div class="log-line" data-level="debug"><span class="log-time">14:28:40</span><span class="log-level l-debug">DEBUG</span><span class="log-msg">Memory recall: matched 3 memories for query (score>0.15)</span></div>
-      <div class="log-line" data-level="info"><span class="log-time">14:28:30</span><span class="log-level l-info">INFO</span><span class="log-msg">KMS: key rotation check passed (next rotation: 30d)</span></div>
-      <div class="log-line" data-level="info"><span class="log-time">14:28:15</span><span class="log-level l-info">INFO</span><span class="log-msg">Health check: all services OK (bot, api, napcat)</span></div>
-      <div class="log-line" data-level="warn"><span class="log-time">14:27:50</span><span class="log-level l-warn">WARN</span><span class="log-msg">Rate limiter: user_id=7 exceeded 30 req/min</span></div>
-      <div class="log-line" data-level="info"><span class="log-time">14:27:30</span><span class="log-level l-info">INFO</span><span class="log-msg">Backup: auto_backup created (142MB, sha256 ok)</span></div>
-      <div class="log-line" data-level="debug"><span class="log-time">14:27:15</span><span class="log-level l-debug">DEBUG</span><span class="log-msg">Absence check: 3 bots in absence state</span></div>
-      <div class="log-line" data-level="info"><span class="log-time">14:27:00</span><span class="log-level l-info">INFO</span><span class="log-msg">deepseek-bot: systemd watchdog ping (status=healthy)</span></div>
+    <div class="log-card" id="logContainer" data-container="logs">
+      <div class="log-line"><span style="color:var(--text-secondary);font-size:13px;">加载中…</span></div>
     </div>
 
   </div><!-- /scroll-area -->
@@ -644,20 +578,138 @@ if (API.isLoggedIn()) {
         '</tr>';
       }).join('');
     }).catch(function() {});
+    // Token ranking
+    API.getAdminTokensRanking('month').then(function(d) {
+      var container = document.querySelector('[data-container="tokens-ranking"]');
+      if (!container) return;
+      var ranking = d.ranking || [];
+      if (ranking.length) {
+        var maxTokens = ranking[0].tokens || ranking[0].total_tokens || 1;
+        var rankColors = ['r1','r2','r3'];
+        container.innerHTML = ranking.map(function(r, i) {
+          var pct = maxTokens ? Math.round(((r.tokens || r.total_tokens || 0) / maxTokens) * 100) : 0;
+          return '<div class="token-item">' +
+            '<div class="tk-rank ' + (rankColors[i] || 'rn') + '">' + (i + 1) + '</div>' +
+            '<span class="tk-name">' + _esc(r.user_name || r.nickname || '用户' + (r.user_id || '')) + '</span>' +
+            '<div class="tk-bar-wrap"><div class="tk-bar-fill" style="width:' + pct + '%;"></div></div>' +
+            '<div class="tk-val">' + formatTokens(r.tokens || r.total_tokens || 0) + '</div>' +
+          '</div>';
+        }).join('');
+      } else {
+        container.innerHTML = '<div class="token-item"><span style="color:var(--text-secondary);font-size:13px;padding:12px 0;display:block;text-align:center;">暂无数据</span></div>';
+      }
+      // Token summary
+      var summaryEl = container.querySelector('[data-container="tokens-summary"]');
+      if (summaryEl) {
+        summaryEl.innerHTML = '本月合计 <strong>&yen;' + (d.total_cost || 0).toFixed(2) + '</strong> · 预估全月 <strong>&yen;' + (d.estimated_monthly || 0).toFixed(2) + '</strong>' +
+          ' · 缓存命中率 <strong>' + ((d.cache_hit_rate || 0) * 100).toFixed(1) + '%</strong>';
+      }
+    }).catch(function() {});
+    // Backups
+    API.getAdminBackups().then(function(d) {
+      var container = document.querySelector('[data-container="backups"]');
+      var countEl = document.querySelector('[data-container="backups-count"]');
+      if (countEl) countEl.textContent = (d.total || d.backups.length) + ' 份';
+      if (!container || !d.backups) return;
+      if (d.backups.length) {
+        container.innerHTML = d.backups.slice(0, 5).map(function(b) {
+          var t = new Date(b.created_at * 1000);
+          var timeStr = t.toLocaleDateString('zh-CN', {month:'2-digit',day:'2-digit'}) + ' ' +
+            t.toLocaleTimeString('zh-CN', {hour:'2-digit',minute:'2-digit'});
+          var sizeStr = formatSize(b.size || 0);
+          var typeLabel = b.type === 'auto' ? '自动备份' : '手动备份';
+          return '<div class="backup-card" style="margin-top:6px;">' +
+            '<div class="backup-info">' +
+              '<div class="bi-name">' + _esc(b.file_name || b.id) + '</div>' +
+              '<div class="bi-time">' + timeStr + ' · ' + typeLabel + '</div>' +
+              '<div class="bi-detail">' + sizeStr + ' · sha256 ' + (b.sha256_status || 'unknown') + '</div>' +
+            '</div>' +
+            '<div class="backup-actions">' +
+              '<button class="ba-btn" title="下载" onclick="window.open(\'/api/v1/admin/backups/' + encodeURIComponent(b.id) + '/download\',\'_blank\')">' +
+                '<svg viewBox="0 0 24 24" fill="none" stroke="var(--text-secondary)" stroke-width="2.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>' +
+              '</button>' +
+            '</div>' +
+          '</div>';
+        }).join('');
+      } else {
+        container.innerHTML = '<div class="backup-card"><div class="backup-info"><div class="bi-name" style="color:var(--text-secondary);">暂无备份</div></div></div>';
+      }
+    }).catch(function() {});
+    // Logs
+    loadLogs('all');
   }
 
   function _esc(s) { return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+  function formatTokens(n) { if (n >= 1000000) return (n/1000000).toFixed(1) + 'M'; if (n >= 1000) return (n/1000).toFixed(1) + 'K'; return String(n); }
+  function formatSize(bytes) { if (bytes >= 1048576) return (bytes/1048576).toFixed(1) + ' MB'; if (bytes >= 1024) return (bytes/1024).toFixed(0) + ' KB'; return bytes + ' B'; }
   loadAdminData();
 }
 
+var currentLogLevel = 'all';
+function loadLogs(level) {
+  currentLogLevel = level;
+  var container = document.querySelector('[data-container="logs"]');
+  if (!container) return;
+  var levelParam = level === 'all' ? '' : level;
+  API.getAdminLogs(levelParam, 100).then(function(d) {
+    if (!d.logs || !d.logs.length) {
+      container.innerHTML = '<div class="log-line"><span style="color:var(--text-secondary);font-size:13px;">无日志</span></div>';
+      return;
+    }
+    var levelClass = {DEBUG:'l-debug',INFO:'l-info',WARNING:'l-warn',ERROR:'l-error',CRITICAL:'l-error'};
+    container.innerHTML = d.logs.map(function(l) {
+      var t = new Date(l.time * 1000);
+      var timeStr = t.toLocaleTimeString('zh-CN', {hour:'2-digit',minute:'2-digit',second:'2-digit'});
+      return '<div class="log-line" data-level="' + (l.level || 'info').toLowerCase() + '">' +
+        '<span class="log-time">' + timeStr + '</span>' +
+        '<span class="log-level ' + (levelClass[l.level] || 'l-info') + '">' + _esc(l.level || 'INFO') + '</span>' +
+        '<span class="log-msg">' + _esc(l.message || '') + '</span>' +
+      '</div>';
+    }).join('');
+    // Apply current filter
+    if (currentLogLevel !== 'all') applyLogFilter(currentLogLevel);
+  }).catch(function() {});
+}
 
-function filterLogs(level, btn) {
-  document.querySelectorAll('.log-filter').forEach(b => b.classList.remove('active'));
-  btn.classList.add('active');
-  document.querySelectorAll('#logContainer .log-line').forEach(line => {
+function applyLogFilter(level) {
+  document.querySelectorAll('#logContainer .log-line').forEach(function(line) {
     line.style.display = (level === 'all' || line.getAttribute('data-level') === level) ? 'flex' : 'none';
   });
 }
+
+function filterLogs(level, btn) {
+  document.querySelectorAll('.log-filter').forEach(function(b) { b.classList.remove('active'); });
+  btn.classList.add('active');
+  currentLogLevel = level;
+  loadLogs(level);
+}
+
+// ── 一键备份（调真 API.createBackup）──
+function doCreateBackup() {
+  if (!confirm('确定要立即创建数据库备份吗？')) return;
+  showToast('备份中…');
+  API.createBackup().then(function(r) {
+    showToast('备份完成：' + (r.file_name || r.id || ''));
+    // 刷新备份列表
+    if (typeof loadBackups === 'function') loadBackups();
+    else API.getAdminBackups().then(function() {}).catch(function() {});
+  }).catch(function(e) {
+    showToast('备份失败：' + (e.message || '未知错误'));
+  });
+}
+
+// ── 日志快照（拉取当前级别日志并提示，后端无独立快照端点，用 getAdminLogs 代替）──
+function doLogSnapshot() {
+  var level = currentLogLevel || 'info';
+  showToast('正在生成日志快照…');
+  API.getAdminLogs(level, 200).then(function(d) {
+    var count = (d.logs || d).length || 0;
+    showToast('日志快照已生成（' + count + ' 条 ' + level + ' 级记录）');
+  }).catch(function(e) {
+    showToast('日志快照失败：' + (e.message || '未知错误'));
+  });
+}
+
 function showToast(msg) {
   if (typeof window.showToast === 'function') {
     window.showToast(msg);

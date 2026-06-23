@@ -227,8 +227,8 @@
     //  Stretch bias: 向右滑 → 右端多拉 | 向左滑 → 左端多拉
     // ============================================================
     var STRETCH_RATIO = 1.5;       // 拉伸倍率
-    var SLIDE_DURATION = 380;      // 滑动时长 (ms) — 与 CSS left transition 一致
-    var COMPRESS_DURATION = 420;   // 压缩时长 (ms) — 与 CSS width spring transition 一致
+    var SLIDE_DURATION = 220;      // 滑动时长 (ms) — 缩短以加快切换（原 380ms）
+    var COMPRESS_DURATION = 250;   // 压缩时长 (ms) — 缩短以加快切换（原 420ms）
     var stretchTimer = null;       // Phase 2 定时器句柄
     var completeTimer = null;      // onComplete 延迟句柄
 

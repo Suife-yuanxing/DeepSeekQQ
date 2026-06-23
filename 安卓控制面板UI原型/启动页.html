@@ -243,40 +243,39 @@
 </div>
 
 <script src="shared/config.js"></script>
-<script src="shared/capacitor.js"></script>
+<script src="shared/native.js"></script>
 <script src="shared/api.js"></script>
 <script src="shared/app.js"></script>
 <script>
-// ── 启动页智能路由 ──
-// 2.5s 品牌动画后根据登录状态 + 服务器可达性跳转
-// 使用 location.replace() 清 history，用户无法返回到启动页
+// ── 启动页路由 ──
+// 品牌动画结束后检查登录状态：已登录→首页，未登录→登录页
 var DEV_MODE = localStorage.getItem('dev_mode') === '1';
 
-// 手动切换 Dev Mode：连续点击版本号 5 次
-var _tapCount = 0;
+// 连续点击版本号 5 次切换 Dev Mode（注入假 token 用于 API 测试）
+var _tapCount = 0, _tapTimer;
 document.querySelector('.splash-version').addEventListener('click', function() {
   _tapCount++;
   if (_tapCount >= 5) {
     _tapCount = 0;
     DEV_MODE = !DEV_MODE;
     localStorage.setItem('dev_mode', DEV_MODE ? '1' : '0');
-    showToast(DEV_MODE ? '🔧 开发模式：跳过登录' : '🔒 正常模式：需要登录');
+    if (DEV_MODE) {
+      localStorage.setItem('access_token', 'dev.mock.token.skip.login');
+      localStorage.setItem('refresh_token', 'dev.mock.refresh.token');
+      localStorage.setItem('current_user', JSON.stringify({
+        id: 0, nickname: 'DevTester', phone: '13800000000',
+        avatar_url: null, created_at: new Date().toISOString()
+      }));
+    } else {
+      localStorage.removeItem('access_token');
+      localStorage.removeItem('refresh_token');
+      localStorage.removeItem('current_user');
+    }
+    showToast(DEV_MODE ? '🔧 开发模式：已注入测试 Token' : '🔒 正常模式：Token 已清除');
   }
   clearTimeout(_tapTimer);
-  var _tapTimer = setTimeout(function() { _tapCount = 0; }, 800);
+  _tapTimer = setTimeout(function() { _tapCount = 0; }, 800);
 });
-
-function _enterDevMode() {
-  // 注入假登录态，使页面不再校验登录
-  localStorage.setItem('access_token', 'dev.mock.token.skip.login');
-  localStorage.setItem('refresh_token', 'dev.mock.refresh.token');
-  localStorage.setItem('current_user', JSON.stringify({
-    id: 0, nickname: 'DevTester', phone: '13800000000',
-    avatar_url: null, created_at: new Date().toISOString()
-  }));
-  localStorage.setItem('dev_mode', '1');
-  DEV_MODE = true;
-}
 
 setTimeout(function(){
   var phone = document.querySelector('.phone');
@@ -286,57 +285,22 @@ setTimeout(function(){
 }, 2500);
 
 function doNavigate() {
-  // 开发模式：跳过登录直接进首页
-  if (DEV_MODE) {
-    _enterDevMode();
-    location.replace('首页仪表盘.html');
-    return;
-  }
-
-  // 已有有效 token → 正常路由
-  if (window.API && window.API.isLoggedIn && window.API.isLoggedIn()) {
-    if (window.API.listBots) {
-      // 带超时的 Bot 列表检查（3s 超时）
-      var timeout = new Promise(function(_, reject) {
-        setTimeout(function() { reject(new Error('timeout')); }, 3000);
-      });
-      Promise.race([window.API.listBots(), timeout])
-        .then(function(bots) {
-          if (bots && bots.count > 0) {
-            window.API.setCurrentBotId(bots.bots[0].id);
-            location.replace('首页仪表盘.html');
-          } else {
-            location.replace('Bot创建向导.html');
-          }
-        })
-        .catch(function() {
-          // 服务器不可达 → 自动进入离线开发模式
-          _enterDevMode();
-          showToast('⚠️ 服务器离线，已进入本地测试模式');
-          setTimeout(function() { location.replace('首页仪表盘.html'); }, 800);
-        });
-    } else {
+  // 已登录 → 直接进首页；未登录 → 跳登录页
+  // 使用 location.replace 避免启动页留在返回栈中
+  try {
+    if (API.isLoggedIn()) {
       location.replace('首页仪表盘.html');
+    } else {
+      location.replace('登录页.html');
     }
-    return;
-  }
-
-  // 无 token — 服务器可用则跳登录，否则离线模式
-  if (window.API && window.API._ping) {
-    var timeout2 = new Promise(function(_, reject) {
-      setTimeout(function() { reject(new Error('timeout')); }, 3000);
-    });
-    Promise.race([window.API._ping(), timeout2])
-      .then(function() {
-        location.replace('登录页.html');
-      })
-      .catch(function() {
-        _enterDevMode();
-        showToast('⚠️ 服务器离线，已进入本地测试模式');
-        setTimeout(function() { location.replace('首页仪表盘.html'); }, 800);
-      });
-  } else {
-    location.replace('登录页.html');
+  } catch (e) {
+    // API/脚本加载失败 → 显示错误而非白屏（避免"打不开"无提示）
+    var msg = (e && e.message) ? e.message : '未知错误';
+    document.body.innerHTML = '<div style="padding:48px 24px;text-align:center;font-family:sans-serif;color:#3A2030;background:#FFF5F6;min-height:100vh;box-sizing:border-box;">' +
+      '<h2 style="margin:0 0 12px;">启动失败</h2>' +
+      '<p style="color:#6A5060;font-size:14px;margin:0 0 24px;">' + msg + '</p>' +
+      '<button onclick="location.reload()" style="padding:12px 28px;border-radius:16px;border:none;background:#F472B6;color:#fff;font-size:14px;font-weight:700;cursor:pointer;">重试</button>' +
+      '</div>';
   }
 }
 </script>

@@ -46,13 +46,21 @@ async def call_deepseek_api_stream(messages: list[dict]) -> AsyncGenerator[str, 
     """流式调用 DeepSeek，逐 token yield。
 
     S1: api.py:79 当前 stream:False 不可复用，这里新写 SSE 流式解析。
-    降级：流式失败时 fallback 到 call_deepseek_api（非流式）一次性返回。
+    降级链：DeepSeek 流式 → DeepSeek 非流式 → Ollama 本地模型（经 call_deepseek_api 二层降级）。
+    API_KEY 为空时不再直接报错，而是降级到 call_deepseek_api（其内部有 Ollama 兜底）。
     """
     from ..api import get_http_session
     from ..config import API_KEY, BASE_URL, MODEL
 
     if not API_KEY:
-        yield "（未配置 DEEPSEEK_API_KEY，无法回复）"
+        # 无 API_KEY：降级到 call_deepseek_api（其内部会走 Ollama 本地模型兜底），
+        # 一次性返回而非流式，但至少能回复，不再显示"未配置"。
+        from ..api import call_deepseek_api
+        reply = await call_deepseek_api(messages, task_type="chat")
+        if reply:
+            yield reply
+        else:
+            yield "（AI 暂时无法回复，请稍后再试）"
         return
 
     url = f"{BASE_URL}/chat/completions"
@@ -72,7 +80,7 @@ async def call_deepseek_api_stream(messages: list[dict]) -> AsyncGenerator[str, 
             timeout=aiohttp.ClientTimeout(total=60, connect=5, sock_read=30),
         ) as resp:
             if resp.status != 200:
-                # 降级到非流式
+                # 降级到非流式（call_deepseek_api 内部还有 Ollama 兜底）
                 from ..api import call_deepseek_api
                 yield await call_deepseek_api(messages, task_type="chat")
                 return
@@ -92,7 +100,7 @@ async def call_deepseek_api_stream(messages: list[dict]) -> AsyncGenerator[str, 
                 except (json.JSONDecodeError, KeyError, IndexError):
                     continue
     except (aiohttp.ClientError, TimeoutError, asyncio.TimeoutError):
-        # 降级到非流式
+        # 降级到非流式（call_deepseek_api 内部还有 Ollama 兜底）
         from ..api import call_deepseek_api
         yield await call_deepseek_api(messages, task_type="chat")
 

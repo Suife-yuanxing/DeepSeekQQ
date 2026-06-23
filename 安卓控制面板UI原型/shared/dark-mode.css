@@ -305,9 +305,6 @@
 .phone.dark-mode .splash-sub { color: #B0A8C0; }
 .phone.dark-mode .version { color: #706878; }
 
-/* Offline banner */
-.phone.dark-mode .offline-banner { background: linear-gradient(135deg, #8B6914, #9B7924); }
-
 /* Password strength */
 .phone.dark-mode .strength-bar { background: rgba(255, 255, 255, 0.08); }
 
