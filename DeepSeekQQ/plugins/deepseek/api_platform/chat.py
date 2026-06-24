@@ -14,6 +14,7 @@ v2 审计修正落地：
                  {type:"typing"} / {type:"error", message} / {type:"ack", client_id}
 """
 import json
+import os
 import time
 import uuid
 from typing import AsyncGenerator
@@ -22,8 +23,10 @@ from typing import Optional
 import aiohttp
 from fastapi import APIRouter
 from fastapi import Depends
+from fastapi import File
 from fastapi import HTTPException
 from fastapi import Query
+from fastapi import UploadFile
 from fastapi import WebSocket
 from fastapi import WebSocketDisconnect
 from pydantic import BaseModel
@@ -185,6 +188,37 @@ async def list_messages(
         "has_more": len(msgs) == limit,
         "next_cursor": msgs[-1]["created_at"] if msgs and len(msgs) == limit else None,
     }
+
+
+# ============================================================
+# A2: 聊天图片上传
+# ============================================================
+
+_CHAT_IMG_DIR = os.getenv("PLATFORM_CHAT_IMG_DIR", "data/chat_images")
+_CHAT_IMG_MAX = 5 * 1024 * 1024  # 5MB
+_CHAT_IMG_TYPES = {"image/jpeg", "image/png", "image/webp", "image/gif"}
+
+
+@router.post("/messages/upload-image")
+async def upload_chat_image(
+    bot_id: int = Query(...),
+    file: UploadFile = File(...),
+    user=Depends(get_current_user),
+):
+    """上传聊天图片。H5: 校验 bot_id 归属。返回图片 URL。"""
+    await require_bot_owner(bot_id, user)
+    if file.content_type and file.content_type not in _CHAT_IMG_TYPES:
+        raise HTTPException(status_code=400, detail={"code": "invalid_type", "message": "仅支持 JPG/PNG/WebP/GIF"})
+    raw = await file.read()
+    if len(raw) > _CHAT_IMG_MAX:
+        raise HTTPException(status_code=400, detail={"code": "file_too_large", "message": "图片最大 5MB"})
+    os.makedirs(_CHAT_IMG_DIR, exist_ok=True)
+    ext = (file.filename or "img.jpg").rsplit(".", 1)[-1].lower() if "." in (file.filename or "") else "jpg"
+    fname = f"chat_{bot_id}_{uuid.uuid4().hex[:12]}.{ext}"
+    fpath = os.path.join(_CHAT_IMG_DIR, fname)
+    with open(fpath, "wb") as f:
+        f.write(raw)
+    return {"url": f"/data/chat_images/{fname}", "file_name": fname, "size": len(raw)}
 
 
 @router.get("/messages/search")
